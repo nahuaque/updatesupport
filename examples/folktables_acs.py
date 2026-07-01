@@ -390,6 +390,18 @@ def format_key(columns: Sequence[str], key: tuple[Any, ...]) -> str:
     )
 
 
+def task_target_description(task: str) -> str:
+    if task == "income":
+        return "Pr(income exceeds the ACSIncome threshold)"
+    if task == "employment":
+        return "Pr(employed under the ACSEmployment task definition)"
+    return "Pr(target label is 1)"
+
+
+def percent(value: float) -> str:
+    return f"{100 * value:.1f}%"
+
+
 def render_report(
     *,
     task: str,
@@ -405,6 +417,13 @@ def render_report(
         grouped.cell_weights[state] * problem.estimand_map[state]
         for state in problem.states
     )
+    all_fibers = fiber_diagnostics(grouped, top=len(problem.public_values))
+    top_fibers = all_fibers[:top]
+    top_contribution = sum(row["contribution"] for row in top_fibers)
+    top_share = (
+        top_contribution / interval.diameter if interval.diameter > problem.tol else 0.0
+    )
+    interval_contains_observed = interval.lower <= observed_rate <= interval.upper
     lines = [
         f"# Folktables ACS{task.title()} Update-Support Demo",
         "",
@@ -418,10 +437,41 @@ def render_report(
         f"- Public adequate: {'yes' if problem.is_public_adequate() else 'no'}",
         f"- Observed-law partial-ID interval: [{interval.lower:.4f}, {interval.upper:.4f}]",
         f"- Observed-law transport ambiguity: {interval.diameter:.4f}",
+        f"- Top {len(top_fibers)} fiber contribution share: {percent(top_share)}",
+        "",
+        "## Statistical Interpretation",
+        "",
+        f"The estimand is the aggregate {task_target_description(task)}. Each hidden cell "
+        "gets its own empirical label rate, and the current observed rate is the "
+        "sample-weighted average over the observed hidden-cell mix.",
+        "",
+        "The partial-ID interval fixes the observed public distribution and then allows "
+        "arbitrary reweighting among retained hidden cells inside each public cell. "
+        f"Under that stress test, the aggregate target rate can range from "
+        f"{interval.lower:.4f} to {interval.upper:.4f}. The observed rate "
+        f"{observed_rate:.4f} {'falls inside' if interval_contains_observed else 'does not fall inside'} "
+        "that interval.",
+        "",
+        f"The transport ambiguity is the interval width, {interval.diameter:.4f}. "
+        "It is a sensitivity / partial-identification diameter, not a sampling "
+        "confidence interval. It does not include binomial standard errors, design "
+        "weights, survey design uncertainty, model uncertainty, or uncertainty in the "
+        "hidden-cell label rates.",
+        "",
+        "Public adequacy asks whether the public categories alone determine the "
+        "estimand under the chosen hidden-reweighting class. If public adequacy is "
+        "`no`, then at least one public cell contains hidden cells with different "
+        "target rates, so the aggregate can move even when public cell shares are held "
+        "fixed.",
+        "",
+        "For each public fiber below, `range` is the max-minus-min hidden-cell target "
+        "rate inside that public cell. `contribution = mass * range`, so it is the "
+        "amount that fiber contributes to the overall interval width. The listed "
+        f"top fibers account for {percent(top_share)} of total transport ambiguity.",
         "",
         "## Worst Public Fibers",
     ]
-    for row in fiber_diagnostics(grouped, top=top):
+    for row in top_fibers:
         lines.extend(
             [
                 f"- {format_key(grouped.public_columns, row['public_value'])}",
@@ -443,12 +493,38 @@ def render_report(
         top=top,
     )
     if refinements:
-        lines.extend(["", "## One-Column Refinement Candidates"])
+        lines.extend(
+            [
+                "",
+                "## One-Column Refinement Candidates",
+                "",
+                "Each row asks: what if this hidden column were promoted into the public "
+                "representation? `reduction` is the drop in transport ambiguity, and "
+                "`public_cells` is the resulting number of public strata. This is a "
+                "measurement-value table: large reductions identify variables that "
+                "make the coarse public representation more stable, with the usual "
+                "tradeoff that more strata may increase sparsity.",
+            ]
+        )
         for row in refinements:
             lines.append(
                 f"- add {row['column']}: ambiguity={row['diameter']:.4f}, "
                 f"reduction={row['reduction']:.4f}, public_cells={row['public_cells']}"
             )
+    lines.extend(
+        [
+            "",
+            "## Analyst Notes",
+            "",
+            "- Treat very small hidden cells cautiously. Raising `--min-cell-weight` "
+            "shrinks the state space and reduces noisy one-off hidden-cell rates, but "
+            "it also changes the admissible hidden support.",
+            "- A wide interval means the chosen public categories are not stable for "
+            "this estimand under within-public-cell composition shift.",
+            "- A narrow interval does not prove causal validity; it says this specific "
+            "support/reweighting stress test leaves little residual ambiguity.",
+        ]
+    )
     return "\n".join(lines)
 
 

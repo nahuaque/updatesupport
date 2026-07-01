@@ -7,6 +7,7 @@ from examples.folktables_acs import (
     build_problem_from_rows,
     fiber_diagnostics,
     refinement_candidates,
+    render_report,
 )
 
 
@@ -71,6 +72,33 @@ class FolktablesExampleTests(unittest.TestCase):
         self.assertEqual(candidates[0]["column"], "hidden")
         self.assertAlmostEqual(candidates[0]["diameter"], 0.0)
         self.assertAlmostEqual(candidates[0]["reduction"], 0.6)
+
+    def test_report_includes_stats_analyst_interpretation(self):
+        rows = [
+            {"public": "A", "hidden": "x", TARGET_COLUMN: 0.0, "weight": 30},
+            {"public": "A", "hidden": "y", TARGET_COLUMN: 1.0, "weight": 30},
+            {"public": "B", "hidden": "z", TARGET_COLUMN: 0.5, "weight": 40},
+        ]
+        grouped = build_problem_from_rows(
+            rows,
+            public_columns=["public"],
+            hidden_columns=["public", "hidden"],
+            weight_column="weight",
+        )
+
+        report = render_report(
+            task="income",
+            grouped=grouped,
+            rows=rows,
+            candidate_columns=["hidden"],
+            top=1,
+            min_cell_weight=1,
+        )
+
+        self.assertIn("## Statistical Interpretation", report)
+        self.assertIn("not a sampling confidence interval", report)
+        self.assertIn("measurement-value table", report)
+        self.assertIn("## Analyst Notes", report)
 
 
 if __name__ == "__main__":

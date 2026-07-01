@@ -151,6 +151,7 @@ The script prints:
 - the observed target rate
 - the partial-identification interval under hidden reweighting
 - the observed-law transport ambiguity
+- a statistical interpretation of the interval and ambiguity
 - worst public fibers by ambiguity contribution
 - one-column refinements ranked by ambiguity reduction
 

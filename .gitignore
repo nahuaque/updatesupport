@@ -1,0 +1,36 @@
+# Local Python environments
+.venv/
+venv/
+env/
+
+# Python bytecode and test caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build and packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# Local data and downloaded example artifacts
+data/
+*.parquet
+*.feather
+
+# ChatGPT conversation exports and raw share pages
+chatgpt-*.html
+chatgpt-*.md
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
