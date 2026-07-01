@@ -87,6 +87,14 @@ The report asks:
 > aggregate move if education, income, region, or prior usage changed inside
 > those public cells?
 
+The Markdown report separates four quantities that should not be collapsed into
+one uncertainty statement:
+
+- the causal estimate supplied by the causal library
+- statistical uncertainty from the causal/statistical workflow
+- hidden-composition ambiguity from the update-support stress test
+- public refinement recommendations for improving the reporting representation
+
 ## Folktables ACS Causal-Effect Example
 
 The repository includes an executable ACS example that makes the handoff
@@ -324,6 +332,9 @@ Do not interpret the transport interval as a confidence interval.
 
 Do not use small ambiguity as evidence that confounding, overlap, selection, or
 model misspecification are solved.
+
+Do not present refinement candidates as causal adjustment recommendations unless
+the causal identification argument also supports that interpretation.
 
 The right claim is narrower:
 

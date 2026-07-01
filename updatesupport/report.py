@@ -178,6 +178,28 @@ class PublicDescentReport:
                 f"{_percent(self.top_fiber_contribution_share)} of total transport "
                 "ambiguity.",
                 "",
+                "## What This Report Separates",
+                "",
+                f"- Causal estimate / reported value: `{self.observed_label}` is the "
+                f"aggregate {self.target_description} supplied to `updatesupport`. "
+                "For causal workflows, this is where the causal estimator enters. "
+                "`updatesupport` does not identify the causal graph, fit the effect "
+                "model, or change the supplied hidden-cell target values.",
+                "- Statistical uncertainty: this report does not estimate standard "
+                "errors, confidence intervals, bootstrap intervals, survey-design "
+                "uncertainty, or uncertainty in the supplied causal/model estimates. "
+                "Report those separately using the causal, statistical, or survey "
+                "workflow that produced the target values.",
+                "- Hidden-composition ambiguity: the partial-ID interval and its "
+                "width are computed by holding the public distribution fixed and "
+                f"applying the selected Q stress test. Here that ambiguity is "
+                f"{self.interval.diameter:.4f}.",
+                "- Public refinement recommendations: candidate refinements are "
+                "variables that would make the public representation more stable "
+                "for this supplied target. They are reporting and measurement "
+                "recommendations, not causal adjustment recommendations by "
+                "themselves.",
+                "",
                 "## Worst Public Fibers",
             ]
         )
@@ -208,7 +230,11 @@ class PublicDescentReport:
                     "the resulting number of public strata. This is a "
                     "measurement-value table: large reductions identify variables "
                     "that make the coarse public representation more stable, with "
-                    "the usual tradeoff that more strata may increase sparsity.",
+                    "the usual tradeoff that more strata may increase sparsity. "
+                    "These recommendations address hidden-composition ambiguity in "
+                    "the reporting representation; they do not by themselves choose "
+                    "causal adjustment variables or account for statistical "
+                    "uncertainty.",
                 ]
             )
             for row in self.refinements:

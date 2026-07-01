@@ -66,9 +66,15 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertIn("- Observed value: 0.5000", markdown)
         self.assertIn("Observed-law partial-ID interval: [0.2000, 0.8000]", markdown)
         self.assertIn("## Statistical Interpretation", markdown)
+        self.assertIn("## What This Report Separates", markdown)
+        self.assertIn("Causal estimate / reported value", markdown)
+        self.assertIn("Statistical uncertainty", markdown)
+        self.assertIn("Hidden-composition ambiguity", markdown)
+        self.assertIn("Public refinement recommendations", markdown)
         self.assertIn("not a sampling confidence interval", markdown)
         self.assertIn("## Worst Public Fibers", markdown)
         self.assertIn("measurement-value table", markdown)
+        self.assertIn("reporting and measurement recommendations", markdown)
         self.assertIn("before=0.6000, after=0.0000", markdown)
         self.assertIn("reduction_pct=100.0%", markdown)
         self.assertIn("## Analyst Notes", markdown)
@@ -163,6 +169,9 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertAlmostEqual(report.interval.upper, 0.20)
         self.assertIn("- Observed effect estimate: 0.1400", markdown)
         self.assertIn("aggregate estimated treatment effect", markdown)
+        self.assertIn("where the causal estimator enters", markdown)
+        self.assertIn("does not identify the causal graph", markdown)
+        self.assertIn("not causal adjustment recommendations", markdown)
 
     def test_audit_effects_accepts_effect_column_alias(self):
         report = us.audit_effects(

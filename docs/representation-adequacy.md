@@ -60,7 +60,11 @@ A useful analyst-facing report should include:
   absolute reduction, and percentage reduction.
 
 This report should be readable without requiring the audience to know the
-underlying finite-support theory.
+underlying finite-support theory. In causal or model-based workflows, the report
+should also keep four ideas separate: the supplied causal/model estimate,
+statistical uncertainty from the estimation workflow, hidden-composition
+ambiguity from the update-support stress test, and public refinement
+recommendations for the reporting representation.
 
 ## What `Q` Means
 
