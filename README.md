@@ -134,8 +134,20 @@ test. The first built-in presets are:
   arbitrary reweighting among retained hidden cells inside each public cell.
 - `q=us.q_bounded_shift(radius)`: fix the observed public law and constrain each
   hidden-cell mass to stay within `(1 +/- radius)` times its observed mass.
+- `q=us.q_tv_budget(radius)`: fix the observed public law and constrain total
+  variation distance from the observed hidden distribution. This uses the
+  optional CVXPY backend.
+- `q=us.q_wasserstein(cost, radius)`: fix the observed public law and constrain
+  Wasserstein distance from the observed hidden distribution using an explicit
+  hidden-cell cost matrix. This uses the optional CVXPY backend.
 - `q="observed"` or `us.q_observed()`: use only the observed hidden distribution,
   giving zero hidden-composition ambiguity.
+
+Install the CVXPY extra before using TV or Wasserstein presets:
+
+```bash
+uv sync --extra cvxpy
+```
 
 ## Public Descent Report
 
@@ -293,8 +305,10 @@ Implemented now:
 - `FiniteEnvironments`
 - `LineSegment`
 - `PolytopeEnvironments` via SciPy `linprog`
+- `CvxpyEnvironments` for convex finite-environment restrictions
 - `from_dataframe(...)` for compiling grouped tabular data into a finite problem
-- Q presets: `saturated`, `observed`, and `bounded_shift`
+- Q presets: `saturated`, `observed`, `bounded_shift`, `tv_budget`, and
+  `wasserstein`
 - `PublicDescentReport` with Markdown output
 - `public_descent_report(...)` for analyst-facing report objects
 - `recommend_refinements(...)` for ranking candidate hidden variables
@@ -309,8 +323,10 @@ Implemented now:
 
 Planned next slices:
 
-- richer Q presets, including total-variation or L1 budgets around the observed
-  hidden distribution
+- additional convex Q presets such as KL or chi-square divergence budgets
+- experimental transport types such as Gromov-Wasserstein once the comparison
+  object is a pair of relational hidden-state geometries rather than one fixed
+  hidden-cell cost matrix
 
 ## Linear-Polytope Backend
 
@@ -338,6 +354,28 @@ print(result.lower, result.upper, result.diameter)
 
 The simplex constraints are implicit. Additional constraints can be supplied
 with `us.leq(...)`, `us.geq(...)`, `us.eq(...)`, or `us.linear_constraint(...)`.
+
+## CVXPY Backend
+
+`CvxpyEnvironments` supports the same finite-state simplex and linear
+constraints, plus custom convex constraints over the state-probability vector:
+
+```python
+def cap_b(_cp, q, _states, state_index):
+    return (q[state_index["b"]] <= 0.75,)
+
+problem = us.FiniteProblem(
+    states=["a", "b"],
+    public={"a": "o", "b": "o"},
+    estimand={"a": 0.0, "b": 1.0},
+    environments=us.CvxpyEnvironments(
+        fixed_public_law={"o": 1.0},
+        constraint_builders=(cap_b,),
+    ),
+)
+```
+
+The TV and Wasserstein Q presets are thin wrappers around this backend.
 
 ## Theory Example: No Least Support
 

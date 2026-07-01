@@ -2,6 +2,8 @@
 
 from .data import GroupedProblem, from_dataframe
 from .environments import (
+    CvxpyEnvironments,
+    CvxpyError,
     FiniteEnvironments,
     LinearConstraint,
     LineSegment,
@@ -15,7 +17,14 @@ from .environments import (
 )
 from .partition import Partition, PartitionError
 from .problem import FiniteProblem, TooManyPartitions
-from .presets import QPreset, q_bounded_shift, q_observed, q_saturated
+from .presets import (
+    QPreset,
+    q_bounded_shift,
+    q_observed,
+    q_saturated,
+    q_tv_budget,
+    q_wasserstein,
+)
 from .report import (
     PublicDescentReport,
     PublicFiberDiagnostic,
@@ -38,6 +47,8 @@ from .results import (
 __all__ = [
     "AdequacyResult",
     "CardinalGapResult",
+    "CvxpyEnvironments",
+    "CvxpyError",
     "eq",
     "FiniteEnvironments",
     "FiniteProblem",
@@ -62,6 +73,8 @@ __all__ = [
     "q_bounded_shift",
     "q_observed",
     "q_saturated",
+    "q_tv_budget",
+    "q_wasserstein",
     "recommend_refinements",
     "RefinementCandidate",
     "SensitivityReport",

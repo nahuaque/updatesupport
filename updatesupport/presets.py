@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Hashable, Mapping
+from math import isfinite
+from typing import Any, Hashable, Mapping, Sequence
 
 from .environments import (
+    CvxpyEnvironments,
     Environment,
     FiniteEnvironments,
     PolytopeEnvironments,
@@ -20,6 +22,8 @@ class QPreset:
 
     name: str
     radius: float | None = None
+    cost: Any | None = None
+    backend: str | None = None
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,23 @@ def q_bounded_shift(radius: float = 0.5) -> QPreset:
     """Limit each hidden-cell mass to a relative band around its observed mass."""
 
     return QPreset("bounded_shift", radius=float(radius))
+
+
+def q_tv_budget(radius: float, *, backend: str = "cvxpy") -> QPreset:
+    """Constrain total variation distance from the observed hidden distribution."""
+
+    return QPreset("tv_budget", radius=float(radius), backend=backend)
+
+
+def q_wasserstein(
+    cost: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
+    radius: float,
+    *,
+    backend: str = "cvxpy",
+) -> QPreset:
+    """Constrain Wasserstein distance using an explicit hidden-cell cost matrix."""
+
+    return QPreset("wasserstein", radius=float(radius), cost=cost, backend=backend)
 
 
 def resolve_q_environment(
@@ -111,6 +132,44 @@ def resolve_q_environment(
             ),
         )
 
+    if preset.name == "tv_budget":
+        _require_backend(preset, "cvxpy")
+        radius = _tv_radius(preset)
+        return QEnvironment(
+            environment=CvxpyEnvironments(
+                fixed_public_law=public_law,
+                constraint_builders=(_tv_constraint_builder(cell_weights, radius),),
+                name=q_name(preset),
+            ),
+            preset=preset,
+            name=q_name(preset),
+            description=(
+                "fixed observed public law with total variation distance from "
+                f"the observed hidden distribution <= {radius:g}"
+            ),
+        )
+
+    if preset.name == "wasserstein":
+        _require_backend(preset, "cvxpy")
+        radius = _wasserstein_radius(preset)
+        if preset.cost is None:
+            raise ValueError("q_wasserstein requires an explicit cost matrix")
+        return QEnvironment(
+            environment=CvxpyEnvironments(
+                fixed_public_law=public_law,
+                constraint_builders=(
+                    _wasserstein_constraint_builder(cell_weights, preset.cost, radius),
+                ),
+                name=q_name(preset),
+            ),
+            preset=preset,
+            name=q_name(preset),
+            description=(
+                "fixed observed public law with Wasserstein cost from the "
+                f"observed hidden distribution <= {radius:g}"
+            ),
+        )
+
     raise ValueError(f"unsupported Q preset: {preset.name!r}")
 
 
@@ -125,15 +184,23 @@ def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | No
         return None
 
     if q_radius is not None:
-        if preset.name != "bounded_shift":
-            raise ValueError("q_radius is only valid for q='bounded_shift'")
+        if preset.name not in {"bounded_shift", "tv_budget", "wasserstein"}:
+            raise ValueError(
+                "q_radius is only valid for bounded, TV, or Wasserstein Q presets"
+            )
         if preset.radius is not None and float(preset.radius) != float(q_radius):
             raise ValueError("q_radius conflicts with the QPreset radius")
-        preset = QPreset(preset.name, float(q_radius))
+        preset = QPreset(preset.name, float(q_radius), preset.cost, preset.backend)
 
     if preset.name == "bounded_shift":
         radius = _bounded_radius(preset)
-        preset = QPreset(preset.name, radius)
+        preset = QPreset(preset.name, radius, preset.cost, preset.backend)
+    elif preset.name == "tv_budget":
+        radius = _tv_radius(preset)
+        preset = QPreset(preset.name, radius, preset.cost, preset.backend)
+    elif preset.name == "wasserstein":
+        radius = _wasserstein_radius(preset)
+        preset = QPreset(preset.name, radius, preset.cost, preset.backend)
 
     return preset
 
@@ -144,6 +211,10 @@ def q_name(q: Any, *, q_radius: float | None = None) -> str:
         return str(getattr(q, "name", q.__class__.__name__))
     if preset.name == "bounded_shift":
         return f"bounded_shift(radius={_bounded_radius(preset):g})"
+    if preset.name == "tv_budget":
+        return f"tv_budget(radius={_tv_radius(preset):g})"
+    if preset.name == "wasserstein":
+        return f"wasserstein(radius={_wasserstein_radius(preset):g})"
     return preset.name
 
 
@@ -164,6 +235,18 @@ def q_description(q: Any, *, q_radius: float | None = None) -> str:
             "fixed observed public law with each hidden-cell mass constrained "
             f"to +/- {100 * radius:.1f}% of its observed mass"
         )
+    if preset.name == "tv_budget":
+        radius = _tv_radius(preset)
+        return (
+            "fixed observed public law with total variation distance from "
+            f"the observed hidden distribution <= {radius:g}"
+        )
+    if preset.name == "wasserstein":
+        radius = _wasserstein_radius(preset)
+        return (
+            "fixed observed public law with Wasserstein cost from the observed "
+            f"hidden distribution <= {radius:g}"
+        )
     raise ValueError(f"unsupported Q preset: {preset.name!r}")
 
 
@@ -178,13 +261,21 @@ def _canonical_preset(preset: QPreset) -> QPreset:
         "bounded": "bounded_shift",
         "bounded-shift": "bounded_shift",
         "bounded_shift": "bounded_shift",
+        "total-variation": "tv_budget",
+        "total_variation": "tv_budget",
+        "tv": "tv_budget",
+        "tv_budget": "tv_budget",
+        "w1": "wasserstein",
+        "wasserstein": "wasserstein",
     }
     key = preset.name.strip().lower()
     try:
         name = aliases[key]
     except KeyError as exc:
         raise ValueError(f"unsupported Q preset: {preset.name!r}") from exc
-    return QPreset(name=name, radius=preset.radius)
+    return QPreset(
+        name=name, radius=preset.radius, cost=preset.cost, backend=preset.backend
+    )
 
 
 def _bounded_radius(preset: QPreset) -> float:
@@ -192,6 +283,119 @@ def _bounded_radius(preset: QPreset) -> float:
     if radius < 0:
         raise ValueError("bounded_shift radius must be non-negative")
     return radius
+
+
+def _tv_radius(preset: QPreset) -> float:
+    if preset.radius is None:
+        raise ValueError("tv_budget radius is required")
+    radius = float(preset.radius)
+    if radius < 0:
+        raise ValueError("tv_budget radius must be non-negative")
+    return radius
+
+
+def _wasserstein_radius(preset: QPreset) -> float:
+    if preset.radius is None:
+        raise ValueError("wasserstein radius is required")
+    radius = float(preset.radius)
+    if radius < 0:
+        raise ValueError("wasserstein radius must be non-negative")
+    return radius
+
+
+def _require_backend(preset: QPreset, expected: str) -> None:
+    backend = (preset.backend or expected).strip().lower()
+    if backend != expected:
+        raise ValueError(f"{preset.name} currently supports only backend={expected!r}")
+
+
+def _tv_constraint_builder(cell_weights: Mapping[Hashable, float], radius: float):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        return (cp.norm1(q - observed) <= 2.0 * radius,)
+
+    return build
+
+
+def _wasserstein_constraint_builder(
+    cell_weights: Mapping[Hashable, float],
+    cost: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
+    radius: float,
+):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        cost_matrix = _coerce_cost_matrix(cost, states)
+        gamma = cp.Variable((len(states), len(states)), nonneg=True)
+        return (
+            cp.sum(gamma, axis=1) == observed,
+            cp.sum(gamma, axis=0) == q,
+            cp.sum(cp.multiply(cost_matrix, gamma)) <= radius,
+        )
+
+    return build
+
+
+def _coerce_cost_matrix(
+    cost: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
+    states: Sequence[Hashable],
+):
+    import numpy as np
+
+    n = len(states)
+    if isinstance(cost, Mapping):
+        rows = []
+        missing = []
+        for left_state in states:
+            row = []
+            for right_state in states:
+                key = (left_state, right_state)
+                if key in cost:
+                    row.append(_nonnegative_cost(cost[key], key=key))
+                elif left_state == right_state:
+                    row.append(0.0)
+                else:
+                    missing.append(key)
+                    row.append(0.0)
+            rows.append(row)
+        if missing:
+            preview = ", ".join(repr(key) for key in missing[:3])
+            if len(missing) > 3:
+                preview += ", ..."
+            raise ValueError(f"wasserstein cost matrix is missing pairs: {preview}")
+        return np.array(rows, dtype=float)
+
+    if len(cost) != n:
+        raise ValueError("wasserstein cost matrix must have one row per hidden state")
+    rows = []
+    for row_index, row in enumerate(cost):
+        if len(row) != n:
+            raise ValueError(
+                "wasserstein cost matrix must have one column per hidden state"
+            )
+        rows.append(
+            [
+                _nonnegative_cost(value, key=(states[row_index], states[column_index]))
+                for column_index, value in enumerate(row)
+            ]
+        )
+    return np.array(rows, dtype=float)
+
+
+def _nonnegative_cost(value: float, *, key: tuple[Hashable, Hashable]) -> float:
+    cost = float(value)
+    if not isfinite(cost) or cost < 0:
+        raise ValueError(
+            f"wasserstein cost for {key!r} must be finite and non-negative"
+        )
+    return cost
 
 
 def _public_law_constraints(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isclose
-from typing import Hashable, Mapping, Protocol, Sequence
+from typing import Any, Callable, Hashable, Mapping, Protocol, Sequence
 
 from .partition import Partition
 from .results import AdequacyResult, TransportResult, Witness
@@ -12,6 +12,10 @@ from .results import AdequacyResult, TransportResult, Witness
 
 class LPError(RuntimeError):
     """Raised when a linear program cannot be solved successfully."""
+
+
+class CvxpyError(RuntimeError):
+    """Raised when a CVXPY optimization problem cannot be solved successfully."""
 
 
 class Environment(Protocol):
@@ -30,6 +34,11 @@ def _dict_from_public_vector(problem, vector: Sequence[float]) -> dict[Hashable,
     return {
         public_value: vector[i] for i, public_value in enumerate(problem.public_values)
     }
+
+
+CvxpyConstraintBuilder = Callable[
+    [Any, Any, tuple[Hashable, ...], Mapping[Hashable, int]], Sequence[Any]
+]
 
 
 @dataclass(frozen=True)
@@ -679,3 +688,270 @@ class PolytopeEnvironments:
             )
             equalities.append((indicator, float(public_law[public_value])))
         return tuple(equalities)
+
+
+@dataclass(frozen=True)
+class CvxpyEnvironments:
+    """A convex finite environment class ``Q`` solved with CVXPY.
+
+    The probability simplex is implicit. Linear constraints use the same helper
+    objects accepted by ``PolytopeEnvironments``. Extra convex restrictions can
+    be supplied as builders receiving ``(cp, q, states, state_index)`` and
+    returning CVXPY constraints for the probability vector ``q``.
+    """
+
+    constraints: Sequence[
+        LinearConstraint | tuple[Mapping[Hashable, float] | Sequence[float], str, float]
+    ] = ()
+    constraint_builders: Sequence[CvxpyConstraintBuilder] = ()
+    fixed_public_law: Mapping[Hashable, float] | None = None
+    solver: str | None = None
+    solver_options: Mapping[str, Any] | None = None
+    name: str = "cvxpy"
+
+    def check_support(self, problem, support: Partition) -> AdequacyResult:
+        problem._validate_support_over_public(support)
+        q1, q2, gap = self._max_support_disagreement(problem, support)
+        if gap <= problem.tol:
+            return AdequacyResult(adequate=True, support=support)
+
+        witness = problem._witness_from_vectors(q1, q2, support)
+        return AdequacyResult(
+            adequate=False,
+            support=support,
+            gap=witness.gap,
+            witness=witness,
+            reason="convex environment contains equal-support laws with different estimand values",
+        )
+
+    def local_transport(
+        self, problem, public_law: Mapping[Hashable, float]
+    ) -> TransportResult:
+        p = problem._coerce_public_law(public_law)
+        h = self._estimand_vector(problem)
+
+        q_lower, lower = self._solve_single(problem, h, maximize=False, public_law=p)
+        q_upper, upper = self._solve_single(problem, h, maximize=True, public_law=p)
+        return TransportResult(
+            lower=lower,
+            upper=upper,
+            diameter=max(0.0, upper - lower),
+            public_law=p,
+            q_lower=problem._distribution_from_vector(q_lower),
+            q_upper=problem._distribution_from_vector(q_upper),
+        )
+
+    def global_transport(self, problem) -> TransportResult:
+        if self.fixed_public_law is not None:
+            return self.local_transport(problem, self.fixed_public_law)
+
+        q1, q2, gap = self._max_support_disagreement(
+            problem, problem.public_partition()
+        )
+        psi_q1 = problem._dot_estimand(q1)
+        psi_q2 = problem._dot_estimand(q2)
+        if psi_q1 <= psi_q2:
+            q_lower, q_upper = q1, q2
+            lower, upper = psi_q1, psi_q2
+        else:
+            q_lower, q_upper = q2, q1
+            lower, upper = psi_q2, psi_q1
+        return TransportResult(
+            lower=lower,
+            upper=upper,
+            diameter=gap,
+            public_law=problem.public_law(q_lower),
+            q_lower=problem._distribution_from_vector(q_lower),
+            q_upper=problem._distribution_from_vector(q_upper),
+        )
+
+    def _normalized_constraints(self) -> tuple[LinearConstraint, ...]:
+        normalized = []
+        for constraint in self.constraints:
+            if isinstance(constraint, LinearConstraint):
+                normalized.append(constraint)
+                continue
+            if len(constraint) != 3:
+                raise ValueError("constraint tuples must be (coefficients, sense, rhs)")
+            coefficients, sense, rhs = constraint
+            normalized.append(LinearConstraint(coefficients, sense, float(rhs)))
+        return tuple(normalized)
+
+    def _solve_single(
+        self,
+        problem,
+        objective: Sequence[float],
+        *,
+        maximize: bool,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> tuple[tuple[float, ...], float]:
+        import numpy as np
+
+        cp = self._cvxpy()
+        q = cp.Variable(len(problem.states))
+        objective_vector = np.array(objective, dtype=float)
+        objective_expr = cp.sum(cp.multiply(objective_vector, q))
+        cvx_problem = cp.Problem(
+            cp.Maximize(objective_expr) if maximize else cp.Minimize(objective_expr),
+            self._constraints_for_variable(cp, problem, q, public_law=public_law),
+        )
+        self._solve_problem(cvx_problem)
+        vector = self._clean_vector(problem, q.value)
+        return vector, float(np.dot(objective_vector, vector))
+
+    def _solve_pair(
+        self,
+        problem,
+        objective: Sequence[float],
+        *,
+        support: Partition,
+    ) -> tuple[tuple[float, ...], tuple[float, ...], float]:
+        import numpy as np
+
+        cp = self._cvxpy()
+        n = len(problem.states)
+        q1 = cp.Variable(n)
+        q2 = cp.Variable(n)
+        objective_vector = np.array(objective, dtype=float)
+        constraints = [
+            *self._constraints_for_variable(cp, problem, q1),
+            *self._constraints_for_variable(cp, problem, q2),
+        ]
+        state_index = {state: i for i, state in enumerate(problem.states)}
+        for block in support.blocks:
+            indices = [state_index[state] for state in block]
+            constraints.append(cp.sum(q1[indices]) == cp.sum(q2[indices]))
+
+        cvx_problem = cp.Problem(
+            cp.Maximize(cp.sum(cp.multiply(objective_vector, q1 - q2))),
+            constraints,
+        )
+        self._solve_problem(cvx_problem)
+        q1_vector = self._clean_vector(problem, q1.value)
+        q2_vector = self._clean_vector(problem, q2.value)
+        value = float(
+            np.dot(objective_vector, np.array(q1_vector) - np.array(q2_vector))
+        )
+        return q1_vector, q2_vector, value
+
+    def _max_support_disagreement(
+        self, problem, support: Partition
+    ) -> tuple[tuple[float, ...], tuple[float, ...], float]:
+        q1, q2, value = self._solve_pair(
+            problem, self._estimand_vector(problem), support=support
+        )
+        return q1, q2, max(0.0, abs(value))
+
+    def _constraints_for_variable(
+        self,
+        cp,
+        problem,
+        q,
+        *,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> list[Any]:
+        constraints = [q >= 0, cp.sum(q) == 1]
+        constraints.extend(self._linear_constraints(cp, problem, q))
+
+        fixed_public_law = self._fixed_public_law(problem)
+        if fixed_public_law is not None:
+            if public_law is not None and not self._same_public_law(
+                problem, fixed_public_law, public_law
+            ):
+                raise ValueError("requested public law conflicts with fixed_public_law")
+            constraints.extend(
+                self._public_law_constraints(cp, problem, q, fixed_public_law)
+            )
+        elif public_law is not None:
+            constraints.extend(self._public_law_constraints(cp, problem, q, public_law))
+
+        state_index = {state: i for i, state in enumerate(problem.states)}
+        states = tuple(problem.states)
+        for builder in self.constraint_builders:
+            constraints.extend(builder(cp, q, states, state_index))
+        return constraints
+
+    def _linear_constraints(self, cp, problem, q) -> list[Any]:
+        constraints = []
+        for constraint in self._normalized_constraints():
+            vector = problem._coerce_vector(constraint.coefficients)
+            expr = cp.sum(cp.multiply(tuple(float(value) for value in vector), q))
+            if constraint.sense == "<=":
+                constraints.append(expr <= float(constraint.rhs))
+            elif constraint.sense == ">=":
+                constraints.append(expr >= float(constraint.rhs))
+            elif constraint.sense == "==":
+                constraints.append(expr == float(constraint.rhs))
+            else:
+                raise ValueError(f"unsupported constraint sense: {constraint.sense!r}")
+        return constraints
+
+    def _public_law_constraints(
+        self,
+        cp,
+        problem,
+        q,
+        public_law: Mapping[Hashable, float],
+    ) -> list[Any]:
+        state_index = {state: i for i, state in enumerate(problem.states)}
+        constraints = []
+        for public_value in problem.public_values:
+            indices = [
+                state_index[state] for state in problem.public_fibers[public_value]
+            ]
+            constraints.append(cp.sum(q[indices]) == float(public_law[public_value]))
+        return constraints
+
+    def _fixed_public_law(self, problem) -> dict[Hashable, float] | None:
+        if self.fixed_public_law is None:
+            return None
+        return problem._coerce_public_law(self.fixed_public_law)
+
+    def _same_public_law(
+        self,
+        problem,
+        left: Mapping[Hashable, float],
+        right: Mapping[Hashable, float],
+    ) -> bool:
+        return problem._same_vector(
+            tuple(left[value] for value in problem.public_values),
+            tuple(right[value] for value in problem.public_values),
+        )
+
+    def _solve_problem(self, problem) -> None:
+        options = dict(self.solver_options or {})
+        try:
+            if self.solver is None:
+                problem.solve(**options)
+            else:
+                problem.solve(solver=self.solver, **options)
+        except Exception as exc:  # pragma: no cover - solver exceptions vary by backend
+            raise CvxpyError(str(exc)) from exc
+
+        if problem.status not in {"optimal", "optimal_inaccurate"}:
+            raise CvxpyError(f"CVXPY problem status: {problem.status}")
+
+    def _clean_vector(self, problem, value) -> tuple[float, ...]:
+        if value is None:
+            raise CvxpyError("CVXPY did not return a solution vector")
+        vector = tuple(float(item) for item in value)
+        if any(item < -1e-7 for item in vector):
+            raise CvxpyError("CVXPY returned a negative probability")
+        return tuple(
+            0.0 if item < 0.0 or abs(item) <= problem.tol else item
+            for item in vector
+        )
+
+    def _estimand_vector(self, problem) -> tuple[float, ...]:
+        return tuple(problem.estimand_map[state] for state in problem.states)
+
+    @staticmethod
+    def _cvxpy():
+        try:
+            import cvxpy as cp
+        except ImportError as exc:  # pragma: no cover - exercised without optional dep
+            raise CvxpyError(
+                "CVXPY support is optional; install it with "
+                "`uv sync --extra cvxpy` or `pip install updatesupport[cvxpy]`."
+            ) from exc
+        return cp

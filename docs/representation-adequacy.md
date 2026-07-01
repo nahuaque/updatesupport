@@ -152,11 +152,28 @@ report = us.public_descent_report(
 print(report.to_markdown())
 ```
 
-Implementation should land in this order:
+The Q preset surface now supports several levels of conservatism:
 
-1. richer Q presets, especially total-variation or L1 budgets around the observed
-   hidden distribution.
-2. deeper sensitivity reporting, including side-by-side refinement stability.
+- `q="saturated"`: arbitrary hidden reweighting inside each observed public
+  cell.
+- `q=us.q_bounded_shift(radius)`: cellwise relative mass bands around the
+  observed hidden distribution.
+- `q=us.q_tv_budget(radius)`: total-variation budget around the observed hidden
+  distribution, using the optional CVXPY backend.
+- `q=us.q_wasserstein(cost, radius)`: Wasserstein budget with an explicit
+  hidden-cell cost matrix, using the optional CVXPY backend.
+- `q="observed"`: no hidden-composition shift.
+
+Install the CVXPY extra before using TV or Wasserstein presets:
+
+```bash
+uv sync --extra cvxpy
+```
+
+The next implementation slices should focus on deeper sensitivity reporting,
+additional convex divergence presets, and experimental relational transport
+types such as Gromov-Wasserstein only when the application supplies two
+comparable hidden-state geometries.
 
 The documentation should keep the ACSIncome case study as the primary example
 and put the finite-support theory underneath it.
