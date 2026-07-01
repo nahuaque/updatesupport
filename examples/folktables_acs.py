@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections import defaultdict
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -23,15 +21,7 @@ import updatesupport as us
 TARGET_COLUMN = "__target__"
 
 
-@dataclass(frozen=True)
-class GroupedProblem:
-    problem: us.FiniteProblem
-    public_law: dict[tuple[Any, ...], float]
-    public_columns: tuple[str, ...]
-    hidden_columns: tuple[str, ...]
-    target_column: str
-    total_weight: float
-    cell_weights: dict[tuple[Any, ...], float]
+GroupedProblem = us.GroupedProblem
 
 
 def build_problem_from_rows(
@@ -43,67 +33,15 @@ def build_problem_from_rows(
     weight_column: str | None = None,
     min_cell_weight: float = 1.0,
 ) -> GroupedProblem:
-    """Aggregate rows into hidden cells and return an update-support problem."""
+    """Compatibility wrapper around :func:`updatesupport.from_dataframe`."""
 
-    public_columns = tuple(public_columns)
-    hidden_columns = tuple(hidden_columns)
-    missing_public = [
-        column for column in public_columns if column not in hidden_columns
-    ]
-    if missing_public:
-        raise ValueError(
-            f"public columns must also be hidden columns: {missing_public!r}"
-        )
-
-    cell_weight: dict[tuple[Any, ...], float] = defaultdict(float)
-    cell_target_sum: dict[tuple[Any, ...], float] = defaultdict(float)
-    public_by_cell: dict[tuple[Any, ...], tuple[Any, ...]] = {}
-
-    for row in rows:
-        hidden_key = tuple(row[column] for column in hidden_columns)
-        public_key = tuple(row[column] for column in public_columns)
-        weight = (
-            float(row.get(weight_column, 1.0)) if weight_column is not None else 1.0
-        )
-        if weight < 0:
-            raise ValueError("row weights must be non-negative")
-        target = float(row[target_column])
-        cell_weight[hidden_key] += weight
-        cell_target_sum[hidden_key] += weight * target
-        public_by_cell[hidden_key] = public_key
-
-    kept_cells = [
-        cell
-        for cell, weight in cell_weight.items()
-        if weight >= min_cell_weight and weight > 0
-    ]
-    if not kept_cells:
-        raise ValueError("no hidden cells remain after applying min_cell_weight")
-
-    total_weight = sum(cell_weight[cell] for cell in kept_cells)
-    states = tuple(sorted(kept_cells, key=str))
-    public = {cell: public_by_cell[cell] for cell in states}
-    estimand = {cell: cell_target_sum[cell] / cell_weight[cell] for cell in states}
-    normalized_cell_weight = {cell: cell_weight[cell] / total_weight for cell in states}
-
-    public_law: dict[tuple[Any, ...], float] = defaultdict(float)
-    for cell, mass in normalized_cell_weight.items():
-        public_law[public[cell]] += mass
-
-    problem = us.FiniteProblem(
-        states=states,
-        public=public,
-        estimand=estimand,
-        environments=us.PublicFiberSaturated.fixed(dict(public_law)),
-    )
-    return GroupedProblem(
-        problem=problem,
-        public_law=dict(public_law),
+    return us.from_dataframe(
+        rows,
         public_columns=public_columns,
         hidden_columns=hidden_columns,
         target_column=target_column,
-        total_weight=total_weight,
-        cell_weights=normalized_cell_weight,
+        weight_column=weight_column,
+        min_cell_weight=min_cell_weight,
     )
 
 

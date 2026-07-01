@@ -1,5 +1,6 @@
-"""Finite causal support adequacy and transport ambiguity in Python."""
+"""Representation adequacy and transport-stability auditing in Python."""
 
+from .data import GroupedProblem, from_dataframe
 from .environments import (
     FiniteEnvironments,
     LinearConstraint,
@@ -28,7 +29,9 @@ __all__ = [
     "eq",
     "FiniteEnvironments",
     "FiniteProblem",
+    "from_dataframe",
     "geq",
+    "GroupedProblem",
     "leq",
     "LeastSupportResult",
     "LinearConstraint",

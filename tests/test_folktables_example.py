@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+import updatesupport as us
+
 from examples.folktables_acs import (
     TARGET_COLUMN,
     build_problem_from_rows,
@@ -29,6 +31,7 @@ class FolktablesExampleTests(unittest.TestCase):
         interval = grouped.problem.global_transport_modulus()
         diagnostics = fiber_diagnostics(grouped, top=1)
 
+        self.assertIsInstance(grouped, us.GroupedProblem)
         self.assertFalse(grouped.problem.is_public_adequate())
         self.assertAlmostEqual(interval.lower, 0.2)
         self.assertAlmostEqual(interval.upper, 0.8)

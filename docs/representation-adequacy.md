@@ -111,7 +111,12 @@ against hidden refinements while preserving the public law.
 
 ## Near-Term Implementation Slices
 
-The next API surface should make the analyst workflow direct:
+The first compiler slice is now exposed as `updatesupport.from_dataframe(...)`.
+It compiles weighted tabular observations into a finite problem by grouping rows
+into retained hidden cells, estimating one target value per hidden cell, and
+fixing the observed public law.
+
+The next report API should make the analyst workflow direct:
 
 ```python
 report = us.public_descent_report(
@@ -129,13 +134,12 @@ print(report.to_markdown())
 
 Implementation should land in this order:
 
-1. `from_dataframe(...)`: compile weighted tabular data into a finite problem.
-2. `PublicDescentReport`: store observed value, stress interval, ambiguity,
+1. `PublicDescentReport`: store observed value, stress interval, ambiguity,
    adequacy, worst fibers, and refinements.
-3. `recommend_refinements(...)`: rank candidate hidden variables by ambiguity
+2. `recommend_refinements(...)`: rank candidate hidden variables by ambiguity
    reduction.
-4. named `Q` presets: make stress-test assumptions explicit and repeatable.
-5. sensitivity reports: vary `min_cell_weight`, hidden columns, and `Q`.
+3. named `Q` presets: make stress-test assumptions explicit and repeatable.
+4. sensitivity reports: vary `min_cell_weight`, hidden columns, and `Q`.
 
 The documentation should keep the ACSIncome case study as the primary example
 and put the finite-support theory underneath it.

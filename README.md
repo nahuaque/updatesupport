@@ -91,6 +91,34 @@ The library then checks whether a public or refined support is adequate and
 quantifies the remaining ambiguity among admissible environments that share the
 same public law.
 
+## Tabular Compiler
+
+Use `from_dataframe(...)` to compile a pandas-like dataframe or iterable of row
+mappings into a finite problem:
+
+```python
+import updatesupport as us
+
+grouped = us.from_dataframe(
+    rows_or_frame,
+    public=["AGE_BAND", "EDU_BAND", "SEX"],
+    hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND"],
+    target="__target__",
+    weight="PWGTP",
+    min_cell_weight=25,
+)
+
+interval = grouped.problem.global_transport_modulus()
+
+print(grouped.public_law)
+print(interval.lower, interval.upper, interval.diameter)
+```
+
+Each retained hidden cell becomes one finite state. The estimand value for that
+state is the weighted empirical target mean inside the cell, and the environment
+fixes the observed public law while allowing saturated reweighting inside public
+fibers.
+
 ## Public-Fiber-Saturated Example
 
 When all reweightings inside public fibers are admissible, the transport
@@ -198,6 +226,7 @@ Implemented now:
 - `FiniteEnvironments`
 - `LineSegment`
 - `PolytopeEnvironments` via SciPy `linprog`
+- `from_dataframe(...)` for compiling grouped tabular data into a finite problem
 - adequacy checks with witnesses
 - adequate, minimal, and least support enumeration for small finite problems
 - local and global transport moduli
@@ -207,7 +236,6 @@ Implemented now:
 
 Planned next slices:
 
-- `from_dataframe(...)` for compiling grouped tabular data into a finite problem
 - `public_descent_report(...)` for analyst-facing report objects
 - `recommend_refinements(...)` for ranking candidate hidden variables
 - named `Q` presets for common stress tests

@@ -124,10 +124,11 @@ class PublicFiberSaturated:
 
         if worst_gap <= problem.tol:
             return AdequacyResult(adequate=True, support=support)
+        if worst_pair is None:
+            raise RuntimeError("inadequate support did not produce a witness pair")
 
         q1 = {state: 0.0 for state in problem.states}
         q2 = {state: 0.0 for state in problem.states}
-        assert worst_pair is not None
         q1[worst_pair[0]] = 1.0
         q2[worst_pair[1]] = 1.0
         witness = Witness(
@@ -232,7 +233,8 @@ class FiniteEnvironments:
 
         if best_gap <= problem.tol:
             return AdequacyResult(adequate=True, support=support)
-        assert best_pair is not None
+        if best_pair is None:
+            raise RuntimeError("inadequate support did not produce a witness pair")
         witness = problem._witness_from_vectors(best_pair[0], best_pair[1], support)
         return AdequacyResult(
             adequate=False,
@@ -279,7 +281,8 @@ class FiniteEnvironments:
             )
             if best is None or result.diameter > best.diameter:
                 best = result
-        assert best is not None
+        if best is None:
+            raise RuntimeError("finite environments did not produce a transport result")
         return best
 
 
