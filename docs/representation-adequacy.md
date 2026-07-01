@@ -188,6 +188,10 @@ Install the CVXPY extra before using TV, chi-square, KL, or Wasserstein presets:
 uv sync --extra cvxpy
 ```
 
+For dense radius sweeps on a fixed compiled state space, pass
+`backend="parameterized_cvxpy"` to those presets and update the environment's
+`radius` parameter between solves.
+
 The next implementation slices should focus on deeper sensitivity reporting and
 experimental relational transport types such as Gromov-Wasserstein only when the
 application supplies two comparable hidden-state geometries. For current preset

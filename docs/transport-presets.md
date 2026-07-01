@@ -383,6 +383,32 @@ Good reports state:
 - whether CVXPY-backed presets were used
 - the observed value and ambiguity interval under each scenario
 
+## Parameterized CVXPY Sweeps
+
+The CVXPY-backed TV, chi-square, KL, and Wasserstein presets can use an opt-in
+parameterized backend:
+
+```python
+grouped = us.from_dataframe(
+    rows,
+    public=["age_band", "sex"],
+    hidden=["age_band", "sex", "occupation"],
+    target="target",
+    q=us.q_tv_budget(0.10, backend="parameterized_cvxpy"),
+)
+
+interval_010 = grouped.problem.global_transport_modulus()
+
+grouped.problem.environments.set_parameter("radius", 0.20)
+interval_020 = grouped.problem.global_transport_modulus()
+```
+
+This reuses cached CVXPY problem objects for the fixed state space and updates
+CVXPY parameters for the objective, public law, and radius. Use it for dense
+radius sweeps where rebuilding the CVXPY problem for each radius would dominate
+the runtime. If the hidden state space, public projection, or cost matrix
+changes, compile a new problem.
+
 ## Preset Aliases
 
 The compiler accepts both helper functions and string aliases:

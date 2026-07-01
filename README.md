@@ -392,6 +392,7 @@ Implemented now:
 - `LineSegment`
 - `PolytopeEnvironments` via SciPy `linprog`
 - `CvxpyEnvironments` for convex finite-environment restrictions
+- `ParameterizedCvxpyEnvironments` for cached CVXPY radius sweeps
 - `from_dataframe(...)` for compiling grouped tabular data into a finite problem
 - Q presets: `saturated`, `observed`, `bounded_shift`, `tv_budget`,
   `chi_square_budget`, `kl_budget`, and `wasserstein`
@@ -467,6 +468,28 @@ problem = us.FiniteProblem(
 
 The TV, chi-square, KL, and Wasserstein Q presets are thin wrappers around this
 backend.
+
+For repeated radius sweeps on the same compiled finite problem, use the
+parameterized backend:
+
+```python
+grouped = us.from_dataframe(
+    rows_or_frame,
+    public=["AGE_BAND", "SEX"],
+    hidden=["AGE_BAND", "SEX", "OCC_MAJOR"],
+    target="__target__",
+    q=us.q_tv_budget(0.10, backend="parameterized_cvxpy"),
+)
+
+first = grouped.problem.global_transport_modulus()
+grouped.problem.environments.set_parameter("radius", 0.20)
+second = grouped.problem.global_transport_modulus()
+```
+
+`ParameterizedCvxpyEnvironments` caches the CVXPY problem and updates CVXPY
+parameters for the objective, public law, and preset radius. It is useful when
+you are sweeping radii for TV, chi-square, KL, or Wasserstein budgets on a fixed
+state space.
 
 ## Theory Example: No Least Support
 

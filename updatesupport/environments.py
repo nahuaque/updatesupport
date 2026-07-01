@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isclose
 from typing import Any, Callable, Hashable, Mapping, Protocol, Sequence
 
@@ -38,6 +38,17 @@ def _dict_from_public_vector(problem, vector: Sequence[float]) -> dict[Hashable,
 
 CvxpyConstraintBuilder = Callable[
     [Any, Any, tuple[Hashable, ...], Mapping[Hashable, int]], Sequence[Any]
+]
+CvxpyParameterFactory = Callable[..., Any]
+CvxpyParameterizedConstraintBuilder = Callable[
+    [
+        Any,
+        Any,
+        tuple[Hashable, ...],
+        Mapping[Hashable, int],
+        CvxpyParameterFactory,
+    ],
+    Sequence[Any],
 ]
 
 
@@ -955,3 +966,325 @@ class CvxpyEnvironments:
                 "`uv sync --extra cvxpy` or `pip install updatesupport[cvxpy]`."
             ) from exc
         return cp
+
+
+@dataclass(frozen=True)
+class _ParameterizedCvxpySingleProblem:
+    problem: Any
+    q: Any
+    objective: Any
+    public_law: Any | None
+    extra_parameters: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class _ParameterizedCvxpyPairProblem:
+    problem: Any
+    q1: Any
+    q2: Any
+    objective: Any
+    public_law: Any | None
+    extra_parameters: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
+    """CVXPY environment with cached problems and mutable parameters.
+
+    This backend is intended for sensitivity sweeps over a fixed finite state
+    space. The objective and public-law equalities are CVXPY parameters, and
+    custom parameterized constraints can add scalar/vector parameters such as a
+    divergence radius.
+    """
+
+    parameterized_constraint_builders: Sequence[
+        CvxpyParameterizedConstraintBuilder
+    ] = ()
+    parameter_values: Mapping[str, Any] = field(default_factory=dict)
+    name: str = "parameterized-cvxpy"
+    _single_cache: dict[
+        tuple[Any, ...], _ParameterizedCvxpySingleProblem
+    ] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _pair_cache: dict[
+        tuple[Any, ...], _ParameterizedCvxpyPairProblem
+    ] = field(default_factory=dict, init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "parameter_values", dict(self.parameter_values))
+
+    def set_parameter(self, name: str, value: Any) -> "ParameterizedCvxpyEnvironments":
+        """Set a parameter value in-place and return ``self`` for chaining."""
+
+        self.parameter_values[name] = value
+        return self
+
+    def with_parameters(self, **values: Any) -> "ParameterizedCvxpyEnvironments":
+        """Return a copy with updated parameter values and an empty problem cache."""
+
+        parameters = dict(self.parameter_values)
+        parameters.update(values)
+        return ParameterizedCvxpyEnvironments(
+            constraints=self.constraints,
+            constraint_builders=self.constraint_builders,
+            fixed_public_law=self.fixed_public_law,
+            solver=self.solver,
+            solver_options=self.solver_options,
+            name=self.name,
+            parameterized_constraint_builders=self.parameterized_constraint_builders,
+            parameter_values=parameters,
+        )
+
+    def clear_cache(self) -> None:
+        """Discard cached CVXPY problem objects."""
+
+        self._single_cache.clear()
+        self._pair_cache.clear()
+
+    def cache_info(self) -> dict[str, int]:
+        return {
+            "single_problems": len(self._single_cache),
+            "pair_problems": len(self._pair_cache),
+        }
+
+    def _solve_single(
+        self,
+        problem,
+        objective: Sequence[float],
+        *,
+        maximize: bool,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> tuple[tuple[float, ...], float]:
+        import numpy as np
+
+        effective_public_law = self._effective_public_law(problem, public_law)
+        compiled = self._single_problem(
+            problem,
+            use_public_law=effective_public_law is not None,
+        )
+        objective_vector = np.array(objective, dtype=float)
+        compiled.objective.value = objective_vector if maximize else -objective_vector
+        if compiled.public_law is not None:
+            compiled.public_law.value = self._public_law_array(
+                problem, effective_public_law
+            )
+        self._set_extra_parameter_values(compiled.extra_parameters)
+        self._solve_problem(compiled.problem)
+        vector = self._clean_vector(problem, compiled.q.value)
+        return vector, float(np.dot(objective_vector, vector))
+
+    def _solve_pair(
+        self,
+        problem,
+        objective: Sequence[float],
+        *,
+        support: Partition,
+    ) -> tuple[tuple[float, ...], tuple[float, ...], float]:
+        import numpy as np
+
+        fixed_public_law = self._fixed_public_law(problem)
+        compiled = self._pair_problem(
+            problem,
+            support=support,
+            use_public_law=fixed_public_law is not None,
+        )
+        objective_vector = np.array(objective, dtype=float)
+        compiled.objective.value = objective_vector
+        if compiled.public_law is not None:
+            compiled.public_law.value = self._public_law_array(problem, fixed_public_law)
+        self._set_extra_parameter_values(compiled.extra_parameters)
+        self._solve_problem(compiled.problem)
+        q1_vector = self._clean_vector(problem, compiled.q1.value)
+        q2_vector = self._clean_vector(problem, compiled.q2.value)
+        value = float(
+            np.dot(objective_vector, np.array(q1_vector) - np.array(q2_vector))
+        )
+        return q1_vector, q2_vector, value
+
+    def _single_problem(
+        self,
+        problem,
+        *,
+        use_public_law: bool,
+    ) -> _ParameterizedCvxpySingleProblem:
+        key = (
+            id(problem),
+            tuple(problem.states),
+            tuple(problem.public_values),
+            use_public_law,
+        )
+        cached = self._single_cache.get(key)
+        if cached is not None:
+            return cached
+
+        cp = self._cvxpy()
+        q = cp.Variable(len(problem.states))
+        objective = cp.Parameter(len(problem.states))
+        public_law = cp.Parameter(len(problem.public_values)) if use_public_law else None
+        extra_parameters: dict[str, Any] = {}
+        constraints = self._parameterized_constraints_for_variable(
+            cp,
+            problem,
+            q,
+            public_law=public_law,
+            extra_parameters=extra_parameters,
+        )
+        cvx_problem = cp.Problem(
+            cp.Maximize(cp.sum(cp.multiply(objective, q))),
+            constraints,
+        )
+        compiled = _ParameterizedCvxpySingleProblem(
+            problem=cvx_problem,
+            q=q,
+            objective=objective,
+            public_law=public_law,
+            extra_parameters=extra_parameters,
+        )
+        self._single_cache[key] = compiled
+        return compiled
+
+    def _pair_problem(
+        self,
+        problem,
+        *,
+        support: Partition,
+        use_public_law: bool,
+    ) -> _ParameterizedCvxpyPairProblem:
+        key = (
+            id(problem),
+            tuple(problem.states),
+            tuple(problem.public_values),
+            hash(support),
+            use_public_law,
+        )
+        cached = self._pair_cache.get(key)
+        if cached is not None:
+            return cached
+
+        cp = self._cvxpy()
+        n = len(problem.states)
+        q1 = cp.Variable(n)
+        q2 = cp.Variable(n)
+        objective = cp.Parameter(n)
+        public_law = cp.Parameter(len(problem.public_values)) if use_public_law else None
+        extra_parameters: dict[str, Any] = {}
+        constraints = [
+            *self._parameterized_constraints_for_variable(
+                cp,
+                problem,
+                q1,
+                public_law=public_law,
+                extra_parameters=extra_parameters,
+            ),
+            *self._parameterized_constraints_for_variable(
+                cp,
+                problem,
+                q2,
+                public_law=public_law,
+                extra_parameters=extra_parameters,
+            ),
+        ]
+        state_index = {state: i for i, state in enumerate(problem.states)}
+        for block in support.blocks:
+            indices = [state_index[state] for state in block]
+            constraints.append(cp.sum(q1[indices]) == cp.sum(q2[indices]))
+
+        cvx_problem = cp.Problem(
+            cp.Maximize(cp.sum(cp.multiply(objective, q1 - q2))),
+            constraints,
+        )
+        compiled = _ParameterizedCvxpyPairProblem(
+            problem=cvx_problem,
+            q1=q1,
+            q2=q2,
+            objective=objective,
+            public_law=public_law,
+            extra_parameters=extra_parameters,
+        )
+        self._pair_cache[key] = compiled
+        return compiled
+
+    def _parameterized_constraints_for_variable(
+        self,
+        cp,
+        problem,
+        q,
+        *,
+        public_law,
+        extra_parameters: dict[str, Any],
+    ) -> list[Any]:
+        constraints = [q >= 0, cp.sum(q) == 1]
+        constraints.extend(self._linear_constraints(cp, problem, q))
+        if public_law is not None:
+            constraints.extend(
+                self._public_law_parameter_constraints(cp, problem, q, public_law)
+            )
+
+        state_index = {state: i for i, state in enumerate(problem.states)}
+        states = tuple(problem.states)
+        for builder in self.constraint_builders:
+            constraints.extend(builder(cp, q, states, state_index))
+
+        parameter = self._parameter_factory(cp, extra_parameters)
+        for builder in self.parameterized_constraint_builders:
+            constraints.extend(builder(cp, q, states, state_index, parameter))
+        return constraints
+
+    def _public_law_parameter_constraints(
+        self,
+        cp,
+        problem,
+        q,
+        public_law,
+    ) -> list[Any]:
+        state_index = {state: i for i, state in enumerate(problem.states)}
+        constraints = []
+        for i, public_value in enumerate(problem.public_values):
+            indices = [
+                state_index[state] for state in problem.public_fibers[public_value]
+            ]
+            constraints.append(cp.sum(q[indices]) == public_law[i])
+        return constraints
+
+    def _parameter_factory(
+        self,
+        cp,
+        parameters: dict[str, Any],
+    ) -> CvxpyParameterFactory:
+        def parameter(name: str, **kwargs: Any):
+            if name not in parameters:
+                parameters[name] = cp.Parameter(**kwargs)
+            return parameters[name]
+
+        return parameter
+
+    def _set_extra_parameter_values(self, parameters: Mapping[str, Any]) -> None:
+        for name, parameter in parameters.items():
+            if name not in self.parameter_values:
+                raise CvxpyError(f"missing CVXPY parameter value: {name!r}")
+            parameter.value = self.parameter_values[name]
+
+    def _effective_public_law(
+        self,
+        problem,
+        public_law: Mapping[Hashable, float] | None,
+    ) -> dict[Hashable, float] | None:
+        fixed_public_law = self._fixed_public_law(problem)
+        if fixed_public_law is not None:
+            if public_law is not None and not self._same_public_law(
+                problem, fixed_public_law, public_law
+            ):
+                raise ValueError("requested public law conflicts with fixed_public_law")
+            return fixed_public_law
+        if public_law is None:
+            return None
+        return problem._coerce_public_law(public_law)
+
+    def _public_law_array(self, problem, public_law):
+        import numpy as np
+
+        if public_law is None:
+            raise CvxpyError("internal error: public_law parameter has no value")
+        return np.array(
+            [public_law[value] for value in problem.public_values],
+            dtype=float,
+        )

@@ -10,6 +10,7 @@ from .environments import (
     CvxpyEnvironments,
     Environment,
     FiniteEnvironments,
+    ParameterizedCvxpyEnvironments,
     PolytopeEnvironments,
     PublicFiberSaturated,
     eq,
@@ -155,6 +156,23 @@ def resolve_q_environment(
                     "the observed hidden distribution <= 0"
                 ),
             )
+        if _backend_name(preset, default="cvxpy") == "parameterized_cvxpy":
+            return QEnvironment(
+                environment=ParameterizedCvxpyEnvironments(
+                    fixed_public_law=public_law,
+                    parameterized_constraint_builders=(
+                        _tv_parameterized_constraint_builder(cell_weights),
+                    ),
+                    parameter_values={"radius": radius},
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=(
+                    "fixed observed public law with total variation distance from "
+                    f"the observed hidden distribution <= {radius:g}"
+                ),
+            )
         _require_backend(preset, "cvxpy")
         return QEnvironment(
             environment=CvxpyEnvironments(
@@ -179,6 +197,23 @@ def resolve_q_environment(
                 description=(
                     "fixed observed public law with Pearson chi-square divergence "
                     "from the observed hidden distribution <= 0"
+                ),
+            )
+        if _backend_name(preset, default="cvxpy") == "parameterized_cvxpy":
+            return QEnvironment(
+                environment=ParameterizedCvxpyEnvironments(
+                    fixed_public_law=public_law,
+                    parameterized_constraint_builders=(
+                        _chi_square_parameterized_constraint_builder(cell_weights),
+                    ),
+                    parameter_values={"radius": radius},
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=(
+                    "fixed observed public law with Pearson chi-square divergence "
+                    f"from the observed hidden distribution <= {radius:g}"
                 ),
             )
         _require_backend(preset, "cvxpy")
@@ -209,6 +244,23 @@ def resolve_q_environment(
                     "observed hidden distribution <= 0"
                 ),
             )
+        if _backend_name(preset, default="cvxpy") == "parameterized_cvxpy":
+            return QEnvironment(
+                environment=ParameterizedCvxpyEnvironments(
+                    fixed_public_law=public_law,
+                    parameterized_constraint_builders=(
+                        _kl_parameterized_constraint_builder(cell_weights),
+                    ),
+                    parameter_values={"radius": radius},
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=(
+                    "fixed observed public law with KL divergence from the observed "
+                    f"hidden distribution <= {radius:g}"
+                ),
+            )
         _require_backend(preset, "cvxpy")
         return QEnvironment(
             environment=CvxpyEnvironments(
@@ -225,10 +277,30 @@ def resolve_q_environment(
         )
 
     if preset.name == "wasserstein":
-        _require_backend(preset, "cvxpy")
         radius = _wasserstein_radius(preset)
         if preset.cost is None:
             raise ValueError("q_wasserstein requires an explicit cost matrix")
+        if _backend_name(preset, default="cvxpy") == "parameterized_cvxpy":
+            return QEnvironment(
+                environment=ParameterizedCvxpyEnvironments(
+                    fixed_public_law=public_law,
+                    parameterized_constraint_builders=(
+                        _wasserstein_parameterized_constraint_builder(
+                            cell_weights,
+                            preset.cost,
+                        ),
+                    ),
+                    parameter_values={"radius": radius},
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=(
+                    "fixed observed public law with Wasserstein cost from the "
+                    f"observed hidden distribution <= {radius:g}"
+                ),
+            )
+        _require_backend(preset, "cvxpy")
         return QEnvironment(
             environment=CvxpyEnvironments(
                 fixed_public_law=public_law,
@@ -452,9 +524,13 @@ def _wasserstein_radius(preset: QPreset) -> float:
 
 
 def _require_backend(preset: QPreset, expected: str) -> None:
-    backend = (preset.backend or expected).strip().lower()
+    backend = _backend_name(preset, default=expected)
     if backend != expected:
         raise ValueError(f"{preset.name} currently supports only backend={expected!r}")
+
+
+def _backend_name(preset: QPreset, *, default: str) -> str:
+    return (preset.backend or default).strip().lower()
 
 
 def _tv_constraint_builder(cell_weights: Mapping[Hashable, float], radius: float):
@@ -464,6 +540,23 @@ def _tv_constraint_builder(cell_weights: Mapping[Hashable, float], radius: float
         import numpy as np
 
         observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        return (cp.norm1(q - observed) <= 2.0 * radius,)
+
+    return build
+
+
+def _tv_parameterized_constraint_builder(
+    cell_weights: Mapping[Hashable, float],
+    *,
+    parameter_name: str = "radius",
+):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index, parameter):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        radius = parameter(parameter_name, nonneg=True)
         return (cp.norm1(q - observed) <= 2.0 * radius,)
 
     return build
@@ -484,6 +577,24 @@ def _chi_square_constraint_builder(
     return build
 
 
+def _chi_square_parameterized_constraint_builder(
+    cell_weights: Mapping[Hashable, float],
+    *,
+    parameter_name: str = "radius",
+):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index, parameter):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        scale = 1.0 / np.sqrt(observed)
+        radius = parameter(parameter_name, nonneg=True)
+        return (cp.sum_squares(cp.multiply(scale, q - observed)) <= radius,)
+
+    return build
+
+
 def _kl_constraint_builder(cell_weights: Mapping[Hashable, float], radius: float):
     observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
 
@@ -491,6 +602,23 @@ def _kl_constraint_builder(cell_weights: Mapping[Hashable, float], radius: float
         import numpy as np
 
         observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        return (cp.sum(cp.rel_entr(q, observed)) <= radius,)
+
+    return build
+
+
+def _kl_parameterized_constraint_builder(
+    cell_weights: Mapping[Hashable, float],
+    *,
+    parameter_name: str = "radius",
+):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index, parameter):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        radius = parameter(parameter_name, nonneg=True)
         return (cp.sum(cp.rel_entr(q, observed)) <= radius,)
 
     return build
@@ -509,6 +637,30 @@ def _wasserstein_constraint_builder(
         observed = np.array([observed_by_state[state] for state in states], dtype=float)
         cost_matrix = _coerce_cost_matrix(cost, states)
         gamma = cp.Variable((len(states), len(states)), nonneg=True)
+        return (
+            cp.sum(gamma, axis=1) == observed,
+            cp.sum(gamma, axis=0) == q,
+            cp.sum(cp.multiply(cost_matrix, gamma)) <= radius,
+        )
+
+    return build
+
+
+def _wasserstein_parameterized_constraint_builder(
+    cell_weights: Mapping[Hashable, float],
+    cost: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
+    *,
+    parameter_name: str = "radius",
+):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index, parameter):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        cost_matrix = _coerce_cost_matrix(cost, states)
+        gamma = cp.Variable((len(states), len(states)), nonneg=True)
+        radius = parameter(parameter_name, nonneg=True)
         return (
             cp.sum(gamma, axis=1) == observed,
             cp.sum(gamma, axis=0) == q,
