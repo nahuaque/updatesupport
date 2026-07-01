@@ -72,19 +72,24 @@ any retained hidden subgroup can receive the mass assigned to that public cell.
 This is deliberately conservative and easy to explain, but it can be too broad
 for some analyses.
 
-The first named `Q` presets are:
+The named `Q` presets are:
 
 - `saturated`: arbitrary reweighting inside public fibers
 - `observed`: only the observed hidden mix is admissible
 - `bounded_shift`: limited per-hidden-cell relative movement away from the
   observed hidden mix
+- `tv_budget`: total-variation budget around the observed hidden mix
+- `wasserstein`: Wasserstein budget using an explicit hidden-cell cost matrix
 
 `min_cell_weight` is a separate robustness knob: it drops tiny hidden cells before
-the finite problem is compiled. Future Q presets should include total-variation
-or L1 budgets around the observed hidden distribution.
+the finite problem is compiled. `Q` then controls how the retained hidden cells
+may be reweighted.
 
 Every report should state which `Q` was used. Otherwise the ambiguity number is
 not interpretable.
+
+For practical guidance on when to use each preset, see
+[Transport presets](transport-presets.md).
 
 ## Interpretation Rules
 
@@ -171,9 +176,10 @@ uv sync --extra cvxpy
 ```
 
 The next implementation slices should focus on deeper sensitivity reporting,
-additional convex divergence presets, and experimental relational transport
-types such as Gromov-Wasserstein only when the application supplies two
-comparable hidden-state geometries.
+additional convex divergence presets, and experimental relational transport types
+such as Gromov-Wasserstein only when the application supplies two comparable
+hidden-state geometries. For current preset selection guidance, see
+[Transport presets](transport-presets.md).
 
 The documentation should keep the ACSIncome case study as the primary example
 and put the finite-support theory underneath it.

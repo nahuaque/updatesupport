@@ -173,6 +173,10 @@ Install the CVXPY extra before using TV or Wasserstein presets:
 uv sync --extra cvxpy
 ```
 
+See [docs/transport-presets.md](docs/transport-presets.md) for guidance on
+which preset to use, how to choose radii, and how to interpret sensitivity
+tables.
+
 ## Public Descent Report
 
 Use `public_descent_report(...)` to produce a structured report and render it as
@@ -462,6 +466,7 @@ for support in least.minimal_supports:
 ## More Documentation
 
 - [Representation adequacy guide](docs/representation-adequacy.md)
+- [Transport preset guide](docs/transport-presets.md)
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)
 - [Folktables ACSIncome result interpretation](docs/folktables-acs-income-interpretation.md)
 - [UpdateSupport PDF](docs/UpdateSupport.pdf)
