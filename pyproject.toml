@@ -22,7 +22,9 @@ dowhy = [
 ]
 examples = [
     "folktables>=0.0.12",
+    "matplotlib>=3.9",
     "pandas>=2.0",
+    "seaborn>=0.13",
 ]
 
 [dependency-groups]

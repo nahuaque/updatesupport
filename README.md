@@ -231,6 +231,14 @@ reduction.
 Use `sensitivity_report(...)` to rerun the audit across Q presets,
 `min_cell_weight` thresholds, and alternative hidden-column sets:
 
+![Sensitivity analysis overview](docs/assets/sensitivity-analysis-overview.png)
+
+Regenerate the README figure with:
+
+```bash
+uv run --extra examples python examples/sensitivity_plots.py
+```
+
 ```python
 sensitivity = us.sensitivity_report(
     rows_or_frame,
