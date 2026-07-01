@@ -1,7 +1,7 @@
 [project]
 name = "updatesupport"
 version = "0.1.0"
-description = "Finite causal support adequacy and transport ambiguity in Python"
+description = "Representation adequacy and transport-stability auditing in Python"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
