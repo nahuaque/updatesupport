@@ -100,6 +100,12 @@ For the EconML causal example:
 uv sync --extra causal
 ```
 
+For DoWhy `CausalRefutation` conversion:
+
+```bash
+uv sync --extra dowhy
+```
+
 ## Core Model
 
 The library implements a finite-linear version of the update-support machinery
@@ -336,6 +342,11 @@ workflow, swap in the DoWhy, EconML, CausalML, or DoubleML estimator that fits
 your identification strategy and produces a `tau_hat` effect target; the
 `updatesupport` stage is the same.
 
+For DoWhy workflows, use `audit_dowhy_effects(...)` to package the
+representation audit with the DoWhy estimate, then call `audit.to_refutation()`
+to produce a DoWhy `CausalRefutation` object when the optional DoWhy dependency
+is installed.
+
 ## Current Python Surface
 
 Implemented now:
@@ -353,6 +364,8 @@ Implemented now:
 - `PublicDescentReport` with Markdown output
 - `public_descent_report(...)` for analyst-facing report objects
 - `audit_effects(...)` for causal/uplift effect-reporting stability audits
+- `audit_dowhy_effects(...)` and `dowhy_refutation_from_report(...)` for DoWhy
+  workflows
 - `recommend_refinements(...)` for ranking candidate hidden variables
 - `sensitivity_report(...)` for robustness grids over Q, hidden sets, and
   `min_cell_weight`

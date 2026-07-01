@@ -17,6 +17,9 @@ causal = [
 cvxpy = [
     "cvxpy>=1.5",
 ]
+dowhy = [
+    "dowhy>=0.13",
+]
 examples = [
     "folktables>=0.0.12",
     "pandas>=2.0",

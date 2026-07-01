@@ -181,36 +181,46 @@ estimate = model.estimate_effect(
 If the estimator only returns a single ATE, `updatesupport` has little to audit
 unless you also estimate effects by hidden cells, target units, or subgroups.
 Once you have a row-level, cell-level, or subgroup-level target, feed that target
-into `updatesupport`:
+into the DoWhy adapter:
 
 ```python
 df["tau_hat"] = subgroup_or_unit_level_effect
 
-report = us.audit_effects(
+audit = us.audit_dowhy_effects(
     df,
+    estimate=estimate,
     public=["age_band", "sex"],
     hidden=["age_band", "sex", "education_band", "region", "income_band"],
     effect="tau_hat",
     weight="sample_weight",
     candidate_refinements=["education_band", "region", "income_band"],
 )
+
+print(audit.to_markdown())
 ```
 
-A future integration could be a DoWhy refuter named something like:
+If DoWhy is installed, the audit can also be converted into a DoWhy
+`CausalRefutation`:
 
 ```python
-model.refute_estimate(
-    identified,
-    estimate,
-    method_name="updatesupport_representation_refuter",
-    public=["age_band", "sex"],
-    hidden=["age_band", "sex", "education_band", "region", "income_band"],
-)
+representation_refutation = audit.to_refutation()
+print(representation_refutation)
 ```
 
-That refuter would not refute the causal graph itself. It would refute, or
-stress-test, the adequacy of the public representation used to report the
-estimate.
+Install the optional DoWhy dependency with:
+
+```bash
+uv sync --extra dowhy
+```
+
+This is a DoWhy-compatible refutation object, not a registered
+`model.refute_estimate(..., method_name=...)` plugin. The `new_effect` field is
+the update-support partial-ID interval, and the object also carries
+`updatesupport_report`, `updatesupport_interval`, `updatesupport_ambiguity`, and
+`updatesupport_public_adequate` attributes for downstream inspection.
+
+This refutation does not refute the causal graph itself. It stress-tests the
+adequacy of the public representation used to report the estimate.
 
 ## With EconML
 

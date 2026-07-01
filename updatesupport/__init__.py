@@ -1,6 +1,11 @@
 """Representation adequacy and transport-stability auditing in Python."""
 
 from .data import GroupedProblem, from_dataframe
+from .dowhy import (
+    DoWhyRepresentationAudit,
+    audit_dowhy_effects,
+    dowhy_refutation_from_report,
+)
 from .environments import (
     CvxpyEnvironments,
     CvxpyError,
@@ -50,8 +55,11 @@ __all__ = [
     "CardinalGapResult",
     "CvxpyEnvironments",
     "CvxpyError",
+    "DoWhyRepresentationAudit",
     "eq",
     "audit_effects",
+    "audit_dowhy_effects",
+    "dowhy_refutation_from_report",
     "FiniteEnvironments",
     "FiniteProblem",
     "from_dataframe",
