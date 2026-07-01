@@ -155,6 +155,9 @@ The script prints:
 - worst public fibers by ambiguity contribution
 - one-column refinements ranked by ambiguity reduction
 
+See [docs/folktables-acs-income-interpretation.md](docs/folktables-acs-income-interpretation.md)
+for a plain-English interpretation of an ACSIncome result.
+
 There is also a no-download smoke demo:
 
 ```bash
