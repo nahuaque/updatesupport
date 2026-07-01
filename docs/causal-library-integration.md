@@ -49,12 +49,13 @@ Suppose a causal estimator has produced one estimated treatment effect per row:
 df["tau_hat"] = estimated_treatment_effects
 ```
 
-Then `updatesupport` can audit the reporting categories:
+Then `updatesupport` can audit the reporting categories with the full causal
+reporting-stability suite:
 
 ```python
 import updatesupport as us
 
-report = us.audit_effects(
+suite = us.causal_reporting_stability(
     df,
     public=["age_band", "sex"],
     hidden=[
@@ -75,10 +76,14 @@ report = us.audit_effects(
     ],
     q=us.q_bounded_shift(0.5),
     min_cell_weight=25,
-    title="Treatment Effect Representation Adequacy Report",
+    sensitivity_min_cell_weights=[10, 25, 50],
+    sensitivity_q_presets=["saturated", us.q_bounded_shift(0.5), "observed"],
+    statistical_estimate=ate_hat,
+    statistical_interval=(ci_low, ci_high),
+    statistical_method="causal estimator bootstrap",
 )
 
-print(report.to_markdown())
+print(suite.to_markdown())
 ```
 
 The report asks:
@@ -87,7 +92,7 @@ The report asks:
 > aggregate move if education, income, region, or prior usage changed inside
 > those public cells?
 
-The Markdown report separates four quantities that should not be collapsed into
+The Markdown suite separates four quantities that should not be collapsed into
 one uncertainty statement:
 
 - the causal estimate supplied by the causal library
@@ -295,8 +300,9 @@ segments:
 
 ## Sensitivity Grid
 
-Use a sensitivity report to see whether conclusions depend on `Q`, sparse-cell
-filtering, or hidden-column choices:
+The suite runs this internally when `sensitivity_*` arguments are supplied. You
+can also use a standalone sensitivity report to see whether conclusions depend
+on `Q`, sparse-cell filtering, or hidden-column choices:
 
 ```python
 sensitivity = us.sensitivity_report(

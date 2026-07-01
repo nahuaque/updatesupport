@@ -329,6 +329,159 @@ class RefinementSensitivityReport:
 
 
 @dataclass(frozen=True)
+class StatisticalUncertainty:
+    """Optional statistical uncertainty metadata supplied by an external workflow."""
+
+    estimate: float | None = None
+    standard_error: float | None = None
+    lower: float | None = None
+    upper: float | None = None
+    confidence_level: float | None = None
+    method: str | None = None
+    label: str = "Statistical uncertainty"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "estimate": self.estimate,
+            "standard_error": self.standard_error,
+            "lower": self.lower,
+            "upper": self.upper,
+            "confidence_level": self.confidence_level,
+            "method": self.method,
+            "label": self.label,
+        }
+
+
+@dataclass(frozen=True)
+class CausalReportingStabilitySuite:
+    """One-stop report object for causal-effect reporting stability."""
+
+    primary: "PublicDescentReport"
+    sensitivity: "SensitivityReport | None" = None
+    refinement_sensitivity: RefinementSensitivityReport | None = None
+    statistical_uncertainty: StatisticalUncertainty | None = None
+    title: str = "Causal Reporting Stability Suite"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "primary": _public_descent_summary_dict(self.primary),
+            "statistical_uncertainty": None
+            if self.statistical_uncertainty is None
+            else self.statistical_uncertainty.as_dict(),
+            "sensitivity": None
+            if self.sensitivity is None
+            else {
+                "summary": self.sensitivity.summary.as_dict(),
+                "rows": [row.as_dict() for row in self.sensitivity.rows],
+            },
+            "refinement_sensitivity": None
+            if self.refinement_sensitivity is None
+            else {
+                "candidates": [
+                    row.as_dict() for row in self.refinement_sensitivity.candidates
+                ],
+                "scenarios": [
+                    row.as_dict() for row in self.refinement_sensitivity.scenarios
+                ],
+                "rows": [row.as_dict() for row in self.refinement_sensitivity.rows],
+            },
+        }
+
+    def to_markdown(self) -> str:
+        lines = [
+            f"# {self.title}",
+            "",
+            "## Executive Summary",
+            "",
+            f"- Causal estimate / reported value: {self.primary.observed_value:.4f}",
+            "- Hidden-composition ambiguity: "
+            f"{self.primary.interval.diameter:.4f} "
+            f"([{self.primary.interval.lower:.4f}, {self.primary.interval.upper:.4f}])",
+            f"- Public adequate: {'yes' if self.primary.public_adequate else 'no'}",
+            f"- Primary Q preset: {self.primary.grouped.q_name}",
+        ]
+        if self.statistical_uncertainty is not None:
+            lines.append(
+                "- Statistical uncertainty: "
+                f"{_format_statistical_uncertainty(self.statistical_uncertainty)}"
+            )
+        if self.sensitivity is not None:
+            summary = self.sensitivity.summary
+            lines.append(
+                "- Sensitivity grid: "
+                f"{summary.successful_scenarios}/{summary.scenario_count} "
+                "successful scenarios"
+            )
+            if summary.min_ambiguity is not None and summary.max_ambiguity is not None:
+                lines.append(
+                    "- Sensitivity ambiguity range: "
+                    f"{summary.min_ambiguity:.4f} to {summary.max_ambiguity:.4f}"
+                )
+        if self.refinement_sensitivity is not None:
+            top = (
+                self.refinement_sensitivity.candidates[0]
+                if self.refinement_sensitivity.candidates
+                else None
+            )
+            if top is not None:
+                lines.append(
+                    "- Top robust public refinement: "
+                    f"`{top.column}` with mean reduction {top.mean_reduction:.4f}"
+                )
+
+        lines.extend(
+            [
+                "",
+                "## What This Suite Separates",
+                "",
+                "- Causal estimate: the supplied row-level or hidden-cell effect target, "
+                "usually produced by a causal estimator outside `updatesupport`.",
+                "- Statistical uncertainty: standard errors or confidence intervals "
+                "supplied by that external estimator, when provided.",
+                "- Hidden-composition ambiguity: the update-support partial-ID "
+                "interval holding the public distribution fixed under the chosen Q.",
+                "- Public refinement recommendations: variables that make the public "
+                "reporting representation more stable, not causal adjustment advice.",
+            ]
+        )
+
+        if self.statistical_uncertainty is not None:
+            lines.extend(
+                [
+                    "",
+                    "## Statistical Uncertainty",
+                    "",
+                    _format_statistical_uncertainty(self.statistical_uncertainty),
+                ]
+            )
+
+        lines.extend(["", "## Primary Reporting Audit", "", self.primary.to_markdown()])
+
+        if self.sensitivity is not None:
+            lines.extend(
+                [
+                    "",
+                    "## Robustness Grid",
+                    "",
+                    self.sensitivity.to_markdown(),
+                ]
+            )
+
+        if self.refinement_sensitivity is not None:
+            lines.extend(
+                [
+                    "",
+                    "## Sensitivity-Aware Refinements",
+                    "",
+                    self.refinement_sensitivity.to_markdown(),
+                ]
+            )
+
+        return "\n".join(lines)
+
+
+@dataclass(frozen=True)
 class PublicDescentReport:
     """Structured public-descent audit with Markdown rendering."""
 
@@ -695,6 +848,160 @@ def audit_effects(
         row_count_label=row_count_label,
         q=q,
         q_radius=q_radius,
+    )
+
+
+def causal_reporting_stability(
+    data: Any | GroupedProblem,
+    *,
+    source_data: Any | None = None,
+    public: Sequence[str] | None = None,
+    hidden: Sequence[str] | None = None,
+    effect: str | None = None,
+    weight: str | None = None,
+    public_columns: Sequence[str] | None = None,
+    hidden_columns: Sequence[str] | None = None,
+    effect_column: str | None = None,
+    weight_column: str | None = None,
+    candidate_refinements: Sequence[str] | None = None,
+    candidate_columns: Sequence[str] | None = None,
+    min_cell_weight: float = 1.0,
+    q: Any | None = None,
+    q_radius: float | None = None,
+    top: int = 10,
+    include_sensitivity: bool = True,
+    include_refinement_sensitivity: bool = True,
+    sensitivity_min_cell_weights: Sequence[float] | None = None,
+    sensitivity_hidden_sets: Sequence[Sequence[str]] | None = None,
+    sensitivity_q_presets: Sequence[Any] | None = None,
+    statistical_estimate: float | None = None,
+    statistical_standard_error: float | None = None,
+    statistical_interval: tuple[float, float] | None = None,
+    statistical_confidence_level: float | None = None,
+    statistical_method: str | None = None,
+    statistical_label: str = "Statistical uncertainty",
+    title: str = "Causal Reporting Stability Suite",
+    primary_title: str = "Causal Effect Representation Stability Audit",
+    raise_errors: bool = False,
+) -> CausalReportingStabilitySuite:
+    """Run the standard causal reporting-stability workflow.
+
+    This packages the main effect audit, optional Q/min-cell/hidden-set
+    sensitivity grid, optional sensitivity-aware refinement ranking, and
+    externally supplied statistical uncertainty metadata into one report object.
+    """
+
+    effect = _resolve_scalar_arg(
+        effect,
+        effect_column,
+        primary_name="effect",
+        alias_name="effect_column",
+    )
+    weight = _resolve_scalar_arg(
+        weight,
+        weight_column,
+        primary_name="weight",
+        alias_name="weight_column",
+    )
+    candidate_refinements = _resolve_sequence_arg(
+        candidate_refinements,
+        candidate_columns,
+        primary_name="candidate_refinements",
+        alias_name="candidate_columns",
+    )
+    if candidate_refinements is None:
+        candidate_refinements = ()
+
+    raw_data = source_data
+    row_count = None
+    primary_data: Any | GroupedProblem = data
+    if not isinstance(data, GroupedProblem):
+        primary_data, row_count = _repeatable_data(data)
+        if raw_data is None:
+            raw_data = primary_data
+        else:
+            raw_data, _source_row_count = _repeatable_data(raw_data)
+    elif raw_data is not None:
+        raw_data, row_count = _repeatable_data(raw_data)
+
+    primary = audit_effects(
+        primary_data,
+        source_data=raw_data,
+        public=public,
+        hidden=hidden,
+        effect=effect,
+        weight=weight,
+        public_columns=public_columns,
+        hidden_columns=hidden_columns,
+        candidate_refinements=candidate_refinements,
+        top=top,
+        min_cell_weight=min_cell_weight,
+        title=primary_title,
+        effect_description="estimated treatment effect",
+        observed_label="Observed effect estimate",
+        row_count=row_count,
+        q=q,
+        q_radius=q_radius,
+    )
+
+    public_tuple = primary.grouped.public_columns
+    hidden_tuple = primary.grouped.hidden_columns
+    effect_name = primary.grouped.target_column if effect is None else effect
+    grid_min_cell_weights = tuple(
+        sensitivity_min_cell_weights
+        if sensitivity_min_cell_weights is not None
+        else (min_cell_weight,)
+    )
+
+    sensitivity = None
+    if include_sensitivity and raw_data is not None:
+        sensitivity = sensitivity_report(
+            raw_data,
+            public=public_tuple,
+            hidden=hidden_tuple,
+            target=effect_name,
+            weight=weight,
+            min_cell_weights=grid_min_cell_weights,
+            hidden_sets=sensitivity_hidden_sets,
+            q_presets=sensitivity_q_presets,
+            title="Causal Effect Reporting Sensitivity Report",
+            raise_errors=raise_errors,
+        )
+
+    refinement_sensitivity = None
+    if (
+        include_refinement_sensitivity
+        and raw_data is not None
+        and candidate_refinements
+    ):
+        refinement_sensitivity = recommend_refinements_sensitivity(
+            raw_data,
+            public=public_tuple,
+            hidden=hidden_tuple,
+            target=effect_name,
+            candidate_refinements=candidate_refinements,
+            weight=weight,
+            min_cell_weights=grid_min_cell_weights,
+            hidden_sets=sensitivity_hidden_sets,
+            q_presets=sensitivity_q_presets,
+            top=top,
+            title="Causal Effect Public Refinement Sensitivity Report",
+            raise_errors=raise_errors,
+        )
+
+    return CausalReportingStabilitySuite(
+        primary=primary,
+        sensitivity=sensitivity,
+        refinement_sensitivity=refinement_sensitivity,
+        statistical_uncertainty=_build_statistical_uncertainty(
+            estimate=statistical_estimate,
+            standard_error=statistical_standard_error,
+            interval=statistical_interval,
+            confidence_level=statistical_confidence_level,
+            method=statistical_method,
+            label=statistical_label,
+        ),
+        title=title,
     )
 
 
@@ -1675,6 +1982,79 @@ def _observed_value(grouped: GroupedProblem) -> float:
         grouped.cell_weights[state] * problem.estimand_map[state]
         for state in problem.states
     )
+
+
+def _build_statistical_uncertainty(
+    *,
+    estimate: float | None,
+    standard_error: float | None,
+    interval: tuple[float, float] | None,
+    confidence_level: float | None,
+    method: str | None,
+    label: str,
+) -> StatisticalUncertainty | None:
+    lower = None
+    upper = None
+    if interval is not None:
+        lower, upper = float(interval[0]), float(interval[1])
+    if (
+        estimate is None
+        and standard_error is None
+        and lower is None
+        and upper is None
+        and confidence_level is None
+        and method is None
+    ):
+        return None
+    return StatisticalUncertainty(
+        estimate=None if estimate is None else float(estimate),
+        standard_error=None if standard_error is None else float(standard_error),
+        lower=lower,
+        upper=upper,
+        confidence_level=None
+        if confidence_level is None
+        else float(confidence_level),
+        method=method,
+        label=label,
+    )
+
+
+def _format_statistical_uncertainty(row: StatisticalUncertainty) -> str:
+    parts = []
+    if row.estimate is not None:
+        parts.append(f"estimate={row.estimate:.4f}")
+    if row.standard_error is not None:
+        parts.append(f"se={row.standard_error:.4f}")
+    if row.lower is not None and row.upper is not None:
+        parts.append(f"interval=[{row.lower:.4f}, {row.upper:.4f}]")
+    if row.confidence_level is not None:
+        level = row.confidence_level
+        label = f"{100.0 * level:.1f}%" if level <= 1.0 else f"{level:.1f}%"
+        parts.append(f"confidence={label}")
+    if row.method:
+        parts.append(f"method={row.method}")
+    detail = "; ".join(parts) if parts else "supplied"
+    return f"{row.label}: {detail}"
+
+
+def _public_descent_summary_dict(report: PublicDescentReport) -> dict[str, Any]:
+    return {
+        "title": report.title,
+        "observed_value": report.observed_value,
+        "lower": report.interval.lower,
+        "upper": report.interval.upper,
+        "ambiguity": report.interval.diameter,
+        "public_adequate": report.public_adequate,
+        "q_name": report.grouped.q_name,
+        "q_description": report.grouped.q_description,
+        "public_columns": report.grouped.public_columns,
+        "hidden_columns": report.grouped.hidden_columns,
+        "hidden_cells": len(report.grouped.problem.states),
+        "public_cells": len(report.grouped.problem.public_values),
+        "top_fibers": [row.as_dict() for row in report.fibers],
+        "refinements": [row.as_dict() for row in report.refinements],
+        "duals": [row.as_dict() for row in report.interval.dual_summary(top=20)],
+    }
 
 
 def _repeatable_data(data: Any) -> tuple[Any, int | None]:

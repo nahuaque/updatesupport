@@ -79,6 +79,57 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertIn("reduction_pct=100.0%", markdown)
         self.assertIn("## Analyst Notes", markdown)
 
+    def test_causal_reporting_stability_suite_packages_standard_outputs(self):
+        rows = [
+            {"public": "A", "hidden": "x", "noise": "n1", "effect": 0.0, "weight": 30},
+            {"public": "A", "hidden": "y", "noise": "n2", "effect": 1.0, "weight": 30},
+            {"public": "B", "hidden": "z", "noise": "n1", "effect": 0.5, "weight": 40},
+        ]
+
+        suite = us.causal_reporting_stability(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden", "noise"],
+            effect="effect",
+            weight="weight",
+            candidate_refinements=["hidden", "noise"],
+            q=us.q_bounded_shift(0.5),
+            min_cell_weight=1,
+            sensitivity_min_cell_weights=[1],
+            sensitivity_q_presets=["saturated", us.q_bounded_shift(0.5), "observed"],
+            statistical_estimate=0.5,
+            statistical_standard_error=0.1,
+            statistical_interval=(0.3, 0.7),
+            statistical_confidence_level=0.95,
+            statistical_method="bootstrap",
+            top=2,
+        )
+        markdown = suite.to_markdown()
+        payload = suite.as_dict()
+
+        self.assertIsInstance(suite, us.CausalReportingStabilitySuite)
+        self.assertIsInstance(suite.statistical_uncertainty, us.StatisticalUncertainty)
+        self.assertIsInstance(suite.primary, us.PublicDescentReport)
+        self.assertIsInstance(suite.sensitivity, us.SensitivityReport)
+        self.assertIsInstance(
+            suite.refinement_sensitivity,
+            us.RefinementSensitivityReport,
+        )
+        self.assertAlmostEqual(suite.primary.observed_value, 0.5)
+        self.assertAlmostEqual(suite.primary.interval.diameter, 0.3)
+        self.assertEqual(suite.sensitivity.summary.scenario_count, 3)
+        self.assertEqual(suite.refinement_sensitivity.candidates[0].column, "hidden")
+        self.assertEqual(payload["primary"]["q_name"], "bounded_shift(radius=0.5)")
+        self.assertIn("# Causal Reporting Stability Suite", markdown)
+        self.assertIn("## What This Suite Separates", markdown)
+        self.assertIn("Causal estimate", markdown)
+        self.assertIn("Statistical uncertainty", markdown)
+        self.assertIn("Hidden-composition ambiguity", markdown)
+        self.assertIn("Public refinement recommendations", markdown)
+        self.assertIn("bootstrap", markdown)
+        self.assertIn("## Robustness Grid", markdown)
+        self.assertIn("## Sensitivity-Aware Refinements", markdown)
+
     def test_recommend_refinements_returns_before_after_and_percent_reduction(self):
         rows = [
             {"public": "A", "hidden": "x", "noise": "n", "target": 0.0, "weight": 30},

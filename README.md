@@ -70,7 +70,7 @@ categories used to report those effects are stable to hidden composition changes
 See [docs/causal-library-integration.md](docs/causal-library-integration.md).
 
 ```python
-report = us.audit_effects(
+suite = us.causal_reporting_stability(
     df,
     public=["AGE_BAND", "SEX"],
     hidden=["AGE_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND", "RAC1P"],
@@ -78,7 +78,18 @@ report = us.audit_effects(
     weight="sample_weight",
     candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P"],
     q=us.q_bounded_shift(0.5),
+    sensitivity_min_cell_weights=[10, 25],
+    sensitivity_q_presets=[
+        "saturated",
+        us.q_bounded_shift(0.5),
+        "observed",
+    ],
+    statistical_estimate=ate_hat,
+    statistical_interval=(ci_low, ci_high),
+    statistical_method="causal estimator bootstrap",
 )
+
+print(suite.to_markdown())
 ```
 
 ## Install Locally
@@ -431,6 +442,9 @@ Implemented now:
 - `PublicDescentReport` with Markdown output
 - `public_descent_report(...)` for analyst-facing report objects
 - `audit_effects(...)` for causal/uplift effect-reporting stability audits
+- `causal_reporting_stability(...)` for packaging causal estimate,
+  statistical uncertainty metadata, hidden-composition ambiguity, sensitivity
+  grids, and public refinement recommendations
 - `audit_dowhy_effects(...)` and `dowhy_refutation_from_report(...)` for DoWhy
   workflows
 - `recommend_refinements(...)` for ranking candidate hidden variables
