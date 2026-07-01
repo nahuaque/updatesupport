@@ -140,7 +140,9 @@ print(report.to_markdown())
 ```
 
 The report includes the observed value, stress interval, transport ambiguity,
-public adequacy flag, worst public fibers, and one-column refinement candidates.
+public adequacy flag, worst public fibers, and one-column refinement candidates
+with before ambiguity, after ambiguity, absolute reduction, and percentage
+reduction.
 
 ## Public-Fiber-Saturated Example
 
@@ -231,7 +233,8 @@ The script prints:
 - the observed-law transport ambiguity
 - a statistical interpretation of the interval and ambiguity
 - worst public fibers by ambiguity contribution
-- one-column refinements ranked by ambiguity reduction
+- one-column refinements ranked by ambiguity reduction, including before/after
+  ambiguity and percentage reduction
 
 There is also a no-download smoke demo:
 

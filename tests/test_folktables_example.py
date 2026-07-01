@@ -73,8 +73,11 @@ class FolktablesExampleTests(unittest.TestCase):
         )
 
         self.assertEqual(candidates[0]["column"], "hidden")
+        self.assertAlmostEqual(candidates[0]["before_ambiguity"], 0.6)
+        self.assertAlmostEqual(candidates[0]["after_ambiguity"], 0.0)
         self.assertAlmostEqual(candidates[0]["diameter"], 0.0)
         self.assertAlmostEqual(candidates[0]["reduction"], 0.6)
+        self.assertAlmostEqual(candidates[0]["reduction_percent"], 100.0)
 
     def test_report_includes_stats_analyst_interpretation(self):
         rows = [

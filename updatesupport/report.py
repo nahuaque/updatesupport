@@ -42,15 +42,38 @@ class RefinementCandidate:
     """One-column public refinement ranked by ambiguity reduction."""
 
     column: str
-    diameter: float
+    before_ambiguity: float
+    after_ambiguity: float
     reduction: float
+    reduction_percent: float
     public_cells: int
+
+    @property
+    def diameter(self) -> float:
+        """Backward-compatible alias for the after-refinement ambiguity."""
+
+        return self.after_ambiguity
+
+    @property
+    def reduction_fraction(self) -> float:
+        return self.reduction_percent / 100.0
+
+    @property
+    def percent_reduction(self) -> float:
+        """Alias for callers who prefer noun-first naming."""
+
+        return self.reduction_percent
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "column": self.column,
-            "diameter": self.diameter,
+            "before_ambiguity": self.before_ambiguity,
+            "after_ambiguity": self.after_ambiguity,
+            "diameter": self.after_ambiguity,
             "reduction": self.reduction,
+            "reduction_fraction": self.reduction_fraction,
+            "reduction_percent": self.reduction_percent,
+            "percent_reduction": self.reduction_percent,
             "public_cells": self.public_cells,
         }
 
@@ -177,17 +200,21 @@ class PublicDescentReport:
                     "",
                     "Each row asks: what if this hidden column were promoted into the "
                     "public representation? `reduction` is the drop in transport "
-                    "ambiguity, and `public_cells` is the resulting number of public "
-                    "strata. This is a measurement-value table: large reductions "
-                    "identify variables that make the coarse public representation "
-                    "more stable, with the usual tradeoff that more strata may "
-                    "increase sparsity.",
+                    "ambiguity from `before` to `after`, `reduction_pct` is the "
+                    "percentage of baseline ambiguity removed, and `public_cells` is "
+                    "the resulting number of public strata. This is a "
+                    "measurement-value table: large reductions identify variables "
+                    "that make the coarse public representation more stable, with "
+                    "the usual tradeoff that more strata may increase sparsity.",
                 ]
             )
             for row in self.refinements:
                 lines.append(
-                    f"- add {row.column}: ambiguity={row.diameter:.4f}, "
-                    f"reduction={row.reduction:.4f}, public_cells={row.public_cells}"
+                    f"- add {row.column}: before={row.before_ambiguity:.4f}, "
+                    f"after={row.after_ambiguity:.4f}, "
+                    f"reduction={row.reduction:.4f}, "
+                    f"reduction_pct={row.reduction_percent:.1f}%, "
+                    f"public_cells={row.public_cells}"
                 )
 
         lines.extend(
@@ -389,11 +416,17 @@ def recommend_refinements(
             min_cell_weight=min_cell_weight,
         )
         diameter = refined.problem.global_transport_modulus().diameter
+        reduction = baseline_diameter - diameter
+        reduction_percent = (
+            100.0 * reduction / baseline_diameter if baseline_diameter > 0 else 0.0
+        )
         scores.append(
             RefinementCandidate(
                 column=column,
-                diameter=diameter,
-                reduction=baseline_diameter - diameter,
+                before_ambiguity=baseline_diameter,
+                after_ambiguity=diameter,
+                reduction=reduction,
+                reduction_percent=reduction_percent,
                 public_cells=len(refined.problem.public_values),
             )
         )

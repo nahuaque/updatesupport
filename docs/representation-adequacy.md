@@ -51,7 +51,8 @@ A useful analyst-facing report should include:
 - **Worst public fibers**: public cells where hidden variation contributes most
   to ambiguity.
 - **Recommended refinements**: hidden variables that would reduce ambiguity if
-  added to the public representation.
+  added to the public representation, with before ambiguity, after ambiguity,
+  absolute reduction, and percentage reduction.
 
 This report should be readable without requiring the audience to know the
 underlying finite-support theory.

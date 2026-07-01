@@ -35,8 +35,12 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertEqual(report.fibers[0].public_value, ("A",))
         self.assertAlmostEqual(report.fibers[0].contribution, 0.6)
         self.assertEqual(report.refinements[0].column, "hidden")
+        self.assertAlmostEqual(report.refinements[0].before_ambiguity, 0.6)
+        self.assertAlmostEqual(report.refinements[0].after_ambiguity, 0.0)
         self.assertAlmostEqual(report.refinements[0].diameter, 0.0)
         self.assertAlmostEqual(report.refinements[0].reduction, 0.6)
+        self.assertAlmostEqual(report.refinements[0].reduction_percent, 100.0)
+        self.assertAlmostEqual(report.refinements[0].reduction_fraction, 1.0)
 
     def test_public_descent_report_renders_markdown(self):
         rows = [
@@ -63,7 +67,36 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertIn("not a sampling confidence interval", markdown)
         self.assertIn("## Worst Public Fibers", markdown)
         self.assertIn("measurement-value table", markdown)
+        self.assertIn("before=0.6000, after=0.0000", markdown)
+        self.assertIn("reduction_pct=100.0%", markdown)
         self.assertIn("## Analyst Notes", markdown)
+
+    def test_recommend_refinements_returns_before_after_and_percent_reduction(self):
+        rows = [
+            {"public": "A", "hidden": "x", "noise": "n", "target": 0.0, "weight": 30},
+            {"public": "A", "hidden": "y", "noise": "n", "target": 1.0, "weight": 30},
+            {"public": "B", "hidden": "z", "noise": "n", "target": 0.5, "weight": 40},
+        ]
+
+        candidates = us.recommend_refinements(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden", "noise"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["noise", "hidden"],
+        )
+
+        self.assertEqual(candidates[0].column, "hidden")
+        self.assertAlmostEqual(candidates[0].before_ambiguity, 0.6)
+        self.assertAlmostEqual(candidates[0].after_ambiguity, 0.0)
+        self.assertAlmostEqual(candidates[0].reduction, 0.6)
+        self.assertAlmostEqual(candidates[0].reduction_percent, 100.0)
+        self.assertEqual(candidates[1].column, "noise")
+        self.assertAlmostEqual(candidates[1].before_ambiguity, 0.6)
+        self.assertAlmostEqual(candidates[1].after_ambiguity, 0.6)
+        self.assertAlmostEqual(candidates[1].reduction, 0.0)
+        self.assertAlmostEqual(candidates[1].reduction_percent, 0.0)
 
     def test_public_descent_report_accepts_precompiled_grouped_problem(self):
         rows = [
