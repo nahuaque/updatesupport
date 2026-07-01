@@ -126,8 +126,8 @@ uv sync --extra dowhy
 ## Core Model
 
 The library implements a finite-linear version of the update-support machinery
-from [Update Support Homomorphisms](https://philpapers.org/rec/BRUUSH). It
-models:
+from [Update-Relevant Support: Hume's Missing Descent](https://philpapers.org/go.pl?id=BRUUSH&proxyId=&u=https%3A%2F%2Fphilpapers.org%2Farchive%2FBRUUSH.pdf).
+It models:
 
 - a finite hidden state space `D`
 - a public projection `pi: D -> O`
@@ -620,4 +620,4 @@ for support in least.minimal_supports:
 - [Transport preset guide](docs/transport-presets.md)
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)
 - [Folktables ACSIncome result interpretation](docs/folktables-acs-income-interpretation.md)
-- [Update Support Homomorphisms](https://philpapers.org/rec/BRUUSH)
+- [Update-Relevant Support: Hume's Missing Descent](https://philpapers.org/go.pl?id=BRUUSH&proxyId=&u=https%3A%2F%2Fphilpapers.org%2Farchive%2FBRUUSH.pdf)
