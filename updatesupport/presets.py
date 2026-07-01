@@ -58,6 +58,18 @@ def q_tv_budget(radius: float, *, backend: str = "cvxpy") -> QPreset:
     return QPreset("tv_budget", radius=float(radius), backend=backend)
 
 
+def q_chi_square_budget(radius: float, *, backend: str = "cvxpy") -> QPreset:
+    """Constrain Pearson chi-square divergence from the observed distribution."""
+
+    return QPreset("chi_square_budget", radius=float(radius), backend=backend)
+
+
+def q_kl_budget(radius: float, *, backend: str = "cvxpy") -> QPreset:
+    """Constrain KL divergence from the observed hidden distribution."""
+
+    return QPreset("kl_budget", radius=float(radius), backend=backend)
+
+
 def q_wasserstein(
     cost: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
     radius: float,
@@ -133,8 +145,17 @@ def resolve_q_environment(
         )
 
     if preset.name == "tv_budget":
-        _require_backend(preset, "cvxpy")
         radius = _tv_radius(preset)
+        if radius == 0.0:
+            return _point_environment(
+                cell_weights,
+                preset,
+                description=(
+                    "fixed observed public law with total variation distance from "
+                    "the observed hidden distribution <= 0"
+                ),
+            )
+        _require_backend(preset, "cvxpy")
         return QEnvironment(
             environment=CvxpyEnvironments(
                 fixed_public_law=public_law,
@@ -146,6 +167,60 @@ def resolve_q_environment(
             description=(
                 "fixed observed public law with total variation distance from "
                 f"the observed hidden distribution <= {radius:g}"
+            ),
+        )
+
+    if preset.name == "chi_square_budget":
+        radius = _chi_square_radius(preset)
+        if radius == 0.0:
+            return _point_environment(
+                cell_weights,
+                preset,
+                description=(
+                    "fixed observed public law with Pearson chi-square divergence "
+                    "from the observed hidden distribution <= 0"
+                ),
+            )
+        _require_backend(preset, "cvxpy")
+        return QEnvironment(
+            environment=CvxpyEnvironments(
+                fixed_public_law=public_law,
+                constraint_builders=(
+                    _chi_square_constraint_builder(cell_weights, radius),
+                ),
+                name=q_name(preset),
+            ),
+            preset=preset,
+            name=q_name(preset),
+            description=(
+                "fixed observed public law with Pearson chi-square divergence "
+                f"from the observed hidden distribution <= {radius:g}"
+            ),
+        )
+
+    if preset.name == "kl_budget":
+        radius = _kl_radius(preset)
+        if radius == 0.0:
+            return _point_environment(
+                cell_weights,
+                preset,
+                description=(
+                    "fixed observed public law with KL divergence from the "
+                    "observed hidden distribution <= 0"
+                ),
+            )
+        _require_backend(preset, "cvxpy")
+        return QEnvironment(
+            environment=CvxpyEnvironments(
+                fixed_public_law=public_law,
+                constraint_builders=(_kl_constraint_builder(cell_weights, radius),),
+                name=q_name(preset),
+            ),
+            preset=preset,
+            name=q_name(preset),
+            description=(
+                "fixed observed public law with KL divergence from the observed "
+                f"hidden distribution <= {radius:g}"
             ),
         )
 
@@ -173,6 +248,20 @@ def resolve_q_environment(
     raise ValueError(f"unsupported Q preset: {preset.name!r}")
 
 
+def _point_environment(
+    cell_weights: Mapping[Hashable, float],
+    preset: QPreset,
+    *,
+    description: str,
+) -> QEnvironment:
+    return QEnvironment(
+        environment=FiniteEnvironments([cell_weights], name=q_name(preset)),
+        preset=preset,
+        name=q_name(preset),
+        description=description,
+    )
+
+
 def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | None:
     if isinstance(q, QPreset):
         preset = _canonical_preset(q)
@@ -184,9 +273,16 @@ def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | No
         return None
 
     if q_radius is not None:
-        if preset.name not in {"bounded_shift", "tv_budget", "wasserstein"}:
+        if preset.name not in {
+            "bounded_shift",
+            "chi_square_budget",
+            "kl_budget",
+            "tv_budget",
+            "wasserstein",
+        }:
             raise ValueError(
-                "q_radius is only valid for bounded, TV, or Wasserstein Q presets"
+                "q_radius is only valid for bounded, chi-square, KL, TV, "
+                "or Wasserstein Q presets"
             )
         if preset.radius is not None and float(preset.radius) != float(q_radius):
             raise ValueError("q_radius conflicts with the QPreset radius")
@@ -197,6 +293,12 @@ def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | No
         preset = QPreset(preset.name, radius, preset.cost, preset.backend)
     elif preset.name == "tv_budget":
         radius = _tv_radius(preset)
+        preset = QPreset(preset.name, radius, preset.cost, preset.backend)
+    elif preset.name == "chi_square_budget":
+        radius = _chi_square_radius(preset)
+        preset = QPreset(preset.name, radius, preset.cost, preset.backend)
+    elif preset.name == "kl_budget":
+        radius = _kl_radius(preset)
         preset = QPreset(preset.name, radius, preset.cost, preset.backend)
     elif preset.name == "wasserstein":
         radius = _wasserstein_radius(preset)
@@ -213,6 +315,10 @@ def q_name(q: Any, *, q_radius: float | None = None) -> str:
         return f"bounded_shift(radius={_bounded_radius(preset):g})"
     if preset.name == "tv_budget":
         return f"tv_budget(radius={_tv_radius(preset):g})"
+    if preset.name == "chi_square_budget":
+        return f"chi_square_budget(radius={_chi_square_radius(preset):g})"
+    if preset.name == "kl_budget":
+        return f"kl_budget(radius={_kl_radius(preset):g})"
     if preset.name == "wasserstein":
         return f"wasserstein(radius={_wasserstein_radius(preset):g})"
     return preset.name
@@ -241,6 +347,18 @@ def q_description(q: Any, *, q_radius: float | None = None) -> str:
             "fixed observed public law with total variation distance from "
             f"the observed hidden distribution <= {radius:g}"
         )
+    if preset.name == "chi_square_budget":
+        radius = _chi_square_radius(preset)
+        return (
+            "fixed observed public law with Pearson chi-square divergence from "
+            f"the observed hidden distribution <= {radius:g}"
+        )
+    if preset.name == "kl_budget":
+        radius = _kl_radius(preset)
+        return (
+            "fixed observed public law with KL divergence from the observed "
+            f"hidden distribution <= {radius:g}"
+        )
     if preset.name == "wasserstein":
         radius = _wasserstein_radius(preset)
         return (
@@ -265,6 +383,18 @@ def _canonical_preset(preset: QPreset) -> QPreset:
         "total_variation": "tv_budget",
         "tv": "tv_budget",
         "tv_budget": "tv_budget",
+        "chi-square": "chi_square_budget",
+        "chi_square": "chi_square_budget",
+        "chi-square-budget": "chi_square_budget",
+        "chi_square_budget": "chi_square_budget",
+        "chi2": "chi_square_budget",
+        "chisquare": "chi_square_budget",
+        "kl": "kl_budget",
+        "kl-budget": "kl_budget",
+        "kl_budget": "kl_budget",
+        "kullback-leibler": "kl_budget",
+        "relative-entropy": "kl_budget",
+        "relative_entropy": "kl_budget",
         "w1": "wasserstein",
         "wasserstein": "wasserstein",
     }
@@ -294,6 +424,24 @@ def _tv_radius(preset: QPreset) -> float:
     return radius
 
 
+def _chi_square_radius(preset: QPreset) -> float:
+    if preset.radius is None:
+        raise ValueError("chi_square_budget radius is required")
+    radius = float(preset.radius)
+    if radius < 0:
+        raise ValueError("chi_square_budget radius must be non-negative")
+    return radius
+
+
+def _kl_radius(preset: QPreset) -> float:
+    if preset.radius is None:
+        raise ValueError("kl_budget radius is required")
+    radius = float(preset.radius)
+    if radius < 0:
+        raise ValueError("kl_budget radius must be non-negative")
+    return radius
+
+
 def _wasserstein_radius(preset: QPreset) -> float:
     if preset.radius is None:
         raise ValueError("wasserstein radius is required")
@@ -317,6 +465,33 @@ def _tv_constraint_builder(cell_weights: Mapping[Hashable, float], radius: float
 
         observed = np.array([observed_by_state[state] for state in states], dtype=float)
         return (cp.norm1(q - observed) <= 2.0 * radius,)
+
+    return build
+
+
+def _chi_square_constraint_builder(
+    cell_weights: Mapping[Hashable, float], radius: float
+):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        scale = 1.0 / np.sqrt(observed)
+        return (cp.sum_squares(cp.multiply(scale, q - observed)) <= radius,)
+
+    return build
+
+
+def _kl_constraint_builder(cell_weights: Mapping[Hashable, float], radius: float):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        return (cp.sum(cp.rel_entr(q, observed)) <= radius,)
 
     return build
 

@@ -152,7 +152,7 @@ fibers.
 ## Q Presets
 
 `Q` is the admissible environment class used for the hidden-composition stress
-test. The first built-in presets are:
+test. The built-in presets are:
 
 - `q="saturated"` or `us.q_saturated()`: fix the observed public law and allow
   arbitrary reweighting among retained hidden cells inside each public cell.
@@ -161,13 +161,19 @@ test. The first built-in presets are:
 - `q=us.q_tv_budget(radius)`: fix the observed public law and constrain total
   variation distance from the observed hidden distribution. This uses the
   optional CVXPY backend.
+- `q=us.q_chi_square_budget(radius)`: fix the observed public law and constrain
+  Pearson chi-square divergence from the observed hidden distribution. This uses
+  the optional CVXPY backend.
+- `q=us.q_kl_budget(radius)`: fix the observed public law and constrain KL
+  divergence from the observed hidden distribution. This uses the optional CVXPY
+  backend.
 - `q=us.q_wasserstein(cost, radius)`: fix the observed public law and constrain
   Wasserstein distance from the observed hidden distribution using an explicit
   hidden-cell cost matrix. This uses the optional CVXPY backend.
 - `q="observed"` or `us.q_observed()`: use only the observed hidden distribution,
   giving zero hidden-composition ambiguity.
 
-Install the CVXPY extra before using TV or Wasserstein presets:
+Install the CVXPY extra before using TV, chi-square, KL, or Wasserstein presets:
 
 ```bash
 uv sync --extra cvxpy
@@ -363,8 +369,8 @@ Implemented now:
 - `PolytopeEnvironments` via SciPy `linprog`
 - `CvxpyEnvironments` for convex finite-environment restrictions
 - `from_dataframe(...)` for compiling grouped tabular data into a finite problem
-- Q presets: `saturated`, `observed`, `bounded_shift`, `tv_budget`, and
-  `wasserstein`
+- Q presets: `saturated`, `observed`, `bounded_shift`, `tv_budget`,
+  `chi_square_budget`, `kl_budget`, and `wasserstein`
 - `PublicDescentReport` with Markdown output
 - `public_descent_report(...)` for analyst-facing report objects
 - `audit_effects(...)` for causal/uplift effect-reporting stability audits
@@ -382,7 +388,6 @@ Implemented now:
 
 Planned next slices:
 
-- additional convex Q presets such as KL or chi-square divergence budgets
 - experimental transport types such as Gromov-Wasserstein once the comparison
   object is a pair of relational hidden-state geometries rather than one fixed
   hidden-cell cost matrix
@@ -434,7 +439,8 @@ problem = us.FiniteProblem(
 )
 ```
 
-The TV and Wasserstein Q presets are thin wrappers around this backend.
+The TV, chi-square, KL, and Wasserstein Q presets are thin wrappers around this
+backend.
 
 ## Theory Example: No Least Support
 

@@ -62,6 +62,44 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.upper, 0.65, places=6)
         self.assertAlmostEqual(interval.diameter, 0.30, places=6)
 
+    def test_chi_square_budget_preset_limits_divergence_from_observed(self):
+        _require_cvxpy()
+
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_chi_square_budget(0.15),
+        )
+
+        interval = grouped.problem.global_transport_modulus()
+
+        self.assertEqual(grouped.q_name, "chi_square_budget(radius=0.15)")
+        self.assertAlmostEqual(interval.lower, 0.35, places=5)
+        self.assertAlmostEqual(interval.upper, 0.65, places=5)
+        self.assertAlmostEqual(interval.diameter, 0.30, places=5)
+
+    def test_kl_budget_preset_limits_divergence_from_observed(self):
+        _require_cvxpy()
+
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_kl_budget(0.08),
+        )
+
+        interval = grouped.problem.global_transport_modulus()
+
+        self.assertEqual(grouped.q_name, "kl_budget(radius=0.08)")
+        self.assertLess(interval.lower, 0.5)
+        self.assertGreater(interval.upper, 0.5)
+        self.assertLess(interval.diameter, 0.6)
+
     def test_wasserstein_budget_preset_uses_explicit_hidden_cost(self):
         _require_cvxpy()
 
@@ -95,16 +133,22 @@ class CvxpyBackendTests(unittest.TestCase):
     def test_zero_budget_presets_collapse_to_observed_distribution(self):
         _require_cvxpy()
 
-        tv_grouped = us.from_dataframe(
-            _rows(),
-            public=["PUBLIC"],
-            hidden=["PUBLIC", "HIDDEN"],
-            target="Y",
-            weight="W",
-            q=us.q_tv_budget(0.0),
-        )
-        interval = tv_grouped.problem.global_transport_modulus()
+        for q in (
+            us.q_chi_square_budget(0.0),
+            us.q_kl_budget(0.0),
+            us.q_tv_budget(0.0),
+        ):
+            with self.subTest(q=q):
+                grouped = us.from_dataframe(
+                    _rows(),
+                    public=["PUBLIC"],
+                    hidden=["PUBLIC", "HIDDEN"],
+                    target="Y",
+                    weight="W",
+                    q=q,
+                )
+                interval = grouped.problem.global_transport_modulus()
 
-        self.assertAlmostEqual(interval.lower, 0.5, places=6)
-        self.assertAlmostEqual(interval.upper, 0.5, places=6)
-        self.assertAlmostEqual(interval.diameter, 0.0, places=6)
+                self.assertAlmostEqual(interval.lower, 0.5, places=5)
+                self.assertAlmostEqual(interval.upper, 0.5, places=5)
+                self.assertAlmostEqual(interval.diameter, 0.0, places=5)

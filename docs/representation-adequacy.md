@@ -79,6 +79,9 @@ The named `Q` presets are:
 - `bounded_shift`: limited per-hidden-cell relative movement away from the
   observed hidden mix
 - `tv_budget`: total-variation budget around the observed hidden mix
+- `chi_square_budget`: Pearson chi-square divergence budget around the observed
+  hidden mix
+- `kl_budget`: KL divergence budget around the observed hidden mix
 - `wasserstein`: Wasserstein budget using an explicit hidden-cell cost matrix
 
 `min_cell_weight` is a separate robustness knob: it drops tiny hidden cells before
@@ -165,21 +168,24 @@ The Q preset surface now supports several levels of conservatism:
   observed hidden distribution.
 - `q=us.q_tv_budget(radius)`: total-variation budget around the observed hidden
   distribution, using the optional CVXPY backend.
+- `q=us.q_chi_square_budget(radius)`: Pearson chi-square divergence budget
+  around the observed hidden distribution, using the optional CVXPY backend.
+- `q=us.q_kl_budget(radius)`: KL divergence budget around the observed hidden
+  distribution, using the optional CVXPY backend.
 - `q=us.q_wasserstein(cost, radius)`: Wasserstein budget with an explicit
   hidden-cell cost matrix, using the optional CVXPY backend.
 - `q="observed"`: no hidden-composition shift.
 
-Install the CVXPY extra before using TV or Wasserstein presets:
+Install the CVXPY extra before using TV, chi-square, KL, or Wasserstein presets:
 
 ```bash
 uv sync --extra cvxpy
 ```
 
-The next implementation slices should focus on deeper sensitivity reporting,
-additional convex divergence presets, and experimental relational transport types
-such as Gromov-Wasserstein only when the application supplies two comparable
-hidden-state geometries. For current preset selection guidance, see
-[Transport presets](transport-presets.md).
+The next implementation slices should focus on deeper sensitivity reporting and
+experimental relational transport types such as Gromov-Wasserstein only when the
+application supplies two comparable hidden-state geometries. For current preset
+selection guidance, see [Transport presets](transport-presets.md).
 
 The documentation should keep the ACSIncome case study as the primary example
 and put the finite-support theory underneath it.

@@ -25,6 +25,8 @@ from .problem import FiniteProblem, TooManyPartitions
 from .presets import (
     QPreset,
     q_bounded_shift,
+    q_chi_square_budget,
+    q_kl_budget,
     q_observed,
     q_saturated,
     q_tv_budget,
@@ -81,6 +83,8 @@ __all__ = [
     "public_fiber_diagnostics",
     "QPreset",
     "q_bounded_shift",
+    "q_chi_square_budget",
+    "q_kl_budget",
     "q_observed",
     "q_saturated",
     "q_tv_budget",

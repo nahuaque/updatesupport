@@ -16,6 +16,8 @@ different presets.
 | `q="saturated"` | Conservative first-pass audit | Any reweighting among retained hidden cells inside each public cell | Can be wider than a plausible operational shift |
 | `q=us.q_bounded_shift(radius)` | Practical default after the first pass | Each hidden-cell mass stays within a relative band around its observed mass | Radius is cellwise, so it may be too restrictive for rare cells or too loose for large cells |
 | `q=us.q_tv_budget(radius)` | Overall churn budget | Total variation distance from the observed hidden distribution is bounded | Needs CVXPY and can concentrate the budget on the most influential cells |
+| `q=us.q_chi_square_budget(radius)` | Variance-scaled divergence budget | Pearson chi-square divergence from the observed hidden distribution is bounded | Needs CVXPY and penalizes shifts out of small observed cells strongly |
+| `q=us.q_kl_budget(radius)` | Information-divergence budget | KL divergence from the observed hidden distribution is bounded | Needs CVXPY and the radius is less intuitive than direct mass movement |
 | `q=us.q_wasserstein(cost, radius)` | Similarity-aware shifts | Hidden mass can move cheaply between similar cells and expensively between dissimilar cells | Requires a defensible cost matrix and CVXPY |
 | `q="observed"` | Baseline or sanity check | No hidden-composition shift | Always reports zero hidden-composition ambiguity |
 
@@ -218,6 +220,93 @@ Interpretation:
 > amount of hidden mass moved away from the observed hidden mix were at most
 > this TV radius?
 
+## Chi-Square Budget
+
+Use:
+
+```python
+q = us.q_chi_square_budget(0.15)
+```
+
+Install the CVXPY extra first:
+
+```bash
+uv sync --extra cvxpy
+```
+
+This constrains Pearson chi-square divergence from the observed hidden
+distribution:
+
+```text
+chi2(q, p_observed) = sum_s (q(s) - p_observed(s))^2 / p_observed(s) <= radius
+```
+
+The public totals are still fixed.
+
+Use `chi_square_budget` when:
+
+- You want a smooth convex alternative to a TV budget.
+- You want deviations from small observed cells to be penalized more heavily.
+- You want a global divergence budget but do not have a hidden-cell geometry for
+  Wasserstein.
+
+Be cautious when:
+
+- Stakeholders expect a direct "percentage of mass moved" interpretation.
+- Very small retained cells remain in the state space; the denominator makes
+  movement out of them expensive, but their target values may still be noisy.
+- You need a dependency-light workflow without CVXPY.
+
+Interpretation:
+
+> Holding public cell shares fixed, how much could the answer move if the
+> candidate hidden mix had Pearson chi-square divergence at most this radius
+> from the observed hidden mix?
+
+## KL Budget
+
+Use:
+
+```python
+q = us.q_kl_budget(0.05)
+```
+
+Install the CVXPY extra first:
+
+```bash
+uv sync --extra cvxpy
+```
+
+This constrains KL divergence from the observed hidden distribution:
+
+```text
+KL(q || p_observed) = sum_s q(s) * log(q(s) / p_observed(s)) <= radius
+```
+
+The public totals are still fixed. Because the compiler only retains hidden
+cells with positive observed weight, the reference distribution is positive on
+the retained support.
+
+Use `kl_budget` when:
+
+- You want an information-divergence sensitivity set.
+- You want a smooth alternative to TV that is common in robust statistics and
+  distributionally robust optimization.
+- You want to penalize multiplicative departures from the observed hidden mix.
+
+Be cautious when:
+
+- The radius does not have a simple mass-moved interpretation.
+- You need to communicate results to an audience that expects direct cellwise
+  movement bounds.
+- You need a dependency-light workflow without CVXPY.
+
+Interpretation:
+
+> Holding public cell shares fixed, how much could the answer move if the
+> candidate hidden mix had KL divergence at most this radius from the observed
+> hidden mix?
+
 ## Wasserstein Budget
 
 Use:
@@ -278,8 +367,9 @@ A practical workflow:
    within-public-cell reweighting.
 3. If the conclusion changes under small bounded shifts, refine the public
    representation or report the ambiguity prominently.
-4. If you have a substantive churn or distance scale, add `tv_budget(...)` or
-   `wasserstein(...)` as a domain-specific robustness check.
+4. If you have a substantive churn, divergence, or distance scale, add
+   `q_tv_budget(...)`, `q_chi_square_budget(...)`, `q_kl_budget(...)`, or
+   `q_wasserstein(...)` as domain-specific robustness checks.
 
 Good reports state:
 
@@ -300,6 +390,8 @@ The compiler accepts both helper functions and string aliases:
 | `observed` | `"observed"`, `"point"`, `"observed_only"` |
 | `bounded_shift` | `"bounded"`, `"bounded-shift"`, `"bounded_shift"` |
 | `tv_budget` | `"tv"`, `"total-variation"`, `"total_variation"`, `"tv_budget"` |
+| `chi_square_budget` | `"chi-square"`, `"chi_square"`, `"chi-square-budget"`, `"chi_square_budget"`, `"chi2"`, `"chisquare"` |
+| `kl_budget` | `"kl"`, `"kl-budget"`, `"kl_budget"`, `"kullback-leibler"`, `"relative-entropy"`, `"relative_entropy"` |
 | `wasserstein` | `"w1"`, `"wasserstein"` |
 
 For named presets with a radius, either call the helper function or pass
