@@ -3,6 +3,7 @@ name = "updatesupport"
 version = "0.1.0"
 description = "Representation adequacy and transport-stability auditing in Python"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=2.2.6",
@@ -38,3 +39,6 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["updatesupport*"]
