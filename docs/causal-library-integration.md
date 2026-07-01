@@ -87,6 +87,66 @@ The report asks:
 > aggregate move if education, income, region, or prior usage changed inside
 > those public cells?
 
+## Folktables ACS Causal-Effect Example
+
+The repository includes an executable ACS example that makes the handoff
+concrete:
+
+```bash
+uv run --extra examples python examples/folktables_acs_causal.py \
+  --task income \
+  --states CA \
+  --year 2018 \
+  --sample 50000
+```
+
+The example uses:
+
+- treatment: BA or graduate degree versus less than BA
+- outcome: the selected Folktables ACS task label
+- public reporting categories: age band and sex
+- hidden reporting refinements: occupation, weekly-hours band, race, marital
+  status, class of worker, and relationship status when available
+
+The built-in first stage estimates one `__tau_hat__` value per hidden stratum
+using a transparent treated-minus-control difference in weighted outcome means.
+That is intentionally simple. It is there to make the integration surface
+visible, not to claim that education is causally identified in ACS.
+
+In a real workflow, replace the first stage with a causal library:
+
+```python
+# Example shape, independent of the specific causal library.
+df["tau_hat"] = causal_estimator.effect(X)
+
+report = us.public_descent_report(
+    df,
+    public=["AGE_BAND", "SEX"],
+    hidden=[
+        "AGE_BAND",
+        "SEX",
+        "OCC_MAJOR",
+        "WKHP_BAND",
+        "RAC1P",
+        "MAR",
+        "COW",
+        "RELP",
+    ],
+    target="tau_hat",
+    weight="sample_weight",
+    candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P", "MAR"],
+    q=us.q_bounded_shift(0.5),
+    min_cell_weight=25,
+    title="Causal Effect Representation Stability Audit",
+)
+```
+
+The important separation is:
+
+> The causal library estimates the effect; `updatesupport` audits whether the
+> public categories used to report that effect are stable to hidden-composition
+> changes.
+
 ## With DoWhy
 
 Use DoWhy for causal modeling, identification, estimation, and refutation. Then

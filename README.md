@@ -295,6 +295,29 @@ There is also a no-download smoke demo:
 uv run python examples/folktables_acs.py --synthetic
 ```
 
+There is also a causal-effect reporting example. It first estimates a
+treatment-effect target, then audits whether that effect is stable when reported
+by coarse public categories:
+
+```bash
+uv run --extra examples python examples/folktables_acs_causal.py \
+  --task income \
+  --states CA \
+  --year 2018 \
+  --sample 50000
+```
+
+The no-download version is:
+
+```bash
+uv run python examples/folktables_acs_causal.py --synthetic
+```
+
+The built-in first stage is a transparent stratified difference in outcome
+means. In a real causal workflow, replace that first stage with a DoWhy, EconML,
+CausalML, or DoubleML estimator that produces a `tau_hat` effect target; the
+`updatesupport` stage is the same.
+
 ## Current Python Surface
 
 Implemented now:

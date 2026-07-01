@@ -151,9 +151,9 @@ class PublicDescentReport:
                 "is the sample-weighted average over the observed hidden-cell mix.",
                 "",
                 "The partial-ID interval fixes the observed public distribution and "
-                "then allows arbitrary reweighting among retained hidden cells inside "
-                "each public cell. Under that stress test, the aggregate value can "
-                f"range from {self.interval.lower:.4f} to {self.interval.upper:.4f}. "
+                "then applies the selected Q stress test: "
+                f"{grouped.q_description}. Under that stress test, the aggregate "
+                f"value can range from {self.interval.lower:.4f} to {self.interval.upper:.4f}. "
                 f"The observed value {self.observed_value:.4f} "
                 f"{'falls inside' if self.interval_contains_observed else 'does not fall inside'} "
                 "that interval.",
@@ -523,8 +523,10 @@ class SensitivityReport:
         )
         for row in self.rows:
             hidden_columns = ", ".join(row.hidden_columns)
-            adequate = "" if row.public_adequate is None else (
-                "yes" if row.public_adequate else "no"
+            adequate = (
+                ""
+                if row.public_adequate is None
+                else ("yes" if row.public_adequate else "no")
             )
             status = row.status if row.error is None else f"error: {row.error}"
             lines.append(
@@ -567,10 +569,14 @@ def sensitivity_report(
 
     repeatable_data, row_count = _repeatable_data(data)
     hidden_grid = tuple(hidden_sets) if hidden_sets is not None else (tuple(hidden),)
-    q_grid = tuple(q_presets) if q_presets is not None else (
-        "saturated",
-        q_bounded_shift(0.5),
-        "observed",
+    q_grid = (
+        tuple(q_presets)
+        if q_presets is not None
+        else (
+            "saturated",
+            q_bounded_shift(0.5),
+            "observed",
+        )
     )
 
     rows: list[SensitivityRow] = []

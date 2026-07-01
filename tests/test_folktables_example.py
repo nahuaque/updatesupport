@@ -11,6 +11,12 @@ from examples.folktables_acs import (
     refinement_candidates,
     render_report,
 )
+from examples.folktables_acs_causal import (
+    EFFECT_COLUMN,
+    build_stratified_effect_rows,
+    render_causal_report,
+    synthetic_causal_source_rows,
+)
 
 
 class FolktablesExampleTests(unittest.TestCase):
@@ -105,6 +111,63 @@ class FolktablesExampleTests(unittest.TestCase):
         self.assertIn("not a sampling confidence interval", report)
         self.assertIn("measurement-value table", report)
         self.assertIn("## Analyst Notes", report)
+
+    def test_causal_example_builds_stratified_effect_targets(self):
+        rows, public_columns, hidden_columns, _candidate_columns = (
+            synthetic_causal_source_rows()
+        )
+
+        result = build_stratified_effect_rows(
+            rows,
+            public_columns=public_columns,
+            hidden_columns=hidden_columns,
+            min_arm_weight=1,
+        )
+
+        self.assertEqual(result.source_rows, 10)
+        self.assertEqual(result.retained_strata, 5)
+        self.assertEqual(result.dropped_strata, 0)
+        by_key = {
+            tuple(row[column] for column in hidden_columns): row for row in result.rows
+        }
+        self.assertAlmostEqual(
+            by_key[("25_34", "1", "tech", "36_45", "1")][EFFECT_COLUMN],
+            0.44,
+        )
+        self.assertAlmostEqual(
+            by_key[("25_34", "1", "service", "21_35", "1")][EFFECT_COLUMN],
+            0.06,
+        )
+
+    def test_causal_example_report_shows_handoff_to_updatesupport(self):
+        rows, public_columns, hidden_columns, candidate_columns = (
+            synthetic_causal_source_rows()
+        )
+        effect_result = build_stratified_effect_rows(
+            rows,
+            public_columns=public_columns,
+            hidden_columns=hidden_columns,
+            min_arm_weight=1,
+        )
+
+        markdown = render_causal_report(
+            effect_result=effect_result,
+            public_columns=public_columns,
+            hidden_columns=hidden_columns,
+            candidate_columns=candidate_columns,
+            treatment_label="BA or graduate degree versus less than BA",
+            outcome_label="ACSIncome target label",
+            min_cell_weight=1,
+            q=us.q_bounded_shift(0.5),
+            top=2,
+        )
+
+        self.assertIn("# Folktables ACS Causal-Effect Reporting Demo", markdown)
+        self.assertIn("## Causal Estimation Step", markdown)
+        self.assertIn("`__tau_hat__`", markdown)
+        self.assertIn("## Update-Support Question", markdown)
+        self.assertIn("# Representation Stability Audit", markdown)
+        self.assertIn("Observed weighted effect estimate", markdown)
 
 
 if __name__ == "__main__":
