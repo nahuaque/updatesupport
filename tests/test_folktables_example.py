@@ -4,6 +4,13 @@ import unittest
 
 import updatesupport as us
 
+from examples.acic_2016 import (
+    EFFECT_COLUMN as ACIC_EFFECT_COLUMN,
+    attach_oracle_effects,
+    estimate_acic_effects_with_econml,
+    render_acic_report,
+    synthetic_acic_2016_source_rows,
+)
 from examples.folktables_acs import (
     TARGET_COLUMN,
     build_problem_from_rows,
@@ -177,6 +184,53 @@ class FolktablesExampleTests(unittest.TestCase):
         self.assertIn("## Update-Support Question", markdown)
         self.assertIn("# Representation Stability Audit", markdown)
         self.assertIn("Observed weighted effect estimate", markdown)
+
+    def test_acic_synthetic_rows_support_oracle_effect_audit(self):
+        rows, public_columns, hidden_columns, candidate_columns = (
+            synthetic_acic_2016_source_rows()
+        )
+
+        result = attach_oracle_effects(
+            rows,
+            feature_columns=hidden_columns,
+        )
+        markdown = render_acic_report(
+            effect_result=result,
+            public_columns=public_columns,
+            hidden_columns=hidden_columns,
+            candidate_columns=candidate_columns,
+            min_cell_weight=1,
+            q=us.q_bounded_shift(0.5),
+            top=2,
+        )
+
+        self.assertGreater(len(rows), 0)
+        self.assertGreater(len(public_columns), 0)
+        self.assertGreater(len(candidate_columns), 0)
+        self.assertEqual(result.effect_source, "oracle")
+        self.assertIn(ACIC_EFFECT_COLUMN, result.rows[0])
+        self.assertIn("# ACIC 2016 Causal Benchmark Demo", markdown)
+        self.assertIn("Inferential group: treated", markdown)
+        self.assertIn("# ACIC 2016 Representation Stability Audit", markdown)
+
+    def test_acic_econml_path_builds_effect_targets_with_fake_estimator(self):
+        rows, _public_columns, hidden_columns, _candidate_columns = (
+            synthetic_acic_2016_source_rows()
+        )
+        estimator = FakeEconMLEstimator()
+
+        result = estimate_acic_effects_with_econml(
+            rows,
+            feature_columns=hidden_columns,
+            estimator_factory=lambda _random_state: estimator,
+        )
+
+        self.assertEqual(result.source_rows, len(rows))
+        self.assertEqual(result.effect_source, "econml")
+        self.assertEqual(result.estimator_name, "FakeEconMLEstimator")
+        self.assertEqual(estimator.x_shape[0], len(rows))
+        self.assertIsNone(estimator.inference)
+        self.assertAlmostEqual(result.rows[0][ACIC_EFFECT_COLUMN], 0.05)
 
 
 if __name__ == "__main__":

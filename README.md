@@ -381,6 +381,33 @@ workflow, swap in the DoWhy, EconML, CausalML, or DoubleML estimator that fits
 your identification strategy and produces a `tau_hat` effect target; the
 `updatesupport` stage is the same.
 
+## ACIC 2016 Causal Benchmark Example
+
+The ACIC 2016 example uses the same causal handoff on benchmark-style rows. It
+defaults to an oracle effect when potential-outcome columns such as `y0`/`y1` or
+`mu0`/`mu1` are present, and otherwise can fit EconML from observed `y` and `z`.
+The update-support audit defaults to the treated rows, matching the SATT focus
+of the 2016 competition. The official assets live in the
+[vdorie/aciccomp 2016 R package](https://github.com/vdorie/aciccomp/tree/master/2016).
+
+Run the no-download smoke demo:
+
+```bash
+uv run --extra examples python examples/acic_2016.py --synthetic
+```
+
+Run against a CSV exported from the official ACIC 2016 R package:
+
+```bash
+uv run --extra examples --extra causal python examples/acic_2016.py \
+  --input-csv data/acic_2016_p1_s1.csv \
+  --effect-source econml \
+  --sample 5000
+```
+
+If your exported CSV includes potential outcomes, use `--effect-source oracle`
+and optionally pass `--y0-column` / `--y1-column`.
+
 For DoWhy workflows, use `audit_dowhy_effects(...)` to package the
 representation audit with the DoWhy estimate, then call `audit.to_refutation()`
 to produce a DoWhy `CausalRefutation` object when the optional DoWhy dependency
