@@ -111,6 +111,12 @@ For the EconML causal example:
 uv sync --extra causal
 ```
 
+For the reproducible benchmark gallery:
+
+```bash
+uv sync --extra examples --extra causal
+```
+
 For DoWhy `CausalRefutation` conversion:
 
 ```bash
@@ -392,6 +398,21 @@ workflow, swap in the DoWhy, EconML, CausalML, or DoubleML estimator that fits
 your identification strategy and produces a `tau_hat` effect target; the
 `updatesupport` stage is the same.
 
+## Benchmark Gallery
+
+The benchmark gallery regenerates saved Markdown reports under gitignored
+`data/benchmark_gallery/`:
+
+```bash
+uv run --extra examples --extra causal python examples/benchmark_gallery.py
+```
+
+It includes no-download Folktables reports plus ACIC 2016 oracle and
+EconML-estimated effect reports when `data/acic_2016_p1_s1.csv` is present. It
+also attempts a real Folktables ACS sample from cached data; pass
+`--folktables-download` to fetch the ACS data. See
+[docs/benchmark-gallery.md](docs/benchmark-gallery.md).
+
 ## ACIC 2016 Causal Benchmark Example
 
 The ACIC 2016 example uses the same causal handoff on benchmark-style rows. It
@@ -452,6 +473,8 @@ Implemented now:
   across Q, hidden-set, and sparsity scenarios
 - `sensitivity_report(...)` for robustness grids over Q, hidden sets, and
   `min_cell_weight`
+- `examples/benchmark_gallery.py` for regenerating saved Folktables and ACIC
+  benchmark reports under gitignored `data/benchmark_gallery/`
 - adequacy checks with witnesses
 - adequate, minimal, and least support enumeration for small finite problems
 - local and global transport moduli
@@ -581,6 +604,7 @@ for support in least.minimal_supports:
 ## More Documentation
 
 - [Representation adequacy guide](docs/representation-adequacy.md)
+- [Benchmark gallery](docs/benchmark-gallery.md)
 - [Transport preset guide](docs/transport-presets.md)
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)
 - [Folktables ACSIncome result interpretation](docs/folktables-acs-income-interpretation.md)

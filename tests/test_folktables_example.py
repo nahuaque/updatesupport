@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 import updatesupport as us
 
+from examples.benchmark_gallery import generate_benchmark_gallery
 from examples.acic_2016 import (
     EFFECT_COLUMN as ACIC_EFFECT_COLUMN,
     attach_oracle_effects,
@@ -231,6 +234,39 @@ class FolktablesExampleTests(unittest.TestCase):
         self.assertEqual(estimator.x_shape[0], len(rows))
         self.assertIsNone(estimator.inference)
         self.assertAlmostEqual(result.rows[0][ACIC_EFFECT_COLUMN], 0.05)
+
+    def test_benchmark_gallery_generates_reproducible_markdown_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "gallery"
+            missing_acic = Path(directory) / "missing_acic.csv"
+
+            reports = generate_benchmark_gallery(
+                output_dir=output_dir,
+                acic_csv=missing_acic,
+                include_real_folktables=False,
+                skip_acic_econml=True,
+            )
+
+            statuses = {report.slug: report.status for report in reports}
+            self.assertEqual(
+                statuses["folktables_acs_income_synthetic"],
+                "generated",
+            )
+            self.assertEqual(
+                statuses["folktables_acs_causal_synthetic"],
+                "generated",
+            )
+            self.assertEqual(statuses["acic_2016_oracle"], "skipped")
+            self.assertTrue((output_dir / "index.md").exists())
+            self.assertTrue(
+                (output_dir / "folktables_acs_income_synthetic.md").exists()
+            )
+            self.assertTrue(
+                (output_dir / "folktables_acs_causal_synthetic.md").exists()
+            )
+            index = (output_dir / "index.md").read_text(encoding="utf-8")
+            self.assertIn("updatesupport Benchmark Gallery", index)
+            self.assertIn("ACIC CSV not found", index)
 
 
 if __name__ == "__main__":
