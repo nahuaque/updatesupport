@@ -11,7 +11,7 @@ The motivating workflow is simple:
 
 1. Choose the public categories you would report.
 2. Choose hidden variables that refine those public categories.
-3. Choose the target rate or linear estimand you care about.
+3. Choose the target rate or other linear estimand you care about.
 4. Stress test the estimate while holding the public distribution fixed.
 5. Report how much the answer could move, which public cells drive the movement,
    and which extra variables would reduce the ambiguity.
@@ -53,7 +53,8 @@ for the analyst-facing interpretation of this result.
 
 ## What This Is
 
-`updatesupport` is an audit layer for finite representations. It helps answer:
+`updatesupport` is an audit layer for finite-state reporting representations. It
+helps answer:
 
 - Are the public categories adequate for this estimand?
 - If not, how large is the remaining ambiguity?
@@ -111,6 +112,12 @@ For the EconML causal example:
 uv sync --extra causal
 ```
 
+For convex Q presets and custom CVXPY environments:
+
+```bash
+uv sync --extra cvxpy
+```
+
 For the reproducible benchmark gallery:
 
 ```bash
@@ -125,18 +132,22 @@ uv sync --extra dowhy
 
 ## Core Model
 
-The library implements a finite-linear version of the update-support machinery
-from [Update-Relevant Support: Hume's Missing Descent](https://philpapers.org/go.pl?id=BRUUSH&proxyId=&u=https%3A%2F%2Fphilpapers.org%2Farchive%2FBRUUSH.pdf).
+The library implements a finite-state computational version of the
+update-relevant support machinery from
+[Update-Relevant Support: Hume's Missing Descent](https://philpapers.org/go.pl?id=BRUUSH&proxyId=&u=https%3A%2F%2Fphilpapers.org%2Farchive%2FBRUUSH.pdf).
 It models:
 
 - a finite hidden state space `D`
 - a public projection `pi: D -> O`
 - a linear estimand `psi(q) = <h, q>`
-- an admissible environment class `Q`
+- an admissible environment class `Q`, which may be saturated, finite-linear,
+  or convex
 
 The library then checks whether a public or refined support is adequate and
 quantifies the remaining ambiguity among admissible environments that share the
-same public law.
+same public law. Simple finite-linear classes use closed-form or linear-program
+backends; TV, chi-square, KL, Wasserstein, and custom convex restrictions use
+CVXPY.
 
 ## Tabular Compiler
 
@@ -163,9 +174,10 @@ print(interval.lower, interval.upper, interval.diameter)
 ```
 
 Each retained hidden cell becomes one finite state. The estimand value for that
-state is the weighted empirical target mean inside the cell, and the environment
-fixes the observed public law while allowing saturated reweighting inside public
-fibers.
+state is the weighted empirical target mean inside the cell. The chosen `Q`
+preset fixes the observed public law and then defines which hidden-composition
+shifts are admissible: saturated reweighting, bounded linear shifts, or convex
+divergence/transport budgets.
 
 ## Q Presets
 
@@ -177,21 +189,20 @@ test. The built-in presets are:
 - `q=us.q_bounded_shift(radius)`: fix the observed public law and constrain each
   hidden-cell mass to stay within `(1 +/- radius)` times its observed mass.
 - `q=us.q_tv_budget(radius)`: fix the observed public law and constrain total
-  variation distance from the observed hidden distribution. This uses the
-  optional CVXPY backend.
+  variation distance from the observed hidden distribution. This uses CVXPY.
 - `q=us.q_chi_square_budget(radius)`: fix the observed public law and constrain
   Pearson chi-square divergence from the observed hidden distribution. This uses
-  the optional CVXPY backend.
+  CVXPY.
 - `q=us.q_kl_budget(radius)`: fix the observed public law and constrain KL
-  divergence from the observed hidden distribution. This uses the optional CVXPY
-  backend.
+  divergence from the observed hidden distribution. This uses CVXPY.
 - `q=us.q_wasserstein(cost, radius)`: fix the observed public law and constrain
   Wasserstein distance from the observed hidden distribution using an explicit
-  hidden-cell cost matrix. This uses the optional CVXPY backend.
+  hidden-cell cost matrix. This uses CVXPY.
 - `q="observed"` or `us.q_observed()`: use only the observed hidden distribution,
   giving zero hidden-composition ambiguity.
 
-Install the CVXPY extra before using TV, chi-square, KL, or Wasserstein presets:
+Install the CVXPY extra before using TV, chi-square, KL, Wasserstein, custom
+convex environments, or parameterized CVXPY radius sweeps:
 
 ```bash
 uv sync --extra cvxpy
@@ -464,7 +475,7 @@ Implemented now:
 - `FiniteEnvironments`
 - `LineSegment`
 - `PolytopeEnvironments` via SciPy `linprog`
-- `CvxpyEnvironments` for convex finite-environment restrictions
+- `CvxpyEnvironments` for convex finite-state environment restrictions
 - `ParameterizedCvxpyEnvironments` for cached CVXPY radius sweeps
 - `from_dataframe(...)` for compiling grouped tabular data into a finite problem
 - Q presets: `saturated`, `observed`, `bounded_shift`, `tv_budget`,
@@ -500,10 +511,10 @@ Planned next slices:
   object is a pair of relational hidden-state geometries rather than one fixed
   hidden-cell cost matrix
 
-## Linear-Polytope Backend
+## Finite-Linear Backend
 
-`PolytopeEnvironments` uses `scipy.optimize.linprog` for finite-linear
-environment classes:
+`PolytopeEnvironments` uses `scipy.optimize.linprog` for finite-state
+environment classes described by linear equality and inequality constraints:
 
 ```python
 problem = us.FiniteProblem(
@@ -527,7 +538,7 @@ print(result.lower, result.upper, result.diameter)
 The simplex constraints are implicit. Additional constraints can be supplied
 with `us.leq(...)`, `us.geq(...)`, `us.eq(...)`, or `us.linear_constraint(...)`.
 
-## CVXPY Backend
+## Convex CVXPY Backend
 
 `CvxpyEnvironments` supports the same finite-state simplex and linear
 constraints, plus custom convex constraints over the state-probability vector:
@@ -547,8 +558,9 @@ problem = us.FiniteProblem(
 )
 ```
 
-The TV, chi-square, KL, and Wasserstein Q presets are thin wrappers around this
-backend.
+The TV, chi-square, KL, and Wasserstein Q presets are wrappers around this
+backend. Use CVXPY when admissible hidden shifts are convex but not just
+finite-linear constraints.
 
 Solved CVXPY transport intervals expose dual diagnostics:
 
