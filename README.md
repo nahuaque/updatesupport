@@ -243,7 +243,7 @@ reduction.
 Use `sensitivity_report(...)` to rerun the audit across Q presets,
 `min_cell_weight` thresholds, and alternative hidden-column sets:
 
-![Sensitivity analysis overview](docs/assets/sensitivity-analysis-overview.png)
+![Sensitivity analysis overview](https://raw.githubusercontent.com/nahuaque/updatesupport/main/docs/assets/sensitivity-analysis-overview.png)
 
 Regenerate the README figure with:
 

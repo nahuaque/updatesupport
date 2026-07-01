@@ -33,7 +33,22 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --group dev --extra cvxpy
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Test
+        run: uv run pytest
+
+      - name: Security check
+        run: uv run bandit -q -r updatesupport examples tests
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Check distributions
+        run: uv run twine check dist/*
 
       - name: Publish to TestPyPI
         if: inputs.repository == 'testpypi'

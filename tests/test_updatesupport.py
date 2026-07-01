@@ -5,6 +5,11 @@ import unittest
 import updatesupport as us
 
 
+class PackageMetadataTests(unittest.TestCase):
+    def test_package_exposes_version(self):
+        self.assertRegex(us.__version__, r"^\d+\.\d+\.\d+")
+
+
 class SaturatedSupportTests(unittest.TestCase):
     def test_public_descent_succeeds_when_estimand_is_constant_on_fibers(self):
         problem = us.FiniteProblem(

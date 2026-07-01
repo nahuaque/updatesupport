@@ -1,5 +1,7 @@
 """Representation adequacy and transport-stability auditing in Python."""
 
+from importlib.metadata import PackageNotFoundError, version
+
 from .adapters import (
     EstimatorAdapterResult,
     adapt_dataframe_effects,
@@ -72,7 +74,13 @@ from .results import (
     Witness,
 )
 
+try:
+    __version__ = version("updatesupport")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
+
 __all__ = [
+    "__version__",
     "AdequacyResult",
     "adapt_dataframe_effects",
     "adapt_doubleml_effects",

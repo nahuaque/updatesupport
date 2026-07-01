@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "updatesupport"
 version = "0.1.0"
@@ -5,10 +9,32 @@ description = "Representation adequacy and transport-stability auditing in Pytho
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
+keywords = [
+    "causal-inference",
+    "partial-identification",
+    "representation-adequacy",
+    "sensitivity-analysis",
+    "transport-stability",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
 dependencies = [
     "numpy>=2.2.6",
     "scipy>=1.15.3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/nahuaque/updatesupport"
+Repository = "https://github.com/nahuaque/updatesupport"
+Issues = "https://github.com/nahuaque/updatesupport/issues"
 
 [project.optional-dependencies]
 causal = [
@@ -34,6 +60,7 @@ dev = [
     "hypothesis>=6.155.7",
     "pytest>=8.0",
     "ruff>=0.8",
+    "twine>=6.1",
 ]
 
 [tool.pytest.ini_options]
