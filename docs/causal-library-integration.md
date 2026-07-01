@@ -100,6 +100,11 @@ one uncertainty statement:
 - hidden-composition ambiguity from the update-support stress test
 - public refinement recommendations for improving the reporting representation
 
+The rendered suite is designed to be attachable to a model review. It has
+explicit sections for the causal estimate, supplied statistical uncertainty,
+hidden-composition ambiguity, sensitivity scenarios, refinement
+recommendations, CVXPY dual diagnostics when available, and limitations.
+
 ## Estimator Adapters
 
 The adapter helpers standardize common estimator outputs into row records with a

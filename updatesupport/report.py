@@ -446,6 +446,9 @@ class CausalReportingStabilitySuite:
             ]
         )
 
+        lines.extend(["", "## Causal Estimate", ""])
+        lines.extend(_suite_causal_estimate_markdown(self.primary))
+
         if self.statistical_uncertainty is not None:
             lines.extend(
                 [
@@ -455,6 +458,25 @@ class CausalReportingStabilitySuite:
                     _format_statistical_uncertainty(self.statistical_uncertainty),
                 ]
             )
+
+        lines.extend(["", "## Hidden-Composition Ambiguity", ""])
+        lines.extend(_suite_hidden_ambiguity_markdown(self.primary))
+
+        lines.extend(["", "## Sensitivity Scenarios", ""])
+        lines.extend(_suite_sensitivity_review_markdown(self.sensitivity))
+
+        lines.extend(["", "## Refinement Recommendations", ""])
+        lines.extend(
+            _suite_refinement_review_markdown(
+                self.primary,
+                self.refinement_sensitivity,
+            )
+        )
+
+        lines.extend(_dual_diagnostics_markdown(self.primary.interval))
+
+        lines.extend(["", "## Limitations", ""])
+        lines.extend(_model_review_limitations())
 
         lines.extend(["", "## Primary Reporting Audit", "", self.primary.to_markdown()])
 
@@ -604,20 +626,7 @@ class PublicDescentReport:
             ]
         )
 
-        if self.interval.duals:
-            lines.extend(
-                [
-                    "",
-                    "## CVXPY Dual Diagnostics",
-                    "",
-                    "The largest CVXPY dual multipliers identify constraints that are "
-                    "locally influential for the solved transport interval. Treat "
-                    "them as solver-scale sensitivity diagnostics: relaxing a large "
-                    "active constraint is where the interval is most likely to move.",
-                ]
-            )
-            for row in self.interval.dual_summary(top=8, min_magnitude=1e-8):
-                lines.append(f"- {_format_dual(row)}")
+        lines.extend(_dual_diagnostics_markdown(self.interval))
 
         lines.extend(["", "## Worst Public Fibers"])
 
@@ -665,6 +674,10 @@ class PublicDescentReport:
 
         lines.extend(
             [
+                "",
+                "## Limitations",
+                "",
+                *_model_review_limitations(),
                 "",
                 "## Analyst Notes",
                 "",
@@ -1479,17 +1492,13 @@ class SensitivityReport:
     @property
     def successful_rows(self) -> tuple[SensitivityRow, ...]:
         return tuple(
-            row
-            for row in self.rows
-            if row.status == "ok" and row.ambiguity is not None
+            row for row in self.rows if row.status == "ok" and row.ambiguity is not None
         )
 
     @property
     def failed_rows(self) -> tuple[SensitivityRow, ...]:
         return tuple(
-            row
-            for row in self.rows
-            if row.status != "ok" or row.ambiguity is None
+            row for row in self.rows if row.status != "ok" or row.ambiguity is None
         )
 
     @property
@@ -1758,7 +1767,9 @@ def _refinement_sensitivity_interpretation(
         )
 
     unstable = [
-        row for row in report.candidates if row.evaluated_scenarios > 1 and row.rank_range > 0
+        row
+        for row in report.candidates
+        if row.evaluated_scenarios > 1 and row.rank_range > 0
     ]
     if unstable:
         lines.append(
@@ -1768,8 +1779,7 @@ def _refinement_sensitivity_interpretation(
         )
     else:
         lines.append(
-            "- Candidate ranks are stable across the evaluated scenarios in this "
-            "grid."
+            "- Candidate ranks are stable across the evaluated scenarios in this grid."
         )
     return lines
 
@@ -1778,9 +1788,7 @@ def _sensitivity_summary(rows: Sequence[SensitivityRow]) -> SensitivitySummary:
     successful = tuple(
         row for row in rows if row.status == "ok" and row.ambiguity is not None
     )
-    failed = tuple(
-        row for row in rows if row.status != "ok" or row.ambiguity is None
-    )
+    failed = tuple(row for row in rows if row.status != "ok" or row.ambiguity is None)
 
     if not successful:
         return SensitivitySummary(
@@ -1807,9 +1815,7 @@ def _sensitivity_summary(rows: Sequence[SensitivityRow]) -> SensitivitySummary:
     observed_min = min(observed_values) if observed_values else None
     observed_max = max(observed_values) if observed_values else None
     adequacy_values = {
-        row.public_adequate
-        for row in successful
-        if row.public_adequate is not None
+        row.public_adequate for row in successful if row.public_adequate is not None
     }
 
     return SensitivitySummary(
@@ -2011,9 +2017,7 @@ def _build_statistical_uncertainty(
         standard_error=None if standard_error is None else float(standard_error),
         lower=lower,
         upper=upper,
-        confidence_level=None
-        if confidence_level is None
-        else float(confidence_level),
+        confidence_level=None if confidence_level is None else float(confidence_level),
         method=method,
         label=label,
     )
@@ -2035,6 +2039,152 @@ def _format_statistical_uncertainty(row: StatisticalUncertainty) -> str:
         parts.append(f"method={row.method}")
     detail = "; ".join(parts) if parts else "supplied"
     return f"{row.label}: {detail}"
+
+
+def _suite_causal_estimate_markdown(report: PublicDescentReport) -> list[str]:
+    return [
+        f"- Reported value: {report.observed_value:.4f} (`{report.observed_label}`).",
+        f"- Target: aggregate {report.target_description}.",
+        f"- Public representation: {', '.join(report.grouped.public_columns)}.",
+        f"- Hidden state space: {len(report.grouped.problem.states)} retained "
+        f"hidden cells across {len(report.grouped.problem.public_values)} public "
+        "cells.",
+        f"- Stress-test class: {report.grouped.q_name} "
+        f"({report.grouped.q_description}).",
+    ]
+
+
+def _suite_hidden_ambiguity_markdown(report: PublicDescentReport) -> list[str]:
+    adequate = "yes" if report.public_adequate else "no"
+    lines = [
+        "- Partial-ID interval under fixed public law: "
+        f"[{report.interval.lower:.4f}, {report.interval.upper:.4f}].",
+        f"- Hidden-composition ambiguity: {report.interval.diameter:.4f}.",
+        f"- Public adequate under this stress test: {adequate}.",
+        "- Observed value position: "
+        f"{'inside' if report.interval_contains_observed else 'outside'} the "
+        "partial-ID interval.",
+    ]
+    if report.fibers:
+        top = report.fibers[0]
+        lines.append(
+            "- Largest listed public-fiber contributor: "
+            f"`{_format_key(report.grouped.public_columns, top.public_value)}` "
+            f"with contribution {top.contribution:.4f}."
+        )
+    return lines
+
+
+def _suite_sensitivity_review_markdown(
+    sensitivity: SensitivityReport | None,
+) -> list[str]:
+    if sensitivity is None:
+        return [
+            "- No sensitivity grid was supplied for this suite.",
+            "- Reviewers should treat the primary ambiguity as scenario-specific "
+            "unless a robustness grid is added.",
+        ]
+
+    summary = sensitivity.summary
+    lines = [
+        f"- Evaluated scenarios: {summary.successful_scenarios}/"
+        f"{summary.scenario_count} successful.",
+        f"- Public adequacy pattern: {summary.public_adequacy_pattern}.",
+    ]
+    if summary.min_ambiguity is not None and summary.max_ambiguity is not None:
+        lines.append(
+            "- Ambiguity range across successful scenarios: "
+            f"{summary.min_ambiguity:.4f} to {summary.max_ambiguity:.4f}."
+        )
+    if summary.highest_ambiguity_scenario is not None:
+        lines.append(
+            f"- Highest-ambiguity scenario: `{summary.highest_ambiguity_scenario}`."
+        )
+    if summary.failed_scenarios:
+        lines.append(
+            f"- Failed scenarios: {summary.failed_scenarios}; inspect the scenario "
+            "table before using the grid as a robustness claim."
+        )
+    return lines
+
+
+def _suite_refinement_review_markdown(
+    primary: PublicDescentReport,
+    refinement_sensitivity: RefinementSensitivityReport | None,
+) -> list[str]:
+    if refinement_sensitivity is not None and refinement_sensitivity.candidates:
+        lines = [
+            "- Sensitivity-aware refinement ranking is available. Top candidates:",
+        ]
+        for row in refinement_sensitivity.candidates[:5]:
+            lines.append(
+                f"- `{row.column}`: mean reduction {row.mean_reduction:.4f}, "
+                f"worst reduction {row.min_reduction:.4f}, "
+                f"mean reduction pct {row.mean_reduction_percent:.1f}%."
+            )
+        return lines
+
+    if primary.refinements:
+        lines = ["- Primary-scenario refinement ranking is available. Top candidates:"]
+        for row in primary.refinements[:5]:
+            lines.append(
+                f"- `{row.column}`: ambiguity {row.before_ambiguity:.4f} -> "
+                f"{row.after_ambiguity:.4f}; reduction {row.reduction:.4f} "
+                f"({row.reduction_percent:.1f}%)."
+            )
+        return lines
+
+    return [
+        "- No refinement recommendations were supplied or no candidate columns "
+        "reduced hidden-composition ambiguity.",
+    ]
+
+
+def _dual_diagnostics_markdown(interval: TransportResult) -> list[str]:
+    lines = [
+        "",
+        "## CVXPY Dual Diagnostics",
+        "",
+    ]
+    if not interval.duals:
+        lines.extend(
+            [
+                "- No CVXPY dual diagnostics are available for this interval.",
+                "- Duals are produced by CVXPY-backed Q presets and custom CVXPY "
+                "constraints. SciPy/simplex-backed intervals still report the "
+                "primal ambiguity interval and witnesses, but not solver duals.",
+            ]
+        )
+        return lines
+
+    lines.append(
+        "The largest CVXPY dual multipliers identify constraints that are locally "
+        "influential for the solved transport interval. Treat them as solver-scale "
+        "sensitivity diagnostics: relaxing a large active constraint is where the "
+        "interval is most likely to move."
+    )
+    for row in interval.dual_summary(top=8, min_magnitude=1e-8):
+        lines.append(f"- {_format_dual(row)}")
+    return lines
+
+
+def _model_review_limitations() -> list[str]:
+    return [
+        "- `updatesupport` audits representation stability for a supplied target; "
+        "it does not identify causal effects, fit the causal model, or validate "
+        "unconfoundedness, exclusion restrictions, overlap, or graph assumptions.",
+        "- The partial-ID interval is hidden-composition ambiguity under the stated "
+        "Q stress test. It is not a confidence interval and should be reported "
+        "separately from statistical uncertainty.",
+        "- Statistical uncertainty is included only when supplied by the upstream "
+        "statistical or causal workflow.",
+        "- Refinement recommendations are measurement/reporting recommendations. "
+        "They are not automatically valid causal adjustment variables.",
+        "- Conclusions depend on the retained hidden state space, sparse-cell "
+        "filtering, weights, and the chosen admissible-shift preset.",
+        "- CVXPY dual diagnostics, when present, are local solver diagnostics, not "
+        "global guarantees about every possible relaxation of the problem.",
+    ]
 
 
 def _public_descent_summary_dict(report: PublicDescentReport) -> dict[str, Any]:
