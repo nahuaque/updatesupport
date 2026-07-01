@@ -328,6 +328,11 @@ The Markdown output summarizes successful and failed scenarios, reports the
 ambiguity range across the grid, identifies the highest-ambiguity scenario, and
 states whether public adequacy is stable or mixed across scenarios.
 
+To ask which hidden variables consistently improve the reporting representation
+across the grid, use `recommend_refinements_sensitivity(...)` with the same
+public columns, hidden columns, candidate refinements, Q presets, and
+`min_cell_weight` thresholds.
+
 ## What Not To Claim
 
 Do not say that `updatesupport` proves a causal effect is valid.

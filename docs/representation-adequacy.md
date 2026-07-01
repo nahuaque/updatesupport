@@ -58,6 +58,8 @@ A useful analyst-facing report should include:
 - **Recommended refinements**: hidden variables that would reduce ambiguity if
   added to the public representation, with before ambiguity, after ambiguity,
   absolute reduction, and percentage reduction.
+- **Sensitivity-aware refinements**: variables whose ambiguity reduction remains
+  useful across Q presets, hidden-state choices, and sparse-cell thresholds.
 
 This report should be readable without requiring the audience to know the
 underlying finite-support theory. In causal or model-based workflows, the report

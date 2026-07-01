@@ -234,6 +234,27 @@ Markdown output starts with a scenario summary, highlights the lowest- and
 highest-ambiguity scenarios, flags mixed public-adequacy conclusions, and then
 renders the full scenario table.
 
+Use `recommend_refinements_sensitivity(...)` to rank candidate public
+refinements across the same kind of grid:
+
+```python
+refinements = us.recommend_refinements_sensitivity(
+    rows_or_frame,
+    public=["AGE_BAND", "EDU_BAND", "SEX"],
+    hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND", "RAC1P"],
+    target="__target__",
+    weight="PWGTP",
+    candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P"],
+    min_cell_weights=[1, 10, 25],
+    q_presets=["saturated", us.q_bounded_shift(0.5), "observed"],
+)
+
+print(refinements.to_markdown())
+```
+
+The aggregate ranking reports mean reduction, worst-case reduction, rank
+stability, and the number of scenarios where each refinement ranked first.
+
 ## Public-Fiber-Saturated Example
 
 When all reweightings inside public fibers are admissible, the transport
@@ -380,6 +401,8 @@ Implemented now:
 - `audit_dowhy_effects(...)` and `dowhy_refutation_from_report(...)` for DoWhy
   workflows
 - `recommend_refinements(...)` for ranking candidate hidden variables
+- `recommend_refinements_sensitivity(...)` for aggregating refinement value
+  across Q, hidden-set, and sparsity scenarios
 - `sensitivity_report(...)` for robustness grids over Q, hidden sets, and
   `min_cell_weight`
 - adequacy checks with witnesses

@@ -106,6 +106,73 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertAlmostEqual(candidates[1].reduction, 0.0)
         self.assertAlmostEqual(candidates[1].reduction_percent, 0.0)
 
+    def test_recommend_refinements_sensitivity_aggregates_grid(self):
+        rows = [
+            {"public": "A", "hidden": "x", "noise": "n", "target": 0.0, "weight": 30},
+            {"public": "A", "hidden": "y", "noise": "n", "target": 1.0, "weight": 30},
+            {"public": "B", "hidden": "z", "noise": "n", "target": 0.5, "weight": 40},
+        ]
+
+        report = us.recommend_refinements_sensitivity(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden", "noise"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["noise", "hidden"],
+            q_presets=["saturated", us.q_bounded_shift(0.5), "observed"],
+            top=None,
+        )
+        markdown = report.to_markdown()
+
+        self.assertIsInstance(report, us.RefinementSensitivityReport)
+        self.assertEqual(len(report.scenarios), 3)
+        self.assertEqual(len(report.rows), 6)
+        self.assertEqual(len(report.candidates), 2)
+        self.assertEqual(report.candidates[0].column, "hidden")
+        self.assertAlmostEqual(report.candidates[0].mean_reduction, 0.3)
+        self.assertAlmostEqual(report.candidates[0].min_reduction, 0.0)
+        self.assertAlmostEqual(report.candidates[0].max_reduction, 0.6)
+        self.assertAlmostEqual(
+            report.candidates[0].mean_reduction_percent,
+            200.0 / 3.0,
+        )
+        self.assertEqual(report.candidates[0].positive_reduction_scenarios, 2)
+        self.assertAlmostEqual(report.candidates[0].positive_reduction_share, 2 / 3)
+        self.assertEqual(report.candidates[0].best_rank, 1)
+        self.assertAlmostEqual(report.candidates[0].mean_rank, 4 / 3)
+        self.assertEqual(report.candidates[0].worst_rank, 2)
+        self.assertEqual(report.candidates[0].top_rank_count, 2)
+        self.assertEqual(report.candidates[0].rank_range, 1)
+        self.assertEqual(report.candidates[1].column, "noise")
+        self.assertAlmostEqual(report.candidates[1].mean_reduction, 0.0)
+        self.assertEqual(report.scenarios[0].best_column, "hidden")
+        self.assertAlmostEqual(report.scenarios[0].baseline_ambiguity, 0.6)
+        self.assertIn("# Public Refinement Sensitivity Report", markdown)
+        self.assertIn("## Aggregate Summary", markdown)
+        self.assertIn("Top aggregate refinement", markdown)
+        self.assertIn("## Aggregate Refinement Ranking", markdown)
+        self.assertIn("## Scenario Summary", markdown)
+        self.assertIn("changes rank across scenarios", markdown)
+
+    def test_recommend_refinements_sensitivity_reports_failed_scenarios(self):
+        report = us.recommend_refinements_sensitivity(
+            [{"public": "A", "hidden": "x", "target": 1.0}],
+            public=["public"],
+            hidden=["public", "hidden"],
+            hidden_sets=[["hidden"]],
+            target="target",
+            candidate_refinements=["hidden"],
+            q_presets=["saturated"],
+        )
+        markdown = report.to_markdown()
+
+        self.assertEqual(len(report.successful_scenarios), 0)
+        self.assertEqual(len(report.failed_scenarios), 1)
+        self.assertEqual(len(report.candidates), 0)
+        self.assertIn("No refinement scenario completed successfully", markdown)
+        self.assertIn("error: public columns must also be hidden columns", markdown)
+
     def test_public_descent_report_accepts_precompiled_grouped_problem(self):
         rows = [
             {"public": "A", "hidden": "x", "target": 0.0, "weight": 30},

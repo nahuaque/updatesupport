@@ -80,6 +80,238 @@ class RefinementCandidate:
 
 
 @dataclass(frozen=True)
+class RefinementSensitivityCandidate:
+    """One refinement candidate aggregated over a sensitivity grid."""
+
+    column: str
+    evaluated_scenarios: int
+    mean_before_ambiguity: float
+    mean_after_ambiguity: float
+    mean_reduction: float
+    min_reduction: float
+    max_reduction: float
+    mean_reduction_percent: float
+    min_reduction_percent: float
+    max_reduction_percent: float
+    positive_reduction_scenarios: int
+    best_rank: int
+    mean_rank: float
+    worst_rank: int
+    top_rank_count: int
+    min_public_cells: int
+    max_public_cells: int
+
+    @property
+    def rank_range(self) -> int:
+        return self.worst_rank - self.best_rank
+
+    @property
+    def positive_reduction_share(self) -> float:
+        if self.evaluated_scenarios == 0:
+            return 0.0
+        return self.positive_reduction_scenarios / self.evaluated_scenarios
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "column": self.column,
+            "evaluated_scenarios": self.evaluated_scenarios,
+            "mean_before_ambiguity": self.mean_before_ambiguity,
+            "mean_after_ambiguity": self.mean_after_ambiguity,
+            "mean_reduction": self.mean_reduction,
+            "min_reduction": self.min_reduction,
+            "max_reduction": self.max_reduction,
+            "mean_reduction_percent": self.mean_reduction_percent,
+            "min_reduction_percent": self.min_reduction_percent,
+            "max_reduction_percent": self.max_reduction_percent,
+            "positive_reduction_scenarios": self.positive_reduction_scenarios,
+            "positive_reduction_share": self.positive_reduction_share,
+            "best_rank": self.best_rank,
+            "mean_rank": self.mean_rank,
+            "worst_rank": self.worst_rank,
+            "rank_range": self.rank_range,
+            "top_rank_count": self.top_rank_count,
+            "min_public_cells": self.min_public_cells,
+            "max_public_cells": self.max_public_cells,
+        }
+
+
+@dataclass(frozen=True)
+class RefinementSensitivityRow:
+    """One candidate's refinement score in one sensitivity scenario."""
+
+    scenario: str
+    column: str
+    rank: int
+    q_name: str
+    q_description: str
+    min_cell_weight: float
+    hidden_columns: tuple[str, ...]
+    before_ambiguity: float
+    after_ambiguity: float
+    reduction: float
+    reduction_percent: float
+    public_cells: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "scenario": self.scenario,
+            "column": self.column,
+            "rank": self.rank,
+            "q_name": self.q_name,
+            "q_description": self.q_description,
+            "min_cell_weight": self.min_cell_weight,
+            "hidden_columns": self.hidden_columns,
+            "before_ambiguity": self.before_ambiguity,
+            "after_ambiguity": self.after_ambiguity,
+            "reduction": self.reduction,
+            "reduction_percent": self.reduction_percent,
+            "public_cells": self.public_cells,
+        }
+
+
+@dataclass(frozen=True)
+class RefinementSensitivityScenario:
+    """Scenario-level status for refinement sensitivity aggregation."""
+
+    scenario: str
+    q_name: str
+    q_description: str
+    min_cell_weight: float
+    hidden_columns: tuple[str, ...]
+    candidate_count: int = 0
+    best_column: str | None = None
+    best_reduction: float | None = None
+    baseline_ambiguity: float | None = None
+    status: str = "ok"
+    error: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "scenario": self.scenario,
+            "q_name": self.q_name,
+            "q_description": self.q_description,
+            "min_cell_weight": self.min_cell_weight,
+            "hidden_columns": self.hidden_columns,
+            "candidate_count": self.candidate_count,
+            "best_column": self.best_column,
+            "best_reduction": self.best_reduction,
+            "baseline_ambiguity": self.baseline_ambiguity,
+            "status": self.status,
+            "error": self.error,
+        }
+
+
+@dataclass(frozen=True)
+class RefinementSensitivityReport:
+    """Refinement recommendations aggregated over a sensitivity grid."""
+
+    candidates: tuple[RefinementSensitivityCandidate, ...]
+    scenarios: tuple[RefinementSensitivityScenario, ...]
+    rows: tuple[RefinementSensitivityRow, ...]
+    title: str = "Public Refinement Sensitivity Report"
+    row_count: int | None = None
+
+    @property
+    def successful_scenarios(self) -> tuple[RefinementSensitivityScenario, ...]:
+        return tuple(row for row in self.scenarios if row.status == "ok")
+
+    @property
+    def failed_scenarios(self) -> tuple[RefinementSensitivityScenario, ...]:
+        return tuple(row for row in self.scenarios if row.status != "ok")
+
+    def to_markdown(self) -> str:
+        lines = [f"# {self.title}", ""]
+        if self.row_count is not None:
+            lines.extend([f"- Rows: {self.row_count}", ""])
+        lines.extend(
+            [
+                "## Aggregate Summary",
+                "",
+                f"- Scenarios: {len(self.scenarios)}",
+                f"- Successful scenarios: {len(self.successful_scenarios)}",
+                f"- Failed scenarios: {len(self.failed_scenarios)}",
+                f"- Candidate refinements evaluated: {len(self.candidates)}",
+            ]
+        )
+        if self.candidates:
+            top = self.candidates[0]
+            lines.append(
+                "- Top aggregate refinement: "
+                f"`{top.column}` with mean reduction {top.mean_reduction:.4f}, "
+                f"worst-case reduction {top.min_reduction:.4f}, "
+                f"and mean rank {top.mean_rank:.2f}."
+            )
+
+        lines.extend(["", "## Interpretation", ""])
+        lines.extend(_refinement_sensitivity_interpretation(self))
+        lines.extend(
+            [
+                "",
+                "## Aggregate Refinement Ranking",
+                "",
+                "| column | scenarios | mean reduction | worst reduction | best reduction | mean reduction pct | best rank | mean rank | worst rank | top rank count | public cells |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+            ]
+        )
+        for row in self.candidates:
+            public_cells = (
+                f"{row.min_public_cells}"
+                if row.min_public_cells == row.max_public_cells
+                else f"{row.min_public_cells}-{row.max_public_cells}"
+            )
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        _escape_table(row.column),
+                        str(row.evaluated_scenarios),
+                        _format_optional_float(row.mean_reduction),
+                        _format_optional_float(row.min_reduction),
+                        _format_optional_float(row.max_reduction),
+                        f"{row.mean_reduction_percent:.1f}%",
+                        str(row.best_rank),
+                        f"{row.mean_rank:.2f}",
+                        str(row.worst_rank),
+                        str(row.top_rank_count),
+                        public_cells,
+                    ]
+                )
+                + " |"
+            )
+
+        lines.extend(
+            [
+                "",
+                "## Scenario Summary",
+                "",
+                "| scenario | Q | min_cell_weight | hidden columns | candidates | best column | best reduction | baseline ambiguity | status |",
+                "| --- | --- | ---: | --- | ---: | --- | ---: | ---: | --- |",
+            ]
+        )
+        for row in self.scenarios:
+            hidden_columns = ", ".join(row.hidden_columns)
+            status = row.status if row.error is None else f"error: {row.error}"
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        _escape_table(row.scenario),
+                        _escape_table(row.q_name),
+                        f"{row.min_cell_weight:g}",
+                        _escape_table(hidden_columns),
+                        str(row.candidate_count),
+                        _escape_table(row.best_column or ""),
+                        _format_optional_float(row.best_reduction),
+                        _format_optional_float(row.baseline_ambiguity),
+                        _escape_table(status),
+                    ]
+                )
+                + " |"
+            )
+        return "\n".join(lines)
+
+
+@dataclass(frozen=True)
 class PublicDescentReport:
     """Structured public-descent audit with Markdown rendering."""
 
@@ -556,6 +788,130 @@ def recommend_refinements(
     return tuple(scores if top is None else scores[:top])
 
 
+def recommend_refinements_sensitivity(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: str,
+    candidate_refinements: Sequence[str] | None = None,
+    candidate_columns: Sequence[str] | None = None,
+    weight: str | None = None,
+    min_cell_weights: Sequence[float] = (1.0,),
+    hidden_sets: Sequence[Sequence[str]] | None = None,
+    q_presets: Sequence[Any] | None = None,
+    top: int | None = 8,
+    title: str = "Public Refinement Sensitivity Report",
+    raise_errors: bool = False,
+) -> RefinementSensitivityReport:
+    """Aggregate one-column refinement rankings over a sensitivity grid."""
+
+    if top is not None and top < 0:
+        raise ValueError("top must be non-negative")
+    candidate_refinements = _resolve_sequence_arg(
+        candidate_refinements,
+        candidate_columns,
+        primary_name="candidate_refinements",
+        alias_name="candidate_columns",
+    )
+    if candidate_refinements is None:
+        candidate_refinements = ()
+
+    repeatable_data, row_count = _repeatable_data(data)
+    hidden_grid = tuple(hidden_sets) if hidden_sets is not None else (tuple(hidden),)
+    q_grid = (
+        tuple(q_presets)
+        if q_presets is not None
+        else (
+            "saturated",
+            q_bounded_shift(0.5),
+            "observed",
+        )
+    )
+
+    scenario_rows: list[RefinementSensitivityScenario] = []
+    candidate_rows: list[RefinementSensitivityRow] = []
+    scenario_index = 0
+    for hidden_columns in hidden_grid:
+        hidden_columns_tuple = tuple(hidden_columns)
+        for min_cell_weight in min_cell_weights:
+            for q_preset in q_grid:
+                scenario_index += 1
+                scenario = f"R{scenario_index}"
+                try:
+                    candidates = recommend_refinements(
+                        repeatable_data,
+                        public=public,
+                        hidden=hidden_columns_tuple,
+                        target=target,
+                        candidate_refinements=candidate_refinements,
+                        weight=weight,
+                        min_cell_weight=min_cell_weight,
+                        q=q_preset,
+                        top=None,
+                    )
+                except Exception as exc:
+                    if raise_errors:
+                        raise
+                    scenario_rows.append(
+                        RefinementSensitivityScenario(
+                            scenario=scenario,
+                            q_name=q_name(q_preset),
+                            q_description=q_description(q_preset),
+                            min_cell_weight=float(min_cell_weight),
+                            hidden_columns=hidden_columns_tuple,
+                            status="error",
+                            error=str(exc),
+                        )
+                    )
+                    continue
+
+                q_label = q_name(q_preset)
+                q_details = q_description(q_preset)
+                best = candidates[0] if candidates else None
+                scenario_rows.append(
+                    RefinementSensitivityScenario(
+                        scenario=scenario,
+                        q_name=q_label,
+                        q_description=q_details,
+                        min_cell_weight=float(min_cell_weight),
+                        hidden_columns=hidden_columns_tuple,
+                        candidate_count=len(candidates),
+                        best_column=None if best is None else best.column,
+                        best_reduction=None if best is None else best.reduction,
+                        baseline_ambiguity=(
+                            None if best is None else best.before_ambiguity
+                        ),
+                    )
+                )
+                for rank, row in enumerate(candidates, start=1):
+                    candidate_rows.append(
+                        RefinementSensitivityRow(
+                            scenario=scenario,
+                            column=row.column,
+                            rank=rank,
+                            q_name=q_label,
+                            q_description=q_details,
+                            min_cell_weight=float(min_cell_weight),
+                            hidden_columns=hidden_columns_tuple,
+                            before_ambiguity=row.before_ambiguity,
+                            after_ambiguity=row.after_ambiguity,
+                            reduction=row.reduction,
+                            reduction_percent=row.reduction_percent,
+                            public_cells=row.public_cells,
+                        )
+                    )
+
+    aggregated = _aggregate_refinement_sensitivity(candidate_rows)
+    return RefinementSensitivityReport(
+        candidates=tuple(aggregated if top is None else aggregated[:top]),
+        scenarios=tuple(scenario_rows),
+        rows=tuple(candidate_rows),
+        title=title,
+        row_count=row_count,
+    )
+
+
 @dataclass(frozen=True)
 class SensitivityRow:
     """One robustness scenario in a sensitivity report."""
@@ -790,6 +1146,122 @@ def sensitivity_report(
                 )
 
     return SensitivityReport(rows=tuple(rows), title=title, row_count=row_count)
+
+
+def _aggregate_refinement_sensitivity(
+    rows: Sequence[RefinementSensitivityRow],
+) -> tuple[RefinementSensitivityCandidate, ...]:
+    by_column: dict[str, list[RefinementSensitivityRow]] = {}
+    for row in rows:
+        by_column.setdefault(row.column, []).append(row)
+
+    candidates = []
+    for column, column_rows in by_column.items():
+        reductions = [row.reduction for row in column_rows]
+        reduction_percents = [row.reduction_percent for row in column_rows]
+        ranks = [row.rank for row in column_rows]
+        before_values = [row.before_ambiguity for row in column_rows]
+        after_values = [row.after_ambiguity for row in column_rows]
+        public_cells = [row.public_cells for row in column_rows]
+        candidates.append(
+            RefinementSensitivityCandidate(
+                column=column,
+                evaluated_scenarios=len(column_rows),
+                mean_before_ambiguity=_mean(before_values),
+                mean_after_ambiguity=_mean(after_values),
+                mean_reduction=_mean(reductions),
+                min_reduction=min(reductions),
+                max_reduction=max(reductions),
+                mean_reduction_percent=_mean(reduction_percents),
+                min_reduction_percent=min(reduction_percents),
+                max_reduction_percent=max(reduction_percents),
+                positive_reduction_scenarios=sum(
+                    1 for reduction in reductions if reduction > 1e-12
+                ),
+                best_rank=min(ranks),
+                mean_rank=_mean([float(rank) for rank in ranks]),
+                worst_rank=max(ranks),
+                top_rank_count=sum(1 for rank in ranks if rank == 1),
+                min_public_cells=min(public_cells),
+                max_public_cells=max(public_cells),
+            )
+        )
+
+    candidates.sort(
+        key=lambda row: (
+            row.mean_reduction,
+            row.min_reduction,
+            row.top_rank_count,
+            -row.mean_rank,
+        ),
+        reverse=True,
+    )
+    return tuple(candidates)
+
+
+def _refinement_sensitivity_interpretation(
+    report: RefinementSensitivityReport,
+) -> list[str]:
+    if not report.successful_scenarios:
+        return [
+            "- No refinement scenario completed successfully. Inspect the scenario "
+            "summary table before interpreting candidate rankings.",
+            "- Failed scenarios do not imply that a candidate is useless; they mean "
+            "the requested refinement grid could not be evaluated.",
+        ]
+
+    lines = [
+        "- Candidates are ranked by average ambiguity reduction across successful "
+        "scenarios, with worst-case reduction and rank stability shown beside the "
+        "average. A robust refinement should have positive average reduction, "
+        "nonnegative worst-case reduction, and a stable rank.",
+    ]
+    if report.failed_scenarios:
+        lines.append(
+            "- Some scenarios failed. The aggregate ranking uses only successful "
+            "candidate-scenario evaluations."
+        )
+    if not report.candidates:
+        lines.append(
+            "- No candidate refinement was evaluated successfully. Check that "
+            "`candidate_refinements` are included in the tested hidden columns and "
+            "are not already public columns."
+        )
+        return lines
+
+    top = report.candidates[0]
+    if top.min_reduction > 1e-12:
+        lines.append(
+            f"- `{top.column}` reduces ambiguity in every evaluated scenario where "
+            "it appears, making it the strongest robust refinement in this grid."
+        )
+    elif top.mean_reduction > 1e-12:
+        lines.append(
+            f"- `{top.column}` has the largest average reduction, but its worst-case "
+            "reduction is zero or negative. Treat it as scenario-dependent rather "
+            "than uniformly robust."
+        )
+    else:
+        lines.append(
+            "- No evaluated refinement has positive average ambiguity reduction in "
+            "this grid."
+        )
+
+    unstable = [
+        row for row in report.candidates if row.evaluated_scenarios > 1 and row.rank_range > 0
+    ]
+    if unstable:
+        lines.append(
+            "- At least one candidate changes rank across scenarios. Use the "
+            "`best rank`, `mean rank`, and `worst rank` columns to distinguish "
+            "broadly useful refinements from preset- or threshold-specific ones."
+        )
+    else:
+        lines.append(
+            "- Candidate ranks are stable across the evaluated scenarios in this "
+            "grid."
+        )
+    return lines
 
 
 def _sensitivity_summary(rows: Sequence[SensitivityRow]) -> SensitivitySummary:
@@ -1046,6 +1518,12 @@ def _format_key(columns: Sequence[str], key: tuple[Hashable, ...]) -> str:
 
 def _percent(value: float) -> str:
     return f"{100 * value:.1f}%"
+
+
+def _mean(values: Sequence[float]) -> float:
+    if not values:
+        return 0.0
+    return sum(values) / len(values)
 
 
 def _format_optional_float(value: float | None) -> str:
