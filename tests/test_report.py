@@ -134,6 +134,64 @@ class PublicDescentReportTests(unittest.TestCase):
                 candidate_refinements=["hidden"],
             )
 
+    def test_audit_effects_wraps_public_descent_with_effect_labels(self):
+        rows = [
+            {"public": "A", "hidden": "x", "tau_hat": -0.1, "weight": 30},
+            {"public": "A", "hidden": "y", "tau_hat": 0.3, "weight": 30},
+            {"public": "B", "hidden": "z", "tau_hat": 0.2, "weight": 40},
+        ]
+
+        report = us.audit_effects(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            effect="tau_hat",
+            weight="weight",
+            candidate_refinements=["hidden"],
+            q=us.q_bounded_shift(0.5),
+            min_cell_weight=1,
+            top=1,
+        )
+        markdown = report.to_markdown()
+
+        self.assertIsInstance(report, us.PublicDescentReport)
+        self.assertEqual(report.title, "Causal Effect Representation Stability Audit")
+        self.assertEqual(report.target_description, "estimated treatment effect")
+        self.assertEqual(report.observed_label, "Observed effect estimate")
+        self.assertAlmostEqual(report.observed_value, 0.14)
+        self.assertAlmostEqual(report.interval.lower, 0.08)
+        self.assertAlmostEqual(report.interval.upper, 0.20)
+        self.assertIn("- Observed effect estimate: 0.1400", markdown)
+        self.assertIn("aggregate estimated treatment effect", markdown)
+
+    def test_audit_effects_accepts_effect_column_alias(self):
+        report = us.audit_effects(
+            [{"public": "A", "hidden": "x", "effect": 1.0}],
+            public=["public"],
+            hidden=["public", "hidden"],
+            effect_column="effect",
+        )
+
+        self.assertAlmostEqual(report.observed_value, 1.0)
+
+    def test_audit_effects_requires_effect_for_raw_data(self):
+        with self.assertRaisesRegex(TypeError, "missing required keyword"):
+            us.audit_effects(
+                [{"public": "A", "hidden": "x", "effect": 1.0}],
+                public=["public"],
+                hidden=["public", "hidden"],
+            )
+
+    def test_audit_effects_rejects_conflicting_effect_aliases(self):
+        with self.assertRaisesRegex(TypeError, "use either 'effect'"):
+            us.audit_effects(
+                [{"public": "A", "hidden": "x", "effect": 1.0}],
+                public=["public"],
+                hidden=["public", "hidden"],
+                effect="effect",
+                effect_column="other_effect",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

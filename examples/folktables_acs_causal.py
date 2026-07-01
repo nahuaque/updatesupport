@@ -129,28 +129,22 @@ def render_causal_report(
 ) -> str:
     """Render a causal-estimation handoff plus an update-support audit."""
 
-    grouped = us.from_dataframe(
+    report = us.audit_effects(
         effect_result.rows,
         public=public_columns,
         hidden=hidden_columns,
-        target=EFFECT_COLUMN,
+        effect=EFFECT_COLUMN,
         weight=WEIGHT_COLUMN,
-        min_cell_weight=min_cell_weight,
-        q=q,
-        q_radius=q_radius,
-    )
-    report = us.public_descent_report(
-        grouped,
-        source_data=effect_result.rows,
         candidate_refinements=candidate_columns,
-        top=top,
         min_cell_weight=min_cell_weight,
         title="Representation Stability Audit",
-        target_description="estimated treatment effect",
+        effect_description="estimated treatment effect",
         observed_label="Observed weighted effect estimate",
         row_count=effect_result.retained_strata,
         row_count_label="Retained effect strata",
-        weight_column=WEIGHT_COLUMN,
+        q=q,
+        q_radius=q_radius,
+        top=top,
     )
 
     lines = [

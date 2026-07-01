@@ -54,7 +54,7 @@ Then `updatesupport` can audit the reporting categories:
 ```python
 import updatesupport as us
 
-report = us.public_descent_report(
+report = us.audit_effects(
     df,
     public=["age_band", "sex"],
     hidden=[
@@ -65,7 +65,7 @@ report = us.public_descent_report(
         "region",
         "prior_usage_band",
     ],
-    target="tau_hat",
+    effect="tau_hat",
     weight="sample_weight",
     candidate_refinements=[
         "education_band",
@@ -119,7 +119,7 @@ In a real workflow, replace the first stage with a causal library:
 # Example shape, independent of the specific causal library.
 df["tau_hat"] = causal_estimator.effect(X)
 
-report = us.public_descent_report(
+report = us.audit_effects(
     df,
     public=["AGE_BAND", "SEX"],
     hidden=[
@@ -132,7 +132,7 @@ report = us.public_descent_report(
         "COW",
         "RELP",
     ],
-    target="tau_hat",
+    effect="tau_hat",
     weight="sample_weight",
     candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P", "MAR"],
     q=us.q_bounded_shift(0.5),
@@ -180,11 +180,11 @@ into `updatesupport`:
 ```python
 df["tau_hat"] = subgroup_or_unit_level_effect
 
-report = us.public_descent_report(
+report = us.audit_effects(
     df,
     public=["age_band", "sex"],
     hidden=["age_band", "sex", "education_band", "region", "income_band"],
-    target="tau_hat",
+    effect="tau_hat",
     weight="sample_weight",
     candidate_refinements=["education_band", "region", "income_band"],
 )
@@ -222,7 +222,7 @@ est.fit(Y, T, X=X, W=W)
 
 df["tau_hat"] = est.effect(X)
 
-report = us.public_descent_report(
+report = us.audit_effects(
     df,
     public=["age_band", "sex"],
     hidden=[
@@ -232,7 +232,7 @@ report = us.public_descent_report(
         "region",
         "prior_usage_band",
     ],
-    target="tau_hat",
+    effect="tau_hat",
     weight="sample_weight",
     candidate_refinements=["income_band", "region", "prior_usage_band"],
 )
@@ -253,11 +253,11 @@ treatment effect as the target:
 ```python
 df["tau_hat"] = uplift_model.predict(X)
 
-report = us.public_descent_report(
+report = us.audit_effects(
     df,
     public=["segment", "channel"],
     hidden=["segment", "channel", "region", "tenure_band", "spend_band"],
-    target="tau_hat",
+    effect="tau_hat",
     weight="sample_weight",
     candidate_refinements=["region", "tenure_band", "spend_band"],
 )

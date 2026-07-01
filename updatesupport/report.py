@@ -343,6 +343,71 @@ def public_descent_report(
     )
 
 
+def audit_effects(
+    data: Any | GroupedProblem,
+    *,
+    source_data: Any | None = None,
+    public: Sequence[str] | None = None,
+    hidden: Sequence[str] | None = None,
+    effect: str | None = None,
+    weight: str | None = None,
+    public_columns: Sequence[str] | None = None,
+    hidden_columns: Sequence[str] | None = None,
+    effect_column: str | None = None,
+    weight_column: str | None = None,
+    candidate_refinements: Sequence[str] | None = None,
+    candidate_columns: Sequence[str] | None = None,
+    top: int = 10,
+    min_cell_weight: float = 1.0,
+    title: str = "Causal Effect Representation Stability Audit",
+    effect_description: str = "estimated treatment effect",
+    observed_label: str = "Observed effect estimate",
+    row_count: int | None = None,
+    row_count_label: str = "Rows",
+    q: Any | None = None,
+    q_radius: float | None = None,
+) -> PublicDescentReport:
+    """Audit whether public categories stably report estimated effects.
+
+    This is a convenience wrapper around :func:`public_descent_report` for causal
+    or uplift workflows. A causal library should produce the row-level,
+    subgroup-level, or hidden-cell-level effect target; this function audits the
+    reporting representation for that supplied target.
+    """
+
+    effect = _resolve_scalar_arg(
+        effect,
+        effect_column,
+        primary_name="effect",
+        alias_name="effect_column",
+    )
+    if effect is None and not isinstance(data, GroupedProblem):
+        raise TypeError("audit_effects() missing required keyword argument: 'effect'")
+
+    return public_descent_report(
+        data,
+        source_data=source_data,
+        public=public,
+        hidden=hidden,
+        target=effect,
+        weight=weight,
+        public_columns=public_columns,
+        hidden_columns=hidden_columns,
+        weight_column=weight_column,
+        candidate_refinements=candidate_refinements,
+        candidate_columns=candidate_columns,
+        top=top,
+        min_cell_weight=min_cell_weight,
+        title=title,
+        target_description=effect_description,
+        observed_label=observed_label,
+        row_count=row_count,
+        row_count_label=row_count_label,
+        q=q,
+        q_radius=q_radius,
+    )
+
+
 def public_fiber_diagnostics(
     grouped: GroupedProblem, *, top: int | None = 10
 ) -> tuple[PublicFiberDiagnostic, ...]:
@@ -663,6 +728,18 @@ def _resolve_sequence_arg(
     alias_name: str,
 ) -> Sequence[str] | None:
     if primary is not None and alias is not None and tuple(primary) != tuple(alias):
+        raise TypeError(f"use either {primary_name!r} or {alias_name!r}, not both")
+    return primary if primary is not None else alias
+
+
+def _resolve_scalar_arg(
+    primary: str | None,
+    alias: str | None,
+    *,
+    primary_name: str,
+    alias_name: str,
+) -> str | None:
+    if primary is not None and alias is not None and primary != alias:
         raise TypeError(f"use either {primary_name!r} or {alias_name!r}, not both")
     return primary if primary is not None else alias
 

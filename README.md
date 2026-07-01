@@ -69,6 +69,18 @@ validate causal effects, then use `updatesupport` to audit whether the public
 categories used to report those effects are stable to hidden composition changes.
 See [docs/causal-library-integration.md](docs/causal-library-integration.md).
 
+```python
+report = us.audit_effects(
+    df,
+    public=["AGE_BAND", "SEX"],
+    hidden=["AGE_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND", "RAC1P"],
+    effect="tau_hat",
+    weight="sample_weight",
+    candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P"],
+    q=us.q_bounded_shift(0.5),
+)
+```
+
 ## Install Locally
 
 ```bash
@@ -334,6 +346,7 @@ Implemented now:
   `wasserstein`
 - `PublicDescentReport` with Markdown output
 - `public_descent_report(...)` for analyst-facing report objects
+- `audit_effects(...)` for causal/uplift effect-reporting stability audits
 - `recommend_refinements(...)` for ranking candidate hidden variables
 - `sensitivity_report(...)` for robustness grids over Q, hidden sets, and
   `min_cell_weight`
