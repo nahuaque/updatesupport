@@ -234,6 +234,11 @@ Markdown output starts with a scenario summary, highlights the lowest- and
 highest-ambiguity scenarios, flags mixed public-adequacy conclusions, and then
 renders the full scenario table.
 
+When the grid contains repeated TV, chi-square, KL, or Wasserstein presets that
+differ only by radius, the sensitivity routines automatically route those rows
+through the parameterized CVXPY backend and reuse the compiled problem for the
+fixed hidden state space.
+
 Use `recommend_refinements_sensitivity(...)` to rank candidate public
 refinements across the same kind of grid:
 

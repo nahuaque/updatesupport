@@ -6,8 +6,19 @@ from dataclasses import dataclass
 from typing import Any, Hashable, Sequence
 
 from .data import GroupedProblem, from_dataframe
-from .presets import q_bounded_shift, q_description, q_name
+from .presets import (
+    QPreset,
+    normalize_q_preset,
+    q_bounded_shift,
+    q_description,
+    q_name,
+)
 from .results import TransportResult
+
+
+_PARAMETERIZED_SENSITIVITY_PRESETS = frozenset(
+    {"tv_budget", "chi_square_budget", "kl_budget", "wasserstein"}
+)
 
 
 @dataclass(frozen=True)
@@ -77,6 +88,12 @@ class RefinementCandidate:
             "percent_reduction": self.reduction_percent,
             "public_cells": self.public_cells,
         }
+
+
+@dataclass
+class _RefinementSensitivityCache:
+    baseline: GroupedProblem
+    refined: dict[str, GroupedProblem]
 
 
 @dataclass(frozen=True)
@@ -788,6 +805,130 @@ def recommend_refinements(
     return tuple(scores if top is None else scores[:top])
 
 
+def _parameterized_sensitivity_q(q: Any) -> QPreset | None:
+    preset = normalize_q_preset(q)
+    if preset is None:
+        return None
+    if preset.name not in _PARAMETERIZED_SENSITIVITY_PRESETS:
+        return None
+    backend = (preset.backend or "cvxpy").strip().lower()
+    if backend not in {"cvxpy", "parameterized_cvxpy"}:
+        return None
+    if preset.name in {"tv_budget", "chi_square_budget", "kl_budget"}:
+        if preset.radius is None or float(preset.radius) == 0.0:
+            return None
+    return QPreset(
+        name=preset.name,
+        radius=preset.radius,
+        cost=preset.cost,
+        backend="parameterized_cvxpy",
+    )
+
+
+def _parameterized_sensitivity_key(preset: QPreset) -> tuple[Any, ...]:
+    cost_key = id(preset.cost) if preset.name == "wasserstein" else None
+    return (preset.name, cost_key)
+
+
+def _set_parameterized_radius(grouped: GroupedProblem, preset: QPreset) -> None:
+    if preset.radius is None:
+        raise ValueError(f"{preset.name} radius is required")
+    set_parameter = getattr(grouped.problem.environments, "set_parameter", None)
+    if set_parameter is None:
+        raise TypeError("compiled Q environment does not support CVXPY parameters")
+    set_parameter("radius", float(preset.radius))
+
+
+def _sensitivity_row_from_grouped(
+    grouped: GroupedProblem,
+    *,
+    scenario: str,
+    q: Any,
+    min_cell_weight: float,
+    hidden_columns: Sequence[str],
+) -> SensitivityRow:
+    interval = grouped.problem.global_transport_modulus()
+    return SensitivityRow(
+        scenario=scenario,
+        q_name=q_name(q),
+        q_description=q_description(q),
+        min_cell_weight=float(min_cell_weight),
+        hidden_columns=tuple(hidden_columns),
+        hidden_cells=len(grouped.problem.states),
+        public_cells=len(grouped.problem.public_values),
+        observed_value=_observed_value(grouped),
+        lower=interval.lower,
+        upper=interval.upper,
+        ambiguity=interval.diameter,
+        public_adequate=grouped.problem.is_public_adequate(),
+    )
+
+
+def _parameterized_refinement_candidates(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: str,
+    candidate_refinements: Sequence[str],
+    weight: str | None,
+    min_cell_weight: float,
+    q: QPreset,
+    cache: _RefinementSensitivityCache | None,
+) -> tuple[_RefinementSensitivityCache, tuple[RefinementCandidate, ...]]:
+    if cache is None:
+        baseline = from_dataframe(
+            data,
+            public=public,
+            hidden=hidden,
+            target=target,
+            weight=weight,
+            min_cell_weight=min_cell_weight,
+            q=q,
+        )
+        refined: dict[str, GroupedProblem] = {}
+        for column in candidate_refinements:
+            if column in public:
+                continue
+            if column not in hidden:
+                continue
+            refined[column] = from_dataframe(
+                data,
+                public=tuple(public) + (column,),
+                hidden=hidden,
+                target=target,
+                weight=weight,
+                min_cell_weight=min_cell_weight,
+                q=q,
+            )
+        cache = _RefinementSensitivityCache(baseline=baseline, refined=refined)
+
+    _set_parameterized_radius(cache.baseline, q)
+    baseline_diameter = cache.baseline.problem.global_transport_modulus().diameter
+
+    scores = []
+    for column, refined in cache.refined.items():
+        _set_parameterized_radius(refined, q)
+        diameter = refined.problem.global_transport_modulus().diameter
+        reduction = baseline_diameter - diameter
+        reduction_percent = (
+            100.0 * reduction / baseline_diameter if baseline_diameter > 0 else 0.0
+        )
+        scores.append(
+            RefinementCandidate(
+                column=column,
+                before_ambiguity=baseline_diameter,
+                after_ambiguity=diameter,
+                reduction=reduction,
+                reduction_percent=reduction_percent,
+                public_cells=len(refined.problem.public_values),
+            )
+        )
+
+    scores.sort(key=lambda row: row.reduction, reverse=True)
+    return cache, tuple(scores)
+
+
 def recommend_refinements_sensitivity(
     data: Any,
     *,
@@ -835,21 +976,40 @@ def recommend_refinements_sensitivity(
     for hidden_columns in hidden_grid:
         hidden_columns_tuple = tuple(hidden_columns)
         for min_cell_weight in min_cell_weights:
+            parameterized_refinement_cache: dict[
+                tuple[Any, ...], _RefinementSensitivityCache
+            ] = {}
             for q_preset in q_grid:
                 scenario_index += 1
                 scenario = f"R{scenario_index}"
                 try:
-                    candidates = recommend_refinements(
-                        repeatable_data,
-                        public=public,
-                        hidden=hidden_columns_tuple,
-                        target=target,
-                        candidate_refinements=candidate_refinements,
-                        weight=weight,
-                        min_cell_weight=min_cell_weight,
-                        q=q_preset,
-                        top=None,
-                    )
+                    parameterized_q = _parameterized_sensitivity_q(q_preset)
+                    if parameterized_q is None:
+                        candidates = recommend_refinements(
+                            repeatable_data,
+                            public=public,
+                            hidden=hidden_columns_tuple,
+                            target=target,
+                            candidate_refinements=candidate_refinements,
+                            weight=weight,
+                            min_cell_weight=min_cell_weight,
+                            q=q_preset,
+                            top=None,
+                        )
+                    else:
+                        cache_key = _parameterized_sensitivity_key(parameterized_q)
+                        cache, candidates = _parameterized_refinement_candidates(
+                            repeatable_data,
+                            public=public,
+                            hidden=hidden_columns_tuple,
+                            target=target,
+                            candidate_refinements=candidate_refinements,
+                            weight=weight,
+                            min_cell_weight=min_cell_weight,
+                            q=parameterized_q,
+                            cache=parameterized_refinement_cache.get(cache_key),
+                        )
+                        parameterized_refinement_cache[cache_key] = cache
                 except Exception as exc:
                     if raise_errors:
                         raise
@@ -1097,20 +1257,48 @@ def sensitivity_report(
     for hidden_columns in hidden_grid:
         hidden_columns_tuple = tuple(hidden_columns)
         for min_cell_weight in min_cell_weights:
+            parameterized_grouped_cache: dict[tuple[Any, ...], GroupedProblem] = {}
             for q_preset in q_grid:
                 scenario_index += 1
                 scenario = f"S{scenario_index}"
                 try:
-                    report = public_descent_report(
-                        repeatable_data,
-                        public=public,
-                        hidden=hidden_columns_tuple,
-                        target=target,
-                        weight=weight,
-                        min_cell_weight=min_cell_weight,
-                        q=q_preset,
-                        top=0,
-                    )
+                    parameterized_q = _parameterized_sensitivity_q(q_preset)
+                    if parameterized_q is None:
+                        report = public_descent_report(
+                            repeatable_data,
+                            public=public,
+                            hidden=hidden_columns_tuple,
+                            target=target,
+                            weight=weight,
+                            min_cell_weight=min_cell_weight,
+                            q=q_preset,
+                            top=0,
+                        )
+                    else:
+                        cache_key = _parameterized_sensitivity_key(parameterized_q)
+                        grouped = parameterized_grouped_cache.get(cache_key)
+                        if grouped is None:
+                            grouped = from_dataframe(
+                                repeatable_data,
+                                public=public,
+                                hidden=hidden_columns_tuple,
+                                target=target,
+                                weight=weight,
+                                min_cell_weight=min_cell_weight,
+                                q=parameterized_q,
+                            )
+                            parameterized_grouped_cache[cache_key] = grouped
+                        _set_parameterized_radius(grouped, parameterized_q)
+                        rows.append(
+                            _sensitivity_row_from_grouped(
+                                grouped,
+                                scenario=scenario,
+                                q=q_preset,
+                                min_cell_weight=min_cell_weight,
+                                hidden_columns=hidden_columns_tuple,
+                            )
+                        )
+                        continue
                 except Exception as exc:
                     if raise_errors:
                         raise

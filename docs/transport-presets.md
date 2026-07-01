@@ -409,6 +409,11 @@ radius sweeps where rebuilding the CVXPY problem for each radius would dominate
 the runtime. If the hidden state space, public projection, or cost matrix
 changes, compile a new problem.
 
+The sensitivity-grid helpers apply this optimization automatically for
+compatible TV, chi-square, KL, and Wasserstein rows. They still recompile when a
+scenario changes the hidden state space, minimum retained cell weight, public
+projection, or Wasserstein cost matrix.
+
 ## Preset Aliases
 
 The compiler accepts both helper functions and string aliases:

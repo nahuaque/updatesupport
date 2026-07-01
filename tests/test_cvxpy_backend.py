@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 import updatesupport as us
+import updatesupport.report as report_module
 
 
 def _require_cvxpy() -> None:
@@ -149,6 +151,66 @@ class CvxpyBackendTests(unittest.TestCase):
                     standard_interval.upper,
                     places=5,
                 )
+
+    def test_sensitivity_report_reuses_parameterized_backend_for_radius_grid(self):
+        _require_cvxpy()
+
+        with mock.patch(
+            "updatesupport.report.from_dataframe",
+            wraps=report_module.from_dataframe,
+        ) as from_dataframe:
+            report = us.sensitivity_report(
+                _rows(),
+                public=["PUBLIC"],
+                hidden=["PUBLIC", "HIDDEN"],
+                target="Y",
+                weight="W",
+                q_presets=[
+                    us.q_tv_budget(0.15),
+                    us.q_tv_budget(0.30),
+                ],
+            )
+
+        self.assertEqual(from_dataframe.call_count, 1)
+        self.assertEqual([row.q_name for row in report.rows], [
+            "tv_budget(radius=0.15)",
+            "tv_budget(radius=0.3)",
+        ])
+        self.assertAlmostEqual(report.rows[0].lower, 0.35, places=6)
+        self.assertAlmostEqual(report.rows[0].upper, 0.65, places=6)
+        self.assertAlmostEqual(report.rows[1].lower, 0.20, places=6)
+        self.assertAlmostEqual(report.rows[1].upper, 0.80, places=6)
+
+    def test_refinement_sensitivity_reuses_parameterized_backend_for_radius_grid(
+        self,
+    ):
+        _require_cvxpy()
+
+        with mock.patch(
+            "updatesupport.report.from_dataframe",
+            wraps=report_module.from_dataframe,
+        ) as from_dataframe:
+            report = us.recommend_refinements_sensitivity(
+                _rows(),
+                public=["PUBLIC"],
+                hidden=["PUBLIC", "HIDDEN"],
+                target="Y",
+                candidate_refinements=["HIDDEN"],
+                weight="W",
+                q_presets=[
+                    us.q_tv_budget(0.15),
+                    us.q_tv_budget(0.30),
+                ],
+            )
+
+        self.assertEqual(from_dataframe.call_count, 2)
+        self.assertEqual(len(report.scenarios), 2)
+        self.assertEqual([row.q_name for row in report.scenarios], [
+            "tv_budget(radius=0.15)",
+            "tv_budget(radius=0.3)",
+        ])
+        self.assertEqual(report.scenarios[0].best_column, "HIDDEN")
+        self.assertEqual(report.scenarios[1].best_column, "HIDDEN")
 
     def test_chi_square_budget_preset_limits_divergence_from_observed(self):
         _require_cvxpy()
