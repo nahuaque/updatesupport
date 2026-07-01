@@ -64,6 +64,11 @@ It is not a causal inference package, a sampling-uncertainty estimator, or a
 replacement for substantive modeling. It can complement those workflows by
 checking whether the categories used to report an estimate are too coarse.
 
+For causal workflows, use DoWhy, EconML, CausalML, or DoubleML to estimate or
+validate causal effects, then use `updatesupport` to audit whether the public
+categories used to report those effects are stable to hidden composition changes.
+See [docs/causal-library-integration.md](docs/causal-library-integration.md).
+
 ## Install Locally
 
 ```bash
@@ -364,5 +369,6 @@ for support in least.minimal_supports:
 ## More Documentation
 
 - [Representation adequacy guide](docs/representation-adequacy.md)
+- [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)
 - [Folktables ACSIncome result interpretation](docs/folktables-acs-income-interpretation.md)
 - [UpdateSupport PDF](docs/UpdateSupport.pdf)
