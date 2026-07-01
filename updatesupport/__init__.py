@@ -15,13 +15,17 @@ from .environments import (
 )
 from .partition import Partition, PartitionError
 from .problem import FiniteProblem, TooManyPartitions
+from .presets import QPreset, q_bounded_shift, q_observed, q_saturated
 from .report import (
     PublicDescentReport,
     PublicFiberDiagnostic,
     RefinementCandidate,
+    SensitivityReport,
+    SensitivityRow,
     public_descent_report,
     public_fiber_diagnostics,
     recommend_refinements,
+    sensitivity_report,
 )
 from .results import (
     AdequacyResult,
@@ -54,8 +58,15 @@ __all__ = [
     "PublicFiberDiagnostic",
     "public_descent_report",
     "public_fiber_diagnostics",
+    "QPreset",
+    "q_bounded_shift",
+    "q_observed",
+    "q_saturated",
     "recommend_refinements",
     "RefinementCandidate",
+    "SensitivityReport",
+    "SensitivityRow",
+    "sensitivity_report",
     "TooManyPartitions",
     "TransportResult",
     "Witness",

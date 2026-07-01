@@ -32,6 +32,8 @@ def build_problem_from_rows(
     target_column: str = TARGET_COLUMN,
     weight_column: str | None = None,
     min_cell_weight: float = 1.0,
+    q: Any = "saturated",
+    q_radius: float | None = None,
 ) -> GroupedProblem:
     """Compatibility wrapper around :func:`updatesupport.from_dataframe`."""
 
@@ -42,6 +44,8 @@ def build_problem_from_rows(
         target_column=target_column,
         weight_column=weight_column,
         min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
     )
 
 
@@ -62,6 +66,8 @@ def refinement_candidates(
     target_column: str = TARGET_COLUMN,
     weight_column: str | None = None,
     min_cell_weight: float = 1.0,
+    q: Any = "saturated",
+    q_radius: float | None = None,
     top: int = 8,
 ) -> list[dict[str, Any]]:
     """Compatibility wrapper around :func:`updatesupport.recommend_refinements`."""
@@ -76,6 +82,8 @@ def refinement_candidates(
             weight=weight_column,
             candidate_refinements=candidate_columns,
             min_cell_weight=min_cell_weight,
+            q=q,
+            q_radius=q_radius,
             top=top,
         )
     ]
@@ -329,6 +337,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-cell-weight", type=float, default=25.0)
     parser.add_argument("--top", type=int, default=8)
     parser.add_argument(
+        "--q",
+        choices=["saturated", "observed", "bounded_shift"],
+        default="saturated",
+        help="Admissible-environment preset for the main report.",
+    )
+    parser.add_argument(
+        "--q-radius",
+        type=float,
+        default=None,
+        help="Relative hidden-cell mass radius for --q bounded_shift.",
+    )
+    parser.add_argument(
+        "--sensitivity",
+        action="store_true",
+        help="Also print a sensitivity grid over Q presets and min-cell weights.",
+    )
+    parser.add_argument(
+        "--sensitivity-min-cell-weights",
+        nargs="*",
+        type=float,
+        default=None,
+        help="Min-cell thresholds for --sensitivity; defaults to the main threshold.",
+    )
+    parser.add_argument(
         "--download", action=argparse.BooleanOptionalAction, default=True
     )
     parser.add_argument(
@@ -363,6 +395,8 @@ def main() -> None:
         target_column=TARGET_COLUMN,
         weight_column="weight" if rows and "weight" in rows[0] else None,
         min_cell_weight=min_cell_weight,
+        q=args.q,
+        q_radius=args.q_radius,
     )
     print(
         render_report(
@@ -374,6 +408,21 @@ def main() -> None:
             min_cell_weight=min_cell_weight,
         )
     )
+    if args.sensitivity:
+        q_radius = 0.5 if args.q_radius is None else args.q_radius
+        min_cell_weights = args.sensitivity_min_cell_weights or [min_cell_weight]
+        print()
+        print(
+            us.sensitivity_report(
+                rows,
+                public=public_columns,
+                hidden=hidden_columns,
+                target=TARGET_COLUMN,
+                weight="weight" if rows and "weight" in rows[0] else None,
+                min_cell_weights=min_cell_weights,
+                q_presets=("saturated", us.q_bounded_shift(q_radius), "observed"),
+            ).to_markdown()
+        )
 
 
 if __name__ == "__main__":

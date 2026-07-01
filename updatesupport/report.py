@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Hashable, Sequence
 
 from .data import GroupedProblem, from_dataframe
+from .presets import q_bounded_shift, q_description, q_name
 from .results import TransportResult
 
 
@@ -129,6 +130,7 @@ class PublicDescentReport:
                 f"- Public cells: {len(problem.public_values)}",
                 f"- Public columns: {', '.join(grouped.public_columns)}",
                 f"- Hidden columns: {', '.join(grouped.hidden_columns)}",
+                f"- Q preset: {grouped.q_name}",
             ]
         )
         if self.min_cell_weight is not None:
@@ -169,9 +171,10 @@ class PublicDescentReport:
                 "public cell shares are held fixed.",
                 "",
                 "For each public fiber below, `range` is the max-minus-min hidden-cell "
-                "target value inside that public cell. `contribution = mass * range`, "
-                "so it is the amount that fiber contributes to the overall interval "
-                "width. The listed top fibers account for "
+                "target value inside that public cell. `contribution` is the fiber's "
+                "difference between the upper and lower transport witnesses; under "
+                "the saturated preset this equals `mass * range`. The listed top "
+                "fibers account for "
                 f"{_percent(self.top_fiber_contribution_share)} of total transport "
                 "ambiguity.",
                 "",
@@ -256,6 +259,8 @@ def public_descent_report(
     observed_label: str = "Observed value",
     row_count: int | None = None,
     row_count_label: str = "Rows",
+    q: Any | None = None,
+    q_radius: float | None = None,
 ) -> PublicDescentReport:
     """Build an analyst-facing public-descent report.
 
@@ -273,14 +278,17 @@ def public_descent_report(
         primary_name="candidate_refinements",
         alias_name="candidate_columns",
     )
-    compile_data = data
     if isinstance(data, GroupedProblem):
         grouped = data
         refinement_data = source_data
+        effective_q = q if q is not None else grouped.q
+        if effective_q is None:
+            effective_q = "saturated"
     else:
         compile_data, inferred_row_count = _repeatable_data(data)
         if row_count is None:
             row_count = inferred_row_count
+        effective_q = "saturated" if q is None else q
         grouped = from_dataframe(
             compile_data,
             public=public,
@@ -292,6 +300,8 @@ def public_descent_report(
             target_column=target_column,
             weight_column=weight_column,
             min_cell_weight=min_cell_weight,
+            q=effective_q,
+            q_radius=q_radius,
         )
         refinement_data = source_data if source_data is not None else compile_data
 
@@ -312,6 +322,8 @@ def public_descent_report(
             weight=weight if weight is not None else weight_column,
             candidate_refinements=candidate_refinements,
             min_cell_weight=min_cell_weight,
+            q=effective_q,
+            q_radius=q_radius,
             top=top,
         )
 
@@ -339,6 +351,7 @@ def public_fiber_diagnostics(
     if top is not None and top < 0:
         raise ValueError("top must be non-negative")
     problem = grouped.problem
+    interval = problem.global_transport_modulus()
     rows = []
     for public_value in problem.public_values:
         states = problem.public_fibers[public_value]
@@ -347,13 +360,24 @@ def public_fiber_diagnostics(
         max_state = ordered_states[-1]
         fiber_range = problem.estimand_map[max_state] - problem.estimand_map[min_state]
         public_mass = grouped.public_law[public_value]
+        contribution = public_mass * fiber_range
+        if interval.q_lower is not None and interval.q_upper is not None:
+            lower_value = sum(
+                interval.q_lower[state] * problem.estimand_map[state]
+                for state in states
+            )
+            upper_value = sum(
+                interval.q_upper[state] * problem.estimand_map[state]
+                for state in states
+            )
+            contribution = max(0.0, upper_value - lower_value)
         rows.append(
             PublicFiberDiagnostic(
                 public_value=public_value,
                 public_mass=public_mass,
                 hidden_cells=len(states),
                 fiber_range=fiber_range,
-                contribution=public_mass * fiber_range,
+                contribution=contribution,
                 min_state=min_state,
                 min_value=problem.estimand_map[min_state],
                 max_state=max_state,
@@ -374,6 +398,8 @@ def recommend_refinements(
     candidate_columns: Sequence[str] | None = None,
     weight: str | None = None,
     min_cell_weight: float = 1.0,
+    q: Any = "saturated",
+    q_radius: float | None = None,
     top: int | None = 8,
 ) -> tuple[RefinementCandidate, ...]:
     """Rank one-column public refinements by transport-ambiguity reduction."""
@@ -397,6 +423,8 @@ def recommend_refinements(
         target=target,
         weight=weight,
         min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
     )
     baseline_diameter = baseline.problem.global_transport_modulus().diameter
 
@@ -414,6 +442,8 @@ def recommend_refinements(
             target=target,
             weight=weight,
             min_cell_weight=min_cell_weight,
+            q=q,
+            q_radius=q_radius,
         )
         diameter = refined.problem.global_transport_modulus().diameter
         reduction = baseline_diameter - diameter
@@ -433,6 +463,170 @@ def recommend_refinements(
 
     scores.sort(key=lambda row: row.reduction, reverse=True)
     return tuple(scores if top is None else scores[:top])
+
+
+@dataclass(frozen=True)
+class SensitivityRow:
+    """One robustness scenario in a sensitivity report."""
+
+    scenario: str
+    q_name: str
+    q_description: str
+    min_cell_weight: float
+    hidden_columns: tuple[str, ...]
+    hidden_cells: int | None = None
+    public_cells: int | None = None
+    observed_value: float | None = None
+    lower: float | None = None
+    upper: float | None = None
+    ambiguity: float | None = None
+    public_adequate: bool | None = None
+    status: str = "ok"
+    error: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "scenario": self.scenario,
+            "q_name": self.q_name,
+            "q_description": self.q_description,
+            "min_cell_weight": self.min_cell_weight,
+            "hidden_columns": self.hidden_columns,
+            "hidden_cells": self.hidden_cells,
+            "public_cells": self.public_cells,
+            "observed_value": self.observed_value,
+            "lower": self.lower,
+            "upper": self.upper,
+            "ambiguity": self.ambiguity,
+            "public_adequate": self.public_adequate,
+            "status": self.status,
+            "error": self.error,
+        }
+
+
+@dataclass(frozen=True)
+class SensitivityReport:
+    """Robustness grid over Q presets, hidden sets, and min-cell thresholds."""
+
+    rows: tuple[SensitivityRow, ...]
+    title: str = "Public Descent Sensitivity Report"
+    row_count: int | None = None
+
+    def to_markdown(self) -> str:
+        lines = [f"# {self.title}", ""]
+        if self.row_count is not None:
+            lines.extend([f"- Rows: {self.row_count}", ""])
+        lines.extend(
+            [
+                "| scenario | Q | min_cell_weight | hidden columns | hidden cells | public cells | observed | lower | upper | ambiguity | public adequate | status |",
+                "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
+            ]
+        )
+        for row in self.rows:
+            hidden_columns = ", ".join(row.hidden_columns)
+            adequate = "" if row.public_adequate is None else (
+                "yes" if row.public_adequate else "no"
+            )
+            status = row.status if row.error is None else f"error: {row.error}"
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        _escape_table(row.scenario),
+                        _escape_table(row.q_name),
+                        f"{row.min_cell_weight:g}",
+                        _escape_table(hidden_columns),
+                        _format_optional_int(row.hidden_cells),
+                        _format_optional_int(row.public_cells),
+                        _format_optional_float(row.observed_value),
+                        _format_optional_float(row.lower),
+                        _format_optional_float(row.upper),
+                        _format_optional_float(row.ambiguity),
+                        adequate,
+                        _escape_table(status),
+                    ]
+                )
+                + " |"
+            )
+        return "\n".join(lines)
+
+
+def sensitivity_report(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: str,
+    weight: str | None = None,
+    min_cell_weights: Sequence[float] = (1.0,),
+    hidden_sets: Sequence[Sequence[str]] | None = None,
+    q_presets: Sequence[Any] | None = None,
+    title: str = "Public Descent Sensitivity Report",
+    raise_errors: bool = False,
+) -> SensitivityReport:
+    """Run robustness checks over Q presets, hidden sets, and cell thresholds."""
+
+    repeatable_data, row_count = _repeatable_data(data)
+    hidden_grid = tuple(hidden_sets) if hidden_sets is not None else (tuple(hidden),)
+    q_grid = tuple(q_presets) if q_presets is not None else (
+        "saturated",
+        q_bounded_shift(0.5),
+        "observed",
+    )
+
+    rows: list[SensitivityRow] = []
+    scenario_index = 0
+    for hidden_columns in hidden_grid:
+        hidden_columns_tuple = tuple(hidden_columns)
+        for min_cell_weight in min_cell_weights:
+            for q_preset in q_grid:
+                scenario_index += 1
+                scenario = f"S{scenario_index}"
+                try:
+                    report = public_descent_report(
+                        repeatable_data,
+                        public=public,
+                        hidden=hidden_columns_tuple,
+                        target=target,
+                        weight=weight,
+                        min_cell_weight=min_cell_weight,
+                        q=q_preset,
+                        top=0,
+                    )
+                except Exception as exc:
+                    if raise_errors:
+                        raise
+                    rows.append(
+                        SensitivityRow(
+                            scenario=scenario,
+                            q_name=q_name(q_preset),
+                            q_description=q_description(q_preset),
+                            min_cell_weight=float(min_cell_weight),
+                            hidden_columns=hidden_columns_tuple,
+                            status="error",
+                            error=str(exc),
+                        )
+                    )
+                    continue
+
+                grouped = report.grouped
+                rows.append(
+                    SensitivityRow(
+                        scenario=scenario,
+                        q_name=grouped.q_name,
+                        q_description=grouped.q_description,
+                        min_cell_weight=float(min_cell_weight),
+                        hidden_columns=hidden_columns_tuple,
+                        hidden_cells=len(grouped.problem.states),
+                        public_cells=len(grouped.problem.public_values),
+                        observed_value=report.observed_value,
+                        lower=report.interval.lower,
+                        upper=report.interval.upper,
+                        ambiguity=report.interval.diameter,
+                        public_adequate=report.public_adequate,
+                    )
+                )
+
+    return SensitivityReport(rows=tuple(rows), title=title, row_count=row_count)
 
 
 def _observed_value(grouped: GroupedProblem) -> float:
@@ -475,3 +669,15 @@ def _format_key(columns: Sequence[str], key: tuple[Hashable, ...]) -> str:
 
 def _percent(value: float) -> str:
     return f"{100 * value:.1f}%"
+
+
+def _format_optional_float(value: float | None) -> str:
+    return "" if value is None else f"{value:.4f}"
+
+
+def _format_optional_int(value: int | None) -> str:
+    return "" if value is None else str(value)
+
+
+def _escape_table(value: str) -> str:
+    return value.replace("|", "\\|")

@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Any, Hashable, Iterable, Mapping, Sequence
 
-from .environments import PublicFiberSaturated
 from .problem import FiniteProblem
+from .presets import QPreset, resolve_q_environment
 
 
 @dataclass(frozen=True)
@@ -22,6 +22,12 @@ class GroupedProblem:
     target_column: str
     total_weight: float
     cell_weights: dict[tuple[Hashable, ...], float]
+    q: QPreset | None = None
+    q_name: str = "saturated"
+    q_description: str = (
+        "arbitrary reweighting among retained hidden cells inside each observed "
+        "public cell"
+    )
 
 
 def from_dataframe(
@@ -36,13 +42,17 @@ def from_dataframe(
     target_column: str | None = None,
     weight_column: str | None = None,
     min_cell_weight: float = 1.0,
+    q: Any = "saturated",
+    q_radius: float | None = None,
 ) -> GroupedProblem:
     """Compile tabular observations into a finite update-support problem.
 
     ``data`` may be a pandas-like dataframe with ``to_dict("records")`` or an
     iterable of row mappings. Each hidden cell receives the weighted empirical
     mean of ``target`` as its estimand value. The returned problem uses a
-    public-fiber-saturated environment with the observed public law fixed.
+    environment built from the selected ``q`` preset. The default is
+    ``q="saturated"``, which fixes the observed public law and allows arbitrary
+    reweighting inside retained public fibers.
 
     The ``*_columns`` keyword names are accepted as compatibility aliases for
     ``public``, ``hidden``, ``target``, and ``weight``.
@@ -138,11 +148,18 @@ def from_dataframe(
     for cell, mass in normalized_cell_weight.items():
         public_law[public_map[cell]] += mass
 
+    q_environment = resolve_q_environment(
+        q,
+        public_law=dict(public_law),
+        public_map=public_map,
+        cell_weights=normalized_cell_weight,
+        q_radius=q_radius,
+    )
     problem = FiniteProblem(
         states=states,
         public=public_map,
         estimand=estimand,
-        environments=PublicFiberSaturated.fixed(dict(public_law)),
+        environments=q_environment.environment,
     )
     return GroupedProblem(
         problem=problem,
@@ -152,6 +169,9 @@ def from_dataframe(
         target_column=target,
         total_weight=total_weight,
         cell_weights=normalized_cell_weight,
+        q=q_environment.preset,
+        q_name=q_environment.name,
+        q_description=q_environment.description,
     )
 
 

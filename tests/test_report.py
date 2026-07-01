@@ -20,6 +20,7 @@ class PublicDescentReportTests(unittest.TestCase):
             target="target",
             weight="weight",
             candidate_refinements=["hidden"],
+            q=us.q_bounded_shift(0.5),
             top=1,
             min_cell_weight=1,
             title="Demo Report",
@@ -28,17 +29,18 @@ class PublicDescentReportTests(unittest.TestCase):
 
         self.assertIsInstance(report, us.PublicDescentReport)
         self.assertAlmostEqual(report.observed_value, 0.5)
-        self.assertAlmostEqual(report.interval.lower, 0.2)
-        self.assertAlmostEqual(report.interval.upper, 0.8)
-        self.assertAlmostEqual(report.interval.diameter, 0.6)
+        self.assertEqual(report.grouped.q_name, "bounded_shift(radius=0.5)")
+        self.assertAlmostEqual(report.interval.lower, 0.35)
+        self.assertAlmostEqual(report.interval.upper, 0.65)
+        self.assertAlmostEqual(report.interval.diameter, 0.3)
         self.assertFalse(report.public_adequate)
         self.assertEqual(report.fibers[0].public_value, ("A",))
-        self.assertAlmostEqual(report.fibers[0].contribution, 0.6)
+        self.assertAlmostEqual(report.fibers[0].contribution, 0.3)
         self.assertEqual(report.refinements[0].column, "hidden")
-        self.assertAlmostEqual(report.refinements[0].before_ambiguity, 0.6)
+        self.assertAlmostEqual(report.refinements[0].before_ambiguity, 0.3)
         self.assertAlmostEqual(report.refinements[0].after_ambiguity, 0.0)
         self.assertAlmostEqual(report.refinements[0].diameter, 0.0)
-        self.assertAlmostEqual(report.refinements[0].reduction, 0.6)
+        self.assertAlmostEqual(report.refinements[0].reduction, 0.3)
         self.assertAlmostEqual(report.refinements[0].reduction_percent, 100.0)
         self.assertAlmostEqual(report.refinements[0].reduction_fraction, 1.0)
 

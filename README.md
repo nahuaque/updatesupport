@@ -106,6 +106,7 @@ grouped = us.from_dataframe(
     target="__target__",
     weight="PWGTP",
     min_cell_weight=25,
+    q="saturated",
 )
 
 interval = grouped.problem.global_transport_modulus()
@@ -118,6 +119,18 @@ Each retained hidden cell becomes one finite state. The estimand value for that
 state is the weighted empirical target mean inside the cell, and the environment
 fixes the observed public law while allowing saturated reweighting inside public
 fibers.
+
+## Q Presets
+
+`Q` is the admissible environment class used for the hidden-composition stress
+test. The first built-in presets are:
+
+- `q="saturated"` or `us.q_saturated()`: fix the observed public law and allow
+  arbitrary reweighting among retained hidden cells inside each public cell.
+- `q=us.q_bounded_shift(radius)`: fix the observed public law and constrain each
+  hidden-cell mass to stay within `(1 +/- radius)` times its observed mass.
+- `q="observed"` or `us.q_observed()`: use only the observed hidden distribution,
+  giving zero hidden-composition ambiguity.
 
 ## Public Descent Report
 
@@ -133,6 +146,7 @@ report = us.public_descent_report(
     weight="PWGTP",
     candidate_refinements=["OCC_MAJOR", "WKHP_BAND"],
     min_cell_weight=25,
+    q="saturated",
     title="ACSIncome Representation Adequacy Report",
 )
 
@@ -143,6 +157,28 @@ The report includes the observed value, stress interval, transport ambiguity,
 public adequacy flag, worst public fibers, and one-column refinement candidates
 with before ambiguity, after ambiguity, absolute reduction, and percentage
 reduction.
+
+## Sensitivity Checks
+
+Use `sensitivity_report(...)` to rerun the audit across Q presets,
+`min_cell_weight` thresholds, and alternative hidden-column sets:
+
+```python
+sensitivity = us.sensitivity_report(
+    rows_or_frame,
+    public=["AGE_BAND", "EDU_BAND", "SEX"],
+    hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND"],
+    target="__target__",
+    weight="PWGTP",
+    min_cell_weights=[1, 10, 25],
+    q_presets=["saturated", us.q_bounded_shift(0.5), "observed"],
+)
+
+print(sensitivity.to_markdown())
+```
+
+This is the recommended way to check whether the headline ambiguity is sensitive
+to sparse hidden cells or to the chosen admissible-environment preset.
 
 ## Public-Fiber-Saturated Example
 
@@ -253,9 +289,12 @@ Implemented now:
 - `LineSegment`
 - `PolytopeEnvironments` via SciPy `linprog`
 - `from_dataframe(...)` for compiling grouped tabular data into a finite problem
+- Q presets: `saturated`, `observed`, and `bounded_shift`
 - `PublicDescentReport` with Markdown output
 - `public_descent_report(...)` for analyst-facing report objects
 - `recommend_refinements(...)` for ranking candidate hidden variables
+- `sensitivity_report(...)` for robustness grids over Q, hidden sets, and
+  `min_cell_weight`
 - adequacy checks with witnesses
 - adequate, minimal, and least support enumeration for small finite problems
 - local and global transport moduli
@@ -265,9 +304,8 @@ Implemented now:
 
 Planned next slices:
 
-- named `Q` presets for common stress tests
-- sensitivity reports over `min_cell_weight`, hidden-variable sets, and `Q`
-  choices
+- richer Q presets, including total-variation or L1 budgets around the observed
+  hidden distribution
 
 ## Linear-Polytope Backend
 

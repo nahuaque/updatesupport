@@ -67,12 +67,16 @@ any retained hidden subgroup can receive the mass assigned to that public cell.
 This is deliberately conservative and easy to explain, but it can be too broad
 for some analyses.
 
-Near-term library work should add named `Q` presets:
+The first named `Q` presets are:
 
 - `saturated`: arbitrary reweighting inside public fibers
-- `min_cell_weight`: saturated after dropping tiny hidden cells
-- `bounded_shift`: limited movement away from the observed hidden mix
-- `tv_budget`: total-variation budget around the observed hidden distribution
+- `observed`: only the observed hidden mix is admissible
+- `bounded_shift`: limited per-hidden-cell relative movement away from the
+  observed hidden mix
+
+`min_cell_weight` is a separate robustness knob: it drops tiny hidden cells before
+the finite problem is compiled. Future Q presets should include total-variation
+or L1 budgets around the observed hidden distribution.
 
 Every report should state which `Q` was used. Otherwise the ambiguity number is
 not interpretable.
@@ -137,6 +141,7 @@ report = us.public_descent_report(
     weight="PWGTP",
     candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P", "RELP"],
     min_cell_weight=25,
+    q="saturated",
 )
 
 print(report.to_markdown())
@@ -144,8 +149,9 @@ print(report.to_markdown())
 
 Implementation should land in this order:
 
-1. named `Q` presets: make stress-test assumptions explicit and repeatable.
-2. sensitivity reports: vary `min_cell_weight`, hidden columns, and `Q`.
+1. richer Q presets, especially total-variation or L1 budgets around the observed
+   hidden distribution.
+2. deeper sensitivity reporting, including side-by-side refinement stability.
 
 The documentation should keep the ACSIncome case study as the primary example
 and put the finite-support theory underneath it.
