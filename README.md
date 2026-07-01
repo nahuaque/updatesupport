@@ -107,6 +107,59 @@ print(result.lower, result.upper, result.diameter)
 The simplex constraints are implicit. Additional constraints can be supplied
 with `us.leq(...)`, `us.geq(...)`, `us.eq(...)`, or `us.linear_constraint(...)`.
 
+## Folktables ACS worked example
+
+The Folktables example turns ACSIncome or ACSEmployment into an update-support
+stress test:
+
+- public cells are coarse observed categories such as age band, education band,
+  and sex
+- hidden cells refine those categories with occupation, race, work hours, and
+  other task-specific ACS fields
+- the estimand is the observed label rate in each hidden cell
+- the environment class allows arbitrary reweighting inside the observed public
+  cells while preserving the observed public law
+
+Install the optional example dependencies:
+
+```bash
+uv sync --extra examples
+```
+
+Run the real Folktables ACSIncome example:
+
+```bash
+uv run --extra examples python examples/folktables_acs.py \
+  --task income \
+  --states CA \
+  --year 2018 \
+  --sample 50000 \
+  --min-cell-weight 25
+```
+
+Run ACSEmployment instead:
+
+```bash
+uv run --extra examples python examples/folktables_acs.py \
+  --task employment \
+  --states CA TX \
+  --year 2018
+```
+
+The script prints:
+
+- the observed target rate
+- the partial-identification interval under hidden reweighting
+- the observed-law transport ambiguity
+- worst public fibers by ambiguity contribution
+- one-column refinements ranked by ambiguity reduction
+
+There is also a no-download smoke demo:
+
+```bash
+uv run python examples/folktables_acs.py --synthetic
+```
+
 ## MVP scope
 
 Implemented now:

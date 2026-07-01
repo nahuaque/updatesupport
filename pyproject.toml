@@ -9,6 +9,12 @@ dependencies = [
     "scipy>=1.15.3",
 ]
 
+[project.optional-dependencies]
+examples = [
+    "folktables>=0.0.12",
+    "pandas>=2.0",
+]
+
 [dependency-groups]
 dev = [
     "bandit>=1.9.4",
