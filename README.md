@@ -126,7 +126,8 @@ uv sync --extra dowhy
 ## Core Model
 
 The library implements a finite-linear version of the update-support machinery
-from `docs/UpdateSupport.pdf`. It models:
+from [Update Support Homomorphisms](https://philpapers.org/rec/BRUUSH). It
+models:
 
 - a finite hidden state space `D`
 - a public projection `pi: D -> O`
@@ -619,4 +620,4 @@ for support in least.minimal_supports:
 - [Transport preset guide](docs/transport-presets.md)
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)
 - [Folktables ACSIncome result interpretation](docs/folktables-acs-income-interpretation.md)
-- [UpdateSupport PDF](docs/UpdateSupport.pdf)
+- [Update Support Homomorphisms](https://philpapers.org/rec/BRUUSH)
