@@ -474,6 +474,20 @@ problem = us.FiniteProblem(
 The TV, chi-square, KL, and Wasserstein Q presets are thin wrappers around this
 backend.
 
+Solved CVXPY transport intervals expose dual diagnostics:
+
+```python
+interval = grouped.problem.global_transport_modulus()
+for row in interval.dual_summary(top=5):
+    print(row.solve, row.name, row.kind, row.magnitude)
+```
+
+These rows are CVXPY/KKT sensitivity diagnostics. Large multipliers identify
+constraints that are locally influential for the solved interval, such as
+public-law equalities, Q-budget constraints, or active state lower bounds. Custom
+constraint builders can return `us.cvxpy_constraint(...)` to attach a readable
+name and kind to their dual rows.
+
 For repeated radius sweeps on the same compiled finite problem, use the
 parameterized backend:
 

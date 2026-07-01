@@ -8,6 +8,7 @@ from .dowhy import (
 )
 from .environments import (
     CvxpyEnvironments,
+    CvxpyConstraintMetadata,
     CvxpyError,
     FiniteEnvironments,
     LinearConstraint,
@@ -16,6 +17,7 @@ from .environments import (
     ParameterizedCvxpyEnvironments,
     PolytopeEnvironments,
     PublicFiberSaturated,
+    cvxpy_constraint,
     eq,
     geq,
     leq,
@@ -54,6 +56,7 @@ from .report import (
 from .results import (
     AdequacyResult,
     CardinalGapResult,
+    ConstraintDual,
     LeastSupportResult,
     TransportResult,
     Witness,
@@ -62,8 +65,11 @@ from .results import (
 __all__ = [
     "AdequacyResult",
     "CardinalGapResult",
+    "ConstraintDual",
     "CvxpyEnvironments",
+    "CvxpyConstraintMetadata",
     "CvxpyError",
+    "cvxpy_constraint",
     "DoWhyRepresentationAudit",
     "eq",
     "audit_effects",

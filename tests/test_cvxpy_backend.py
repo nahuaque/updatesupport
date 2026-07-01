@@ -64,6 +64,52 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.upper, 0.65, places=6)
         self.assertAlmostEqual(interval.diameter, 0.30, places=6)
 
+    def test_tv_budget_dual_diagnostics_are_attached_to_interval(self):
+        _require_cvxpy()
+
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_tv_budget(0.15),
+        )
+
+        interval = grouped.problem.global_transport_modulus()
+        kinds = {row.kind for row in interval.duals}
+        names = {row.name for row in interval.duals}
+        summary = interval.dual_summary(top=3)
+
+        self.assertTrue(interval.duals)
+        self.assertIsInstance(summary[0], us.ConstraintDual)
+        self.assertIn("tv_budget", kinds)
+        self.assertIn("public_law", kinds)
+        self.assertIn("lower_bound", kinds)
+        self.assertIn("total-variation budget", names)
+        self.assertEqual(summary[0].kind, "tv_budget")
+        self.assertGreater(summary[0].magnitude, 0.0)
+        self.assertIn("magnitude", summary[0].as_dict())
+
+    def test_public_descent_report_includes_cvxpy_dual_section(self):
+        _require_cvxpy()
+
+        report = us.public_descent_report(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_tv_budget(0.15),
+            top=0,
+        )
+
+        markdown = report.to_markdown()
+
+        self.assertIn("## CVXPY Dual Diagnostics", markdown)
+        self.assertIn("total-variation budget", markdown)
+        self.assertIn("public-law equality", markdown)
+
     def test_parameterized_tv_budget_reuses_problem_across_radius_sweep(self):
         _require_cvxpy()
 
@@ -88,6 +134,7 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(first.upper, 0.65, places=6)
         self.assertAlmostEqual(second.lower, 0.20, places=6)
         self.assertAlmostEqual(second.upper, 0.80, places=6)
+        self.assertIn("tv_budget", {row.kind for row in second.duals})
 
     def test_parameterized_divergence_presets_match_cvxpy_backend(self):
         _require_cvxpy()

@@ -13,7 +13,7 @@ from .presets import (
     q_description,
     q_name,
 )
-from .results import TransportResult
+from .results import ConstraintDual, TransportResult
 
 
 _PARAMETERIZED_SENSITIVITY_PRESETS = frozenset(
@@ -448,10 +448,25 @@ class PublicDescentReport:
                 "for this supplied target. They are reporting and measurement "
                 "recommendations, not causal adjustment recommendations by "
                 "themselves.",
-                "",
-                "## Worst Public Fibers",
             ]
         )
+
+        if self.interval.duals:
+            lines.extend(
+                [
+                    "",
+                    "## CVXPY Dual Diagnostics",
+                    "",
+                    "The largest CVXPY dual multipliers identify constraints that are "
+                    "locally influential for the solved transport interval. Treat "
+                    "them as solver-scale sensitivity diagnostics: relaxing a large "
+                    "active constraint is where the interval is most likely to move.",
+                ]
+            )
+            for row in self.interval.dual_summary(top=8, min_magnitude=1e-8):
+                lines.append(f"- {_format_dual(row)}")
+
+        lines.extend(["", "## Worst Public Fibers"])
 
         for row in self.fibers:
             lines.extend(
@@ -1702,6 +1717,22 @@ def _format_key(columns: Sequence[str], key: tuple[Hashable, ...]) -> str:
     return ", ".join(
         f"{column}={value}" for column, value in zip(columns, key, strict=True)
     )
+
+
+def _format_dual(row: ConstraintDual) -> str:
+    parts = [f"{row.solve}: {row.name}"]
+    if row.variable is not None:
+        parts.append(f"variable={row.variable}")
+    if row.public_value is not None:
+        parts.append(f"public={row.public_value!r}")
+    if row.state is not None:
+        parts.append(f"state={row.state!r}")
+    if row.index is not None and row.state is None and row.public_value is None:
+        parts.append(f"index={row.index}")
+    parts.append(f"dual={row.magnitude:.4g}")
+    if row.residual is not None:
+        parts.append(f"residual={row.residual:.2g}")
+    return ", ".join(parts)
 
 
 def _percent(value: float) -> str:

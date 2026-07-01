@@ -13,6 +13,7 @@ from .environments import (
     ParameterizedCvxpyEnvironments,
     PolytopeEnvironments,
     PublicFiberSaturated,
+    cvxpy_constraint,
     eq,
 )
 
@@ -540,7 +541,14 @@ def _tv_constraint_builder(cell_weights: Mapping[Hashable, float], radius: float
         import numpy as np
 
         observed = np.array([observed_by_state[state] for state in states], dtype=float)
-        return (cp.norm1(q - observed) <= 2.0 * radius,)
+        return (
+            cvxpy_constraint(
+                cp.norm1(q - observed) <= 2.0 * radius,
+                name="total-variation budget",
+                kind="tv_budget",
+                sense="<=",
+            ),
+        )
 
     return build
 
@@ -557,7 +565,14 @@ def _tv_parameterized_constraint_builder(
 
         observed = np.array([observed_by_state[state] for state in states], dtype=float)
         radius = parameter(parameter_name, nonneg=True)
-        return (cp.norm1(q - observed) <= 2.0 * radius,)
+        return (
+            cvxpy_constraint(
+                cp.norm1(q - observed) <= 2.0 * radius,
+                name="total-variation budget",
+                kind="tv_budget",
+                sense="<=",
+            ),
+        )
 
     return build
 
@@ -572,7 +587,14 @@ def _chi_square_constraint_builder(
 
         observed = np.array([observed_by_state[state] for state in states], dtype=float)
         scale = 1.0 / np.sqrt(observed)
-        return (cp.sum_squares(cp.multiply(scale, q - observed)) <= radius,)
+        return (
+            cvxpy_constraint(
+                cp.sum_squares(cp.multiply(scale, q - observed)) <= radius,
+                name="chi-square budget",
+                kind="chi_square_budget",
+                sense="<=",
+            ),
+        )
 
     return build
 
@@ -590,7 +612,14 @@ def _chi_square_parameterized_constraint_builder(
         observed = np.array([observed_by_state[state] for state in states], dtype=float)
         scale = 1.0 / np.sqrt(observed)
         radius = parameter(parameter_name, nonneg=True)
-        return (cp.sum_squares(cp.multiply(scale, q - observed)) <= radius,)
+        return (
+            cvxpy_constraint(
+                cp.sum_squares(cp.multiply(scale, q - observed)) <= radius,
+                name="chi-square budget",
+                kind="chi_square_budget",
+                sense="<=",
+            ),
+        )
 
     return build
 
@@ -602,7 +631,14 @@ def _kl_constraint_builder(cell_weights: Mapping[Hashable, float], radius: float
         import numpy as np
 
         observed = np.array([observed_by_state[state] for state in states], dtype=float)
-        return (cp.sum(cp.rel_entr(q, observed)) <= radius,)
+        return (
+            cvxpy_constraint(
+                cp.sum(cp.rel_entr(q, observed)) <= radius,
+                name="KL budget",
+                kind="kl_budget",
+                sense="<=",
+            ),
+        )
 
     return build
 
@@ -619,7 +655,14 @@ def _kl_parameterized_constraint_builder(
 
         observed = np.array([observed_by_state[state] for state in states], dtype=float)
         radius = parameter(parameter_name, nonneg=True)
-        return (cp.sum(cp.rel_entr(q, observed)) <= radius,)
+        return (
+            cvxpy_constraint(
+                cp.sum(cp.rel_entr(q, observed)) <= radius,
+                name="KL budget",
+                kind="kl_budget",
+                sense="<=",
+            ),
+        )
 
     return build
 
@@ -638,9 +681,26 @@ def _wasserstein_constraint_builder(
         cost_matrix = _coerce_cost_matrix(cost, states)
         gamma = cp.Variable((len(states), len(states)), nonneg=True)
         return (
-            cp.sum(gamma, axis=1) == observed,
-            cp.sum(gamma, axis=0) == q,
-            cp.sum(cp.multiply(cost_matrix, gamma)) <= radius,
+            cvxpy_constraint(
+                cp.sum(gamma, axis=1) == observed,
+                name="Wasserstein source marginal",
+                kind="wasserstein_source_marginal",
+                sense="==",
+                states=states,
+            ),
+            cvxpy_constraint(
+                cp.sum(gamma, axis=0) == q,
+                name="Wasserstein target marginal",
+                kind="wasserstein_target_marginal",
+                sense="==",
+                states=states,
+            ),
+            cvxpy_constraint(
+                cp.sum(cp.multiply(cost_matrix, gamma)) <= radius,
+                name="Wasserstein budget",
+                kind="wasserstein_budget",
+                sense="<=",
+            ),
         )
 
     return build
@@ -662,9 +722,26 @@ def _wasserstein_parameterized_constraint_builder(
         gamma = cp.Variable((len(states), len(states)), nonneg=True)
         radius = parameter(parameter_name, nonneg=True)
         return (
-            cp.sum(gamma, axis=1) == observed,
-            cp.sum(gamma, axis=0) == q,
-            cp.sum(cp.multiply(cost_matrix, gamma)) <= radius,
+            cvxpy_constraint(
+                cp.sum(gamma, axis=1) == observed,
+                name="Wasserstein source marginal",
+                kind="wasserstein_source_marginal",
+                sense="==",
+                states=states,
+            ),
+            cvxpy_constraint(
+                cp.sum(gamma, axis=0) == q,
+                name="Wasserstein target marginal",
+                kind="wasserstein_target_marginal",
+                sense="==",
+                states=states,
+            ),
+            cvxpy_constraint(
+                cp.sum(cp.multiply(cost_matrix, gamma)) <= radius,
+                name="Wasserstein budget",
+                kind="wasserstein_budget",
+                sense="<=",
+            ),
         )
 
     return build

@@ -382,6 +382,8 @@ Good reports state:
 - the `min_cell_weight`
 - whether CVXPY-backed presets were used
 - the observed value and ambiguity interval under each scenario
+- the largest CVXPY dual multipliers, when available, as local diagnostics for
+  which public-law, Q-budget, or lower-bound constraints are most influential
 
 ## Parameterized CVXPY Sweeps
 

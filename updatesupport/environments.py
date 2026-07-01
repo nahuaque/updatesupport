@@ -7,7 +7,7 @@ from math import isclose
 from typing import Any, Callable, Hashable, Mapping, Protocol, Sequence
 
 from .partition import Partition
-from .results import AdequacyResult, TransportResult, Witness
+from .results import AdequacyResult, ConstraintDual, TransportResult, Witness
 
 
 class LPError(RuntimeError):
@@ -50,6 +50,63 @@ CvxpyParameterizedConstraintBuilder = Callable[
     ],
     Sequence[Any],
 ]
+
+
+@dataclass(frozen=True)
+class CvxpyConstraintMetadata:
+    """CVXPY constraint plus metadata used for dual diagnostics."""
+
+    constraint: Any
+    name: str
+    kind: str = "custom"
+    sense: str | None = None
+    variable: str | None = None
+    state: Hashable | None = None
+    public_value: Hashable | None = None
+    states: tuple[Hashable, ...] = ()
+    public_values: tuple[Hashable, ...] = ()
+
+
+def cvxpy_constraint(
+    constraint: Any,
+    *,
+    name: str,
+    kind: str = "custom",
+    sense: str | None = None,
+    variable: str | None = None,
+    state: Hashable | None = None,
+    public_value: Hashable | None = None,
+    states: Sequence[Hashable] = (),
+    public_values: Sequence[Hashable] = (),
+) -> CvxpyConstraintMetadata:
+    """Attach diagnostic metadata to a custom CVXPY constraint."""
+
+    return CvxpyConstraintMetadata(
+        constraint=constraint,
+        name=name,
+        kind=kind,
+        sense=sense,
+        variable=variable,
+        state=state,
+        public_value=public_value,
+        states=tuple(states),
+        public_values=tuple(public_values),
+    )
+
+
+@dataclass(frozen=True)
+class _CvxpySolveResult:
+    vector: tuple[float, ...]
+    value: float
+    duals: tuple[ConstraintDual, ...] = ()
+
+
+@dataclass(frozen=True)
+class _CvxpyPairSolveResult:
+    q1: tuple[float, ...]
+    q2: tuple[float, ...]
+    value: float
+    duals: tuple[ConstraintDual, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -741,39 +798,46 @@ class CvxpyEnvironments:
         p = problem._coerce_public_law(public_law)
         h = self._estimand_vector(problem)
 
-        q_lower, lower = self._solve_single(problem, h, maximize=False, public_law=p)
-        q_upper, upper = self._solve_single(problem, h, maximize=True, public_law=p)
+        lower_result = self._solve_single_result(
+            problem, h, maximize=False, public_law=p
+        )
+        upper_result = self._solve_single_result(
+            problem, h, maximize=True, public_law=p
+        )
         return TransportResult(
-            lower=lower,
-            upper=upper,
-            diameter=max(0.0, upper - lower),
+            lower=lower_result.value,
+            upper=upper_result.value,
+            diameter=max(0.0, upper_result.value - lower_result.value),
             public_law=p,
-            q_lower=problem._distribution_from_vector(q_lower),
-            q_upper=problem._distribution_from_vector(q_upper),
+            q_lower=problem._distribution_from_vector(lower_result.vector),
+            q_upper=problem._distribution_from_vector(upper_result.vector),
+            duals=lower_result.duals + upper_result.duals,
         )
 
     def global_transport(self, problem) -> TransportResult:
         if self.fixed_public_law is not None:
             return self.local_transport(problem, self.fixed_public_law)
 
-        q1, q2, gap = self._max_support_disagreement(
-            problem, problem.public_partition()
+        result = self._max_support_disagreement_result(
+            problem,
+            problem.public_partition(),
         )
-        psi_q1 = problem._dot_estimand(q1)
-        psi_q2 = problem._dot_estimand(q2)
+        psi_q1 = problem._dot_estimand(result.q1)
+        psi_q2 = problem._dot_estimand(result.q2)
         if psi_q1 <= psi_q2:
-            q_lower, q_upper = q1, q2
+            q_lower, q_upper = result.q1, result.q2
             lower, upper = psi_q1, psi_q2
         else:
-            q_lower, q_upper = q2, q1
+            q_lower, q_upper = result.q2, result.q1
             lower, upper = psi_q2, psi_q1
         return TransportResult(
             lower=lower,
             upper=upper,
-            diameter=gap,
+            diameter=max(0.0, abs(result.value)),
             public_law=problem.public_law(q_lower),
             q_lower=problem._distribution_from_vector(q_lower),
             q_upper=problem._distribution_from_vector(q_upper),
+            duals=result.duals,
         )
 
     def _normalized_constraints(self) -> tuple[LinearConstraint, ...]:
@@ -796,19 +860,47 @@ class CvxpyEnvironments:
         maximize: bool,
         public_law: Mapping[Hashable, float] | None = None,
     ) -> tuple[tuple[float, ...], float]:
+        result = self._solve_single_result(
+            problem,
+            objective,
+            maximize=maximize,
+            public_law=public_law,
+        )
+        return result.vector, result.value
+
+    def _solve_single_result(
+        self,
+        problem,
+        objective: Sequence[float],
+        *,
+        maximize: bool,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> _CvxpySolveResult:
         import numpy as np
 
         cp = self._cvxpy()
         q = cp.Variable(len(problem.states))
         objective_vector = np.array(objective, dtype=float)
         objective_expr = cp.sum(cp.multiply(objective_vector, q))
+        records = self._labeled_constraints_for_variable(
+            cp,
+            problem,
+            q,
+            variable="q",
+            public_law=public_law,
+        )
         cvx_problem = cp.Problem(
             cp.Maximize(objective_expr) if maximize else cp.Minimize(objective_expr),
-            self._constraints_for_variable(cp, problem, q, public_law=public_law),
+            [record.constraint for record in records],
         )
         self._solve_problem(cvx_problem)
         vector = self._clean_vector(problem, q.value)
-        return vector, float(np.dot(objective_vector, vector))
+        solve = "upper" if maximize else "lower"
+        return _CvxpySolveResult(
+            vector=vector,
+            value=float(np.dot(objective_vector, vector)),
+            duals=self._constraint_duals(records, solve=solve),
+        )
 
     def _solve_pair(
         self,
@@ -817,6 +909,16 @@ class CvxpyEnvironments:
         *,
         support: Partition,
     ) -> tuple[tuple[float, ...], tuple[float, ...], float]:
+        result = self._solve_pair_result(problem, objective, support=support)
+        return result.q1, result.q2, result.value
+
+    def _solve_pair_result(
+        self,
+        problem,
+        objective: Sequence[float],
+        *,
+        support: Partition,
+    ) -> _CvxpyPairSolveResult:
         import numpy as np
 
         cp = self._cvxpy()
@@ -824,18 +926,36 @@ class CvxpyEnvironments:
         q1 = cp.Variable(n)
         q2 = cp.Variable(n)
         objective_vector = np.array(objective, dtype=float)
-        constraints = [
-            *self._constraints_for_variable(cp, problem, q1),
-            *self._constraints_for_variable(cp, problem, q2),
+        records = [
+            *self._labeled_constraints_for_variable(
+                cp,
+                problem,
+                q1,
+                variable="q1",
+            ),
+            *self._labeled_constraints_for_variable(
+                cp,
+                problem,
+                q2,
+                variable="q2",
+            ),
         ]
         state_index = {state: i for i, state in enumerate(problem.states)}
-        for block in support.blocks:
+        for i, block in enumerate(support.blocks):
             indices = [state_index[state] for state in block]
-            constraints.append(cp.sum(q1[indices]) == cp.sum(q2[indices]))
+            records.append(
+                cvxpy_constraint(
+                    cp.sum(q1[indices]) == cp.sum(q2[indices]),
+                    name=f"support-law equality block {i}",
+                    kind="support_equality",
+                    sense="==",
+                    states=block,
+                )
+            )
 
         cvx_problem = cp.Problem(
             cp.Maximize(cp.sum(cp.multiply(objective_vector, q1 - q2))),
-            constraints,
+            [record.constraint for record in records],
         )
         self._solve_problem(cvx_problem)
         q1_vector = self._clean_vector(problem, q1.value)
@@ -843,15 +963,35 @@ class CvxpyEnvironments:
         value = float(
             np.dot(objective_vector, np.array(q1_vector) - np.array(q2_vector))
         )
-        return q1_vector, q2_vector, value
+        return _CvxpyPairSolveResult(
+            q1=q1_vector,
+            q2=q2_vector,
+            value=value,
+            duals=self._constraint_duals(records, solve="gap"),
+        )
 
     def _max_support_disagreement(
         self, problem, support: Partition
     ) -> tuple[tuple[float, ...], tuple[float, ...], float]:
-        q1, q2, value = self._solve_pair(
-            problem, self._estimand_vector(problem), support=support
+        result = self._max_support_disagreement_result(problem, support)
+        return result.q1, result.q2, max(0.0, abs(result.value))
+
+    def _max_support_disagreement_result(
+        self, problem, support: Partition
+    ) -> _CvxpyPairSolveResult:
+        result = self._solve_pair_result(
+            problem,
+            self._estimand_vector(problem),
+            support=support,
         )
-        return q1, q2, max(0.0, abs(value))
+        if result.value >= 0.0:
+            return result
+        return _CvxpyPairSolveResult(
+            q1=result.q2,
+            q2=result.q1,
+            value=abs(result.value),
+            duals=result.duals,
+        )
 
     def _constraints_for_variable(
         self,
@@ -861,8 +1001,44 @@ class CvxpyEnvironments:
         *,
         public_law: Mapping[Hashable, float] | None = None,
     ) -> list[Any]:
-        constraints = [q >= 0, cp.sum(q) == 1]
-        constraints.extend(self._linear_constraints(cp, problem, q))
+        return [
+            record.constraint
+            for record in self._labeled_constraints_for_variable(
+                cp,
+                problem,
+                q,
+                variable="q",
+                public_law=public_law,
+            )
+        ]
+
+    def _labeled_constraints_for_variable(
+        self,
+        cp,
+        problem,
+        q,
+        *,
+        variable: str,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> list[CvxpyConstraintMetadata]:
+        records = [
+            cvxpy_constraint(
+                q >= 0,
+                name="state probability lower bound",
+                kind="lower_bound",
+                sense=">=",
+                variable=variable,
+                states=problem.states,
+            ),
+            cvxpy_constraint(
+                cp.sum(q) == 1,
+                name="probability normalization",
+                kind="normalization",
+                sense="==",
+                variable=variable,
+            ),
+        ]
+        records.extend(self._linear_constraint_records(cp, problem, q, variable=variable))
 
         fixed_public_law = self._fixed_public_law(problem)
         if fixed_public_law is not None:
@@ -870,31 +1046,76 @@ class CvxpyEnvironments:
                 problem, fixed_public_law, public_law
             ):
                 raise ValueError("requested public law conflicts with fixed_public_law")
-            constraints.extend(
-                self._public_law_constraints(cp, problem, q, fixed_public_law)
+            records.extend(
+                self._public_law_constraint_records(
+                    cp,
+                    problem,
+                    q,
+                    fixed_public_law,
+                    variable=variable,
+                )
             )
         elif public_law is not None:
-            constraints.extend(self._public_law_constraints(cp, problem, q, public_law))
+            records.extend(
+                self._public_law_constraint_records(
+                    cp,
+                    problem,
+                    q,
+                    public_law,
+                    variable=variable,
+                )
+            )
 
         state_index = {state: i for i, state in enumerate(problem.states)}
         states = tuple(problem.states)
-        for builder in self.constraint_builders:
-            constraints.extend(builder(cp, q, states, state_index))
-        return constraints
+        for i, builder in enumerate(self.constraint_builders):
+            built = builder(cp, q, states, state_index)
+            records.extend(
+                self._coerce_constraint_records(
+                    built,
+                    default_name=f"custom constraint builder {i}",
+                    default_kind="custom",
+                    variable=variable,
+                )
+            )
+        return records
 
     def _linear_constraints(self, cp, problem, q) -> list[Any]:
+        return [
+            record.constraint
+            for record in self._linear_constraint_records(cp, problem, q, variable="q")
+        ]
+
+    def _linear_constraint_records(
+        self,
+        cp,
+        problem,
+        q,
+        *,
+        variable: str,
+    ) -> list[CvxpyConstraintMetadata]:
         constraints = []
-        for constraint in self._normalized_constraints():
+        for i, constraint in enumerate(self._normalized_constraints()):
             vector = problem._coerce_vector(constraint.coefficients)
             expr = cp.sum(cp.multiply(tuple(float(value) for value in vector), q))
+            name = constraint.name or f"linear constraint {i}"
             if constraint.sense == "<=":
-                constraints.append(expr <= float(constraint.rhs))
+                cvx_constraint = expr <= float(constraint.rhs)
             elif constraint.sense == ">=":
-                constraints.append(expr >= float(constraint.rhs))
+                cvx_constraint = expr >= float(constraint.rhs)
             elif constraint.sense == "==":
-                constraints.append(expr == float(constraint.rhs))
+                cvx_constraint = expr == float(constraint.rhs)
             else:
                 raise ValueError(f"unsupported constraint sense: {constraint.sense!r}")
+            constraints.append(
+                cvxpy_constraint(
+                    cvx_constraint,
+                    name=name,
+                    kind="linear",
+                    sense=constraint.sense,
+                    variable=variable,
+                )
+            )
         return constraints
 
     def _public_law_constraints(
@@ -904,14 +1125,157 @@ class CvxpyEnvironments:
         q,
         public_law: Mapping[Hashable, float],
     ) -> list[Any]:
+        return [
+            record.constraint
+            for record in self._public_law_constraint_records(
+                cp,
+                problem,
+                q,
+                public_law,
+                variable="q",
+            )
+        ]
+
+    def _public_law_constraint_records(
+        self,
+        cp,
+        problem,
+        q,
+        public_law: Mapping[Hashable, float],
+        *,
+        variable: str,
+    ) -> list[CvxpyConstraintMetadata]:
         state_index = {state: i for i, state in enumerate(problem.states)}
         constraints = []
         for public_value in problem.public_values:
             indices = [
                 state_index[state] for state in problem.public_fibers[public_value]
             ]
-            constraints.append(cp.sum(q[indices]) == float(public_law[public_value]))
+            constraints.append(
+                cvxpy_constraint(
+                    cp.sum(q[indices]) == float(public_law[public_value]),
+                    name=f"public-law equality {public_value!r}",
+                    kind="public_law",
+                    sense="==",
+                    variable=variable,
+                    public_value=public_value,
+                )
+            )
         return constraints
+
+    def _coerce_constraint_records(
+        self,
+        constraints: Sequence[Any],
+        *,
+        default_name: str,
+        default_kind: str,
+        variable: str,
+    ) -> list[CvxpyConstraintMetadata]:
+        records = []
+        for i, constraint in enumerate(constraints):
+            if isinstance(constraint, CvxpyConstraintMetadata):
+                if constraint.variable is None:
+                    constraint = CvxpyConstraintMetadata(
+                        constraint=constraint.constraint,
+                        name=constraint.name,
+                        kind=constraint.kind,
+                        sense=constraint.sense,
+                        variable=variable,
+                        state=constraint.state,
+                        public_value=constraint.public_value,
+                        states=constraint.states,
+                        public_values=constraint.public_values,
+                    )
+                records.append(constraint)
+                continue
+            records.append(
+                cvxpy_constraint(
+                    constraint,
+                    name=f"{default_name} constraint {i}",
+                    kind=default_kind,
+                    variable=variable,
+                )
+            )
+        return records
+
+    def _constraint_duals(
+        self,
+        records: Sequence[CvxpyConstraintMetadata],
+        *,
+        solve: str,
+    ) -> tuple[ConstraintDual, ...]:
+        import numpy as np
+
+        rows = []
+        for record in records:
+            dual_value = record.constraint.dual_value
+            if dual_value is None:
+                continue
+            residual = self._constraint_residual(record.constraint)
+            array = np.asarray(dual_value, dtype=float)
+            if array.ndim == 0:
+                signed = float(array)
+                rows.append(
+                    ConstraintDual(
+                        solve=solve,
+                        name=record.name,
+                        kind=record.kind,
+                        magnitude=abs(signed),
+                        signed_value=signed,
+                        sense=record.sense,
+                        variable=record.variable,
+                        state=record.state,
+                        public_value=record.public_value,
+                        residual=residual,
+                    )
+                )
+                continue
+
+            flat_states = record.states
+            flat_public_values = record.public_values
+            for index in np.ndindex(array.shape):
+                signed = float(array[index])
+                if abs(signed) <= 1e-10:
+                    continue
+                flat_index = int(np.ravel_multi_index(index, array.shape))
+                state = (
+                    flat_states[flat_index]
+                    if flat_index < len(flat_states)
+                    else record.state
+                )
+                public_value = (
+                    flat_public_values[flat_index]
+                    if flat_index < len(flat_public_values)
+                    else record.public_value
+                )
+                rows.append(
+                    ConstraintDual(
+                        solve=solve,
+                        name=record.name,
+                        kind=record.kind,
+                        magnitude=abs(signed),
+                        signed_value=signed,
+                        sense=record.sense,
+                        variable=record.variable,
+                        state=state,
+                        public_value=public_value,
+                        index=tuple(int(item) for item in index),
+                        residual=residual,
+                    )
+                )
+        return tuple(rows)
+
+    def _constraint_residual(self, constraint) -> float | None:
+        try:
+            residual = constraint.violation()
+        except Exception:  # pragma: no cover - CVXPY residual support varies
+            return None
+        try:
+            import numpy as np
+
+            return float(np.max(np.abs(np.asarray(residual, dtype=float))))
+        except Exception:  # pragma: no cover - defensive for unusual residuals
+            return None
 
     def _fixed_public_law(self, problem) -> dict[Hashable, float] | None:
         if self.fixed_public_law is None:
@@ -975,6 +1339,7 @@ class _ParameterizedCvxpySingleProblem:
     objective: Any
     public_law: Any | None
     extra_parameters: dict[str, Any]
+    records: tuple[CvxpyConstraintMetadata, ...]
 
 
 @dataclass(frozen=True)
@@ -985,6 +1350,7 @@ class _ParameterizedCvxpyPairProblem:
     objective: Any
     public_law: Any | None
     extra_parameters: dict[str, Any]
+    records: tuple[CvxpyConstraintMetadata, ...]
 
 
 @dataclass(frozen=True)
@@ -1054,6 +1420,22 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
         maximize: bool,
         public_law: Mapping[Hashable, float] | None = None,
     ) -> tuple[tuple[float, ...], float]:
+        result = self._solve_single_result(
+            problem,
+            objective,
+            maximize=maximize,
+            public_law=public_law,
+        )
+        return result.vector, result.value
+
+    def _solve_single_result(
+        self,
+        problem,
+        objective: Sequence[float],
+        *,
+        maximize: bool,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> _CvxpySolveResult:
         import numpy as np
 
         effective_public_law = self._effective_public_law(problem, public_law)
@@ -1070,7 +1452,12 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
         self._set_extra_parameter_values(compiled.extra_parameters)
         self._solve_problem(compiled.problem)
         vector = self._clean_vector(problem, compiled.q.value)
-        return vector, float(np.dot(objective_vector, vector))
+        solve = "upper" if maximize else "lower"
+        return _CvxpySolveResult(
+            vector=vector,
+            value=float(np.dot(objective_vector, vector)),
+            duals=self._constraint_duals(compiled.records, solve=solve),
+        )
 
     def _solve_pair(
         self,
@@ -1079,6 +1466,16 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
         *,
         support: Partition,
     ) -> tuple[tuple[float, ...], tuple[float, ...], float]:
+        result = self._solve_pair_result(problem, objective, support=support)
+        return result.q1, result.q2, result.value
+
+    def _solve_pair_result(
+        self,
+        problem,
+        objective: Sequence[float],
+        *,
+        support: Partition,
+    ) -> _CvxpyPairSolveResult:
         import numpy as np
 
         fixed_public_law = self._fixed_public_law(problem)
@@ -1098,7 +1495,12 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
         value = float(
             np.dot(objective_vector, np.array(q1_vector) - np.array(q2_vector))
         )
-        return q1_vector, q2_vector, value
+        return _CvxpyPairSolveResult(
+            q1=q1_vector,
+            q2=q2_vector,
+            value=value,
+            duals=self._constraint_duals(compiled.records, solve="gap"),
+        )
 
     def _single_problem(
         self,
@@ -1121,16 +1523,17 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
         objective = cp.Parameter(len(problem.states))
         public_law = cp.Parameter(len(problem.public_values)) if use_public_law else None
         extra_parameters: dict[str, Any] = {}
-        constraints = self._parameterized_constraints_for_variable(
+        records = self._parameterized_labeled_constraints_for_variable(
             cp,
             problem,
             q,
+            variable="q",
             public_law=public_law,
             extra_parameters=extra_parameters,
         )
         cvx_problem = cp.Problem(
             cp.Maximize(cp.sum(cp.multiply(objective, q))),
-            constraints,
+            [record.constraint for record in records],
         )
         compiled = _ParameterizedCvxpySingleProblem(
             problem=cvx_problem,
@@ -1138,6 +1541,7 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
             objective=objective,
             public_law=public_law,
             extra_parameters=extra_parameters,
+            records=tuple(records),
         )
         self._single_cache[key] = compiled
         return compiled
@@ -1167,30 +1571,40 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
         objective = cp.Parameter(n)
         public_law = cp.Parameter(len(problem.public_values)) if use_public_law else None
         extra_parameters: dict[str, Any] = {}
-        constraints = [
-            *self._parameterized_constraints_for_variable(
+        records = [
+            *self._parameterized_labeled_constraints_for_variable(
                 cp,
                 problem,
                 q1,
+                variable="q1",
                 public_law=public_law,
                 extra_parameters=extra_parameters,
             ),
-            *self._parameterized_constraints_for_variable(
+            *self._parameterized_labeled_constraints_for_variable(
                 cp,
                 problem,
                 q2,
+                variable="q2",
                 public_law=public_law,
                 extra_parameters=extra_parameters,
             ),
         ]
         state_index = {state: i for i, state in enumerate(problem.states)}
-        for block in support.blocks:
+        for i, block in enumerate(support.blocks):
             indices = [state_index[state] for state in block]
-            constraints.append(cp.sum(q1[indices]) == cp.sum(q2[indices]))
+            records.append(
+                cvxpy_constraint(
+                    cp.sum(q1[indices]) == cp.sum(q2[indices]),
+                    name=f"support-law equality block {i}",
+                    kind="support_equality",
+                    sense="==",
+                    states=block,
+                )
+            )
 
         cvx_problem = cp.Problem(
             cp.Maximize(cp.sum(cp.multiply(objective, q1 - q2))),
-            constraints,
+            [record.constraint for record in records],
         )
         compiled = _ParameterizedCvxpyPairProblem(
             problem=cvx_problem,
@@ -1199,6 +1613,7 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
             objective=objective,
             public_law=public_law,
             extra_parameters=extra_parameters,
+            records=tuple(records),
         )
         self._pair_cache[key] = compiled
         return compiled
@@ -1212,22 +1627,82 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
         public_law,
         extra_parameters: dict[str, Any],
     ) -> list[Any]:
-        constraints = [q >= 0, cp.sum(q) == 1]
-        constraints.extend(self._linear_constraints(cp, problem, q))
+        return [
+            record.constraint
+            for record in self._parameterized_labeled_constraints_for_variable(
+                cp,
+                problem,
+                q,
+                variable="q",
+                public_law=public_law,
+                extra_parameters=extra_parameters,
+            )
+        ]
+
+    def _parameterized_labeled_constraints_for_variable(
+        self,
+        cp,
+        problem,
+        q,
+        *,
+        variable: str,
+        public_law,
+        extra_parameters: dict[str, Any],
+    ) -> list[CvxpyConstraintMetadata]:
+        records = [
+            cvxpy_constraint(
+                q >= 0,
+                name="state probability lower bound",
+                kind="lower_bound",
+                sense=">=",
+                variable=variable,
+                states=problem.states,
+            ),
+            cvxpy_constraint(
+                cp.sum(q) == 1,
+                name="probability normalization",
+                kind="normalization",
+                sense="==",
+                variable=variable,
+            ),
+        ]
+        records.extend(self._linear_constraint_records(cp, problem, q, variable=variable))
         if public_law is not None:
-            constraints.extend(
-                self._public_law_parameter_constraints(cp, problem, q, public_law)
+            records.extend(
+                self._public_law_parameter_constraint_records(
+                    cp,
+                    problem,
+                    q,
+                    public_law,
+                    variable=variable,
+                )
             )
 
         state_index = {state: i for i, state in enumerate(problem.states)}
         states = tuple(problem.states)
-        for builder in self.constraint_builders:
-            constraints.extend(builder(cp, q, states, state_index))
+        for i, builder in enumerate(self.constraint_builders):
+            built = builder(cp, q, states, state_index)
+            records.extend(
+                self._coerce_constraint_records(
+                    built,
+                    default_name=f"custom constraint builder {i}",
+                    default_kind="custom",
+                    variable=variable,
+                )
+            )
 
         parameter = self._parameter_factory(cp, extra_parameters)
-        for builder in self.parameterized_constraint_builders:
-            constraints.extend(builder(cp, q, states, state_index, parameter))
-        return constraints
+        for i, builder in enumerate(self.parameterized_constraint_builders):
+            built = builder(cp, q, states, state_index, parameter)
+            records.extend(
+                self._coerce_constraint_records(
+                    built,
+                    default_name=f"parameterized constraint builder {i}",
+                    default_kind="parameterized",
+                    variable=variable,
+                )
+            )
+        return records
 
     def _public_law_parameter_constraints(
         self,
@@ -1236,13 +1711,42 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
         q,
         public_law,
     ) -> list[Any]:
+        return [
+            record.constraint
+            for record in self._public_law_parameter_constraint_records(
+                cp,
+                problem,
+                q,
+                public_law,
+                variable="q",
+            )
+        ]
+
+    def _public_law_parameter_constraint_records(
+        self,
+        cp,
+        problem,
+        q,
+        public_law,
+        *,
+        variable: str,
+    ) -> list[CvxpyConstraintMetadata]:
         state_index = {state: i for i, state in enumerate(problem.states)}
         constraints = []
         for i, public_value in enumerate(problem.public_values):
             indices = [
                 state_index[state] for state in problem.public_fibers[public_value]
             ]
-            constraints.append(cp.sum(q[indices]) == public_law[i])
+            constraints.append(
+                cvxpy_constraint(
+                    cp.sum(q[indices]) == public_law[i],
+                    name=f"public-law equality {public_value!r}",
+                    kind="public_law",
+                    sense="==",
+                    variable=variable,
+                    public_value=public_value,
+                )
+            )
         return constraints
 
     def _parameter_factory(
