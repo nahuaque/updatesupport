@@ -229,7 +229,10 @@ print(sensitivity.to_markdown())
 ```
 
 This is the recommended way to check whether the headline ambiguity is sensitive
-to sparse hidden cells or to the chosen admissible-environment preset.
+to sparse hidden cells or to the chosen admissible-environment preset. The
+Markdown output starts with a scenario summary, highlights the lowest- and
+highest-ambiguity scenarios, flags mixed public-adequacy conclusions, and then
+renders the full scenario table.
 
 ## Public-Fiber-Saturated Example
 

@@ -595,6 +595,42 @@ class SensitivityRow:
 
 
 @dataclass(frozen=True)
+class SensitivitySummary:
+    """Aggregate summary of a sensitivity-report scenario grid."""
+
+    scenario_count: int
+    successful_scenarios: int
+    failed_scenarios: int
+    baseline_scenario: str | None
+    lowest_ambiguity_scenario: str | None
+    highest_ambiguity_scenario: str | None
+    min_ambiguity: float | None
+    max_ambiguity: float | None
+    ambiguity_span: float | None
+    public_adequacy_pattern: str
+    observed_min: float | None
+    observed_max: float | None
+    observed_span: float | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "scenario_count": self.scenario_count,
+            "successful_scenarios": self.successful_scenarios,
+            "failed_scenarios": self.failed_scenarios,
+            "baseline_scenario": self.baseline_scenario,
+            "lowest_ambiguity_scenario": self.lowest_ambiguity_scenario,
+            "highest_ambiguity_scenario": self.highest_ambiguity_scenario,
+            "min_ambiguity": self.min_ambiguity,
+            "max_ambiguity": self.max_ambiguity,
+            "ambiguity_span": self.ambiguity_span,
+            "public_adequacy_pattern": self.public_adequacy_pattern,
+            "observed_min": self.observed_min,
+            "observed_max": self.observed_max,
+            "observed_span": self.observed_span,
+        }
+
+
+@dataclass(frozen=True)
 class SensitivityReport:
     """Robustness grid over Q presets, hidden sets, and min-cell thresholds."""
 
@@ -602,10 +638,40 @@ class SensitivityReport:
     title: str = "Public Descent Sensitivity Report"
     row_count: int | None = None
 
+    @property
+    def successful_rows(self) -> tuple[SensitivityRow, ...]:
+        return tuple(
+            row
+            for row in self.rows
+            if row.status == "ok" and row.ambiguity is not None
+        )
+
+    @property
+    def failed_rows(self) -> tuple[SensitivityRow, ...]:
+        return tuple(
+            row
+            for row in self.rows
+            if row.status != "ok" or row.ambiguity is None
+        )
+
+    @property
+    def summary(self) -> SensitivitySummary:
+        return _sensitivity_summary(self.rows)
+
     def to_markdown(self) -> str:
         lines = [f"# {self.title}", ""]
         if self.row_count is not None:
             lines.extend([f"- Rows: {self.row_count}", ""])
+        lines.extend(_sensitivity_summary_markdown(self.summary, self.rows))
+        lines.extend(["", "## Interpretation", ""])
+        lines.extend(_sensitivity_interpretation_markdown(self.summary, self.rows))
+        lines.extend(
+            [
+                "",
+                "## Scenario Table",
+                "",
+            ]
+        )
         lines.extend(
             [
                 "| scenario | Q | min_cell_weight | hidden columns | hidden cells | public cells | observed | lower | upper | ambiguity | public adequate | status |",
@@ -724,6 +790,208 @@ def sensitivity_report(
                 )
 
     return SensitivityReport(rows=tuple(rows), title=title, row_count=row_count)
+
+
+def _sensitivity_summary(rows: Sequence[SensitivityRow]) -> SensitivitySummary:
+    successful = tuple(
+        row for row in rows if row.status == "ok" and row.ambiguity is not None
+    )
+    failed = tuple(
+        row for row in rows if row.status != "ok" or row.ambiguity is None
+    )
+
+    if not successful:
+        return SensitivitySummary(
+            scenario_count=len(rows),
+            successful_scenarios=0,
+            failed_scenarios=len(failed),
+            baseline_scenario=None,
+            lowest_ambiguity_scenario=None,
+            highest_ambiguity_scenario=None,
+            min_ambiguity=None,
+            max_ambiguity=None,
+            ambiguity_span=None,
+            public_adequacy_pattern="unavailable",
+            observed_min=None,
+            observed_max=None,
+            observed_span=None,
+        )
+
+    lowest = min(successful, key=lambda row: row.ambiguity or 0.0)
+    highest = max(successful, key=lambda row: row.ambiguity or 0.0)
+    observed_values = [
+        row.observed_value for row in successful if row.observed_value is not None
+    ]
+    observed_min = min(observed_values) if observed_values else None
+    observed_max = max(observed_values) if observed_values else None
+    adequacy_values = {
+        row.public_adequate
+        for row in successful
+        if row.public_adequate is not None
+    }
+
+    return SensitivitySummary(
+        scenario_count=len(rows),
+        successful_scenarios=len(successful),
+        failed_scenarios=len(failed),
+        baseline_scenario=successful[0].scenario,
+        lowest_ambiguity_scenario=lowest.scenario,
+        highest_ambiguity_scenario=highest.scenario,
+        min_ambiguity=lowest.ambiguity,
+        max_ambiguity=highest.ambiguity,
+        ambiguity_span=(highest.ambiguity or 0.0) - (lowest.ambiguity or 0.0),
+        public_adequacy_pattern=_public_adequacy_pattern(adequacy_values),
+        observed_min=observed_min,
+        observed_max=observed_max,
+        observed_span=(
+            None
+            if observed_min is None or observed_max is None
+            else observed_max - observed_min
+        ),
+    )
+
+
+def _sensitivity_summary_markdown(
+    summary: SensitivitySummary,
+    rows: Sequence[SensitivityRow],
+) -> list[str]:
+    lines = [
+        "## Scenario Summary",
+        "",
+        f"- Scenarios: {summary.scenario_count}",
+        f"- Successful scenarios: {summary.successful_scenarios}",
+        f"- Failed scenarios: {summary.failed_scenarios}",
+        f"- Public adequacy pattern: {summary.public_adequacy_pattern}",
+    ]
+
+    if summary.baseline_scenario is not None:
+        baseline = _row_by_scenario(rows, summary.baseline_scenario)
+        lines.append(f"- Reference scenario: {_scenario_label(baseline)}")
+
+    if summary.min_ambiguity is not None and summary.max_ambiguity is not None:
+        low = _row_by_scenario(rows, summary.lowest_ambiguity_scenario)
+        high = _row_by_scenario(rows, summary.highest_ambiguity_scenario)
+        lines.extend(
+            [
+                "- Ambiguity range across successful scenarios: "
+                f"{summary.min_ambiguity:.4f} to {summary.max_ambiguity:.4f} "
+                f"(span {_format_optional_float(summary.ambiguity_span)})",
+                f"- Lowest-ambiguity scenario: {_scenario_label(low)}",
+                f"- Highest-ambiguity scenario: {_scenario_label(high)}",
+            ]
+        )
+
+    if summary.observed_min is not None and summary.observed_max is not None:
+        lines.append(
+            "- Observed-value range across successful scenarios: "
+            f"{summary.observed_min:.4f} to {summary.observed_max:.4f} "
+            f"(span {_format_optional_float(summary.observed_span)})"
+        )
+
+    return lines
+
+
+def _sensitivity_interpretation_markdown(
+    summary: SensitivitySummary,
+    rows: Sequence[SensitivityRow],
+) -> list[str]:
+    if summary.successful_scenarios == 0:
+        return [
+            "- No scenario completed successfully. Inspect the `status` column for "
+            "compile or solver errors before interpreting the sensitivity grid.",
+            "- The failed rows do not imply public adequacy or inadequacy; they mean "
+            "the requested scenario was not evaluated.",
+        ]
+
+    lines = [
+        "- The sensitivity grid varies the Q preset, the retained hidden state "
+        "space, and/or `min_cell_weight`. The ambiguity values are "
+        "hidden-composition sensitivity results, not confidence intervals.",
+    ]
+
+    if summary.failed_scenarios:
+        lines.append(
+            "- Some scenarios failed. Treat the successful rows as evaluated "
+            "stress tests and inspect failed rows before comparing the full grid."
+        )
+
+    if summary.public_adequacy_pattern == "mixed":
+        lines.append(
+            "- Public adequacy changes across successful scenarios. The conclusion "
+            "depends on the tested Q preset, hidden state space, or sparsity "
+            "threshold."
+        )
+    elif summary.public_adequacy_pattern == "all adequate":
+        lines.append(
+            "- Public adequacy is `yes` in every successful scenario, so the tested "
+            "public representation determines the supplied target under this grid."
+        )
+    elif summary.public_adequacy_pattern == "all inadequate":
+        lines.append(
+            "- Public adequacy is `no` in every successful scenario, so the tested "
+            "public representation leaves residual hidden-composition ambiguity "
+            "throughout this grid."
+        )
+
+    if summary.ambiguity_span is not None:
+        if summary.ambiguity_span <= 1e-12:
+            lines.append(
+                "- Ambiguity is unchanged across successful scenarios. In this grid, "
+                "the headline ambiguity is insensitive to the tested knobs."
+            )
+        else:
+            high = _row_by_scenario(rows, summary.highest_ambiguity_scenario)
+            lines.append(
+                "- The highest-ambiguity scenario is the conservative row to cite "
+                f"when stress-test robustness is the priority: {_scenario_label(high)}."
+            )
+
+    if summary.observed_span is not None and summary.observed_span > 1e-12:
+        lines.append(
+            "- The observed value changes across successful scenarios. This usually "
+            "means a hidden-set choice or `min_cell_weight` threshold changed the "
+            "retained support, so compare those rows as different retained-support "
+            "analyses."
+        )
+    else:
+        lines.append(
+            "- The observed value is unchanged across successful scenarios, so the "
+            "grid is isolating hidden-composition stress-test choices rather than "
+            "changing the retained observed estimand."
+        )
+
+    return lines
+
+
+def _public_adequacy_pattern(values: set[bool]) -> str:
+    if values == {True}:
+        return "all adequate"
+    if values == {False}:
+        return "all inadequate"
+    if values == {True, False}:
+        return "mixed"
+    return "unavailable"
+
+
+def _row_by_scenario(
+    rows: Sequence[SensitivityRow], scenario: str | None
+) -> SensitivityRow | None:
+    if scenario is None:
+        return None
+    for row in rows:
+        if row.scenario == scenario:
+            return row
+    return None
+
+
+def _scenario_label(row: SensitivityRow | None) -> str:
+    if row is None:
+        return ""
+    hidden_columns = ", ".join(row.hidden_columns)
+    return (
+        f"{row.scenario} (`{row.q_name}`, min_cell_weight={row.min_cell_weight:g}, "
+        f"hidden={hidden_columns})"
+    )
 
 
 def _observed_value(grouped: GroupedProblem) -> float:

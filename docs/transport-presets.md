@@ -43,7 +43,10 @@ print(sensitivity.to_markdown())
 
 Use `saturated` to understand the worst case on the retained support, use
 `bounded_shift` or another constrained preset for a more substantive stress
-test, and use `observed` as the zero-shift baseline.
+test, and use `observed` as the zero-shift baseline. The generated Markdown
+includes a scenario summary and interpretation section before the full grid, so
+the widest scenario and any mixed public-adequacy conclusion are visible without
+reading the whole table first.
 
 ## Shared Semantics
 

@@ -98,7 +98,25 @@ class QPresetTests(unittest.TestCase):
         self.assertEqual(rows[2].q_name, "observed")
         self.assertAlmostEqual(rows[2].ambiguity, 0.0)
         self.assertAlmostEqual(rows[3].ambiguity, 0.0)
+        self.assertIsInstance(report.summary, us.SensitivitySummary)
+        self.assertEqual(report.summary.scenario_count, 6)
+        self.assertEqual(report.summary.successful_scenarios, 6)
+        self.assertEqual(report.summary.failed_scenarios, 0)
+        self.assertEqual(report.summary.baseline_scenario, "S1")
+        self.assertEqual(report.summary.lowest_ambiguity_scenario, "S3")
+        self.assertEqual(report.summary.highest_ambiguity_scenario, "S1")
+        self.assertAlmostEqual(report.summary.min_ambiguity, 0.0)
+        self.assertAlmostEqual(report.summary.max_ambiguity, 0.6)
+        self.assertAlmostEqual(report.summary.ambiguity_span, 0.6)
+        self.assertEqual(report.summary.public_adequacy_pattern, "mixed")
+        self.assertAlmostEqual(report.summary.observed_span, 0.0)
         self.assertIn("# Public Descent Sensitivity Report", markdown)
+        self.assertIn("## Scenario Summary", markdown)
+        self.assertIn("- Scenarios: 6", markdown)
+        self.assertIn("Ambiguity range across successful scenarios", markdown)
+        self.assertIn("## Interpretation", markdown)
+        self.assertIn("Public adequacy changes across successful scenarios", markdown)
+        self.assertIn("## Scenario Table", markdown)
         self.assertIn("bounded_shift(radius=0.5)", markdown)
 
     def test_sensitivity_report_runs_hidden_set_grid(self):
@@ -145,6 +163,27 @@ class QPresetTests(unittest.TestCase):
             report.rows[1].hidden_columns,
             ("public", "hidden", "noise"),
         )
+
+    def test_sensitivity_report_summarizes_failed_scenarios(self):
+        report = us.sensitivity_report(
+            _rows(),
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            hidden_sets=[["hidden"]],
+            q_presets=["saturated"],
+        )
+
+        markdown = report.to_markdown()
+
+        self.assertEqual(report.summary.scenario_count, 1)
+        self.assertEqual(report.summary.successful_scenarios, 0)
+        self.assertEqual(report.summary.failed_scenarios, 1)
+        self.assertIsNone(report.summary.baseline_scenario)
+        self.assertEqual(report.summary.public_adequacy_pattern, "unavailable")
+        self.assertIn("No scenario completed successfully", markdown)
+        self.assertIn("error: public columns must also be hidden columns", markdown)
 
 
 if __name__ == "__main__":

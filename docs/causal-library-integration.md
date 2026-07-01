@@ -324,6 +324,10 @@ sensitivity = us.sensitivity_report(
 print(sensitivity.to_markdown())
 ```
 
+The Markdown output summarizes successful and failed scenarios, reports the
+ambiguity range across the grid, identifies the highest-ambiguity scenario, and
+states whether public adequacy is stable or mixed across scenarios.
+
 ## What Not To Claim
 
 Do not say that `updatesupport` proves a causal effect is valid.
