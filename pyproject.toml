@@ -10,6 +10,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+causal = [
+    "econml>=0.16",
+    "numba>=0.61",
+]
 cvxpy = [
     "cvxpy>=1.5",
 ]

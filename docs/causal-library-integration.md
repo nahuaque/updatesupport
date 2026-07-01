@@ -93,7 +93,7 @@ The repository includes an executable ACS example that makes the handoff
 concrete:
 
 ```bash
-uv run --extra examples python examples/folktables_acs_causal.py \
+uv run --extra examples --extra causal python examples/folktables_acs_causal.py \
   --task income \
   --states CA \
   --year 2018 \
@@ -108,12 +108,18 @@ The example uses:
 - hidden reporting refinements: occupation, weekly-hours band, race, marital
   status, class of worker, and relationship status when available
 
-The built-in first stage estimates one `__tau_hat__` value per hidden stratum
-using a transparent treated-minus-control difference in weighted outcome means.
-That is intentionally simple. It is there to make the integration surface
-visible, not to claim that education is causally identified in ACS.
+The built-in first stage fits an EconML `CausalForestDML` estimator and computes
+one row-level effect target:
 
-In a real workflow, replace the first stage with a causal library:
+```python
+df["__tau_hat__"] = estimator.effect(X)
+```
+
+That makes the integration surface visible, but it still does not claim that
+education is causally identified in ACS.
+
+In a real workflow, use the causal estimator that matches the identification
+strategy:
 
 ```python
 # Example shape, independent of the specific causal library.

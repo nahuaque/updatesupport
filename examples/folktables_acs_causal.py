@@ -7,20 +7,18 @@ This example shows the integration pattern for causal workflows:
 3. Audit whether coarse public reporting categories are stable to hidden
    composition changes.
 
-The default estimator is a transparent stratified difference in weighted outcome
-means. In a production workflow, replace that first stage with DoWhy, EconML,
-CausalML, DoubleML, or another causal estimator that produces a row-level or
-cell-level ``tau_hat`` target.
+The first stage fits an EconML estimator and computes
+``tau_hat = estimator.effect(X)``. The second stage is the ``updatesupport``
+audit.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
-from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -40,76 +38,86 @@ class EffectBuildResult:
 
     rows: tuple[dict[str, Any], ...]
     source_rows: int
-    retained_strata: int
-    dropped_strata: int
-    total_effect_weight: float
+    feature_columns: tuple[str, ...]
+    design_columns: tuple[str, ...]
+    estimator_name: str
 
 
-def build_stratified_effect_rows(
+EstimatorFactory = Callable[[int], Any]
+
+
+def estimate_effects_with_econml(
     rows: Iterable[Mapping[str, Any]],
     *,
-    public_columns: Sequence[str],
-    hidden_columns: Sequence[str],
+    feature_columns: Sequence[str],
     treatment_column: str = TREATMENT_COLUMN,
     outcome_column: str = TARGET_COLUMN,
     weight_column: str | None = WEIGHT_COLUMN,
-    min_arm_weight: float = 1.0,
     effect_column: str = EFFECT_COLUMN,
+    random_state: int = 0,
+    estimator_factory: EstimatorFactory | None = None,
 ) -> EffectBuildResult:
-    """Estimate one treatment-effect target per retained hidden stratum.
+    """Fit an EconML estimator and attach ``tau_hat = estimator.effect(X)``.
 
-    The estimator is the treated-minus-control difference in weighted outcome
-    means inside each hidden stratum. Hidden strata without enough treated and
-    control weight are dropped.
+    ``feature_columns`` are encoded as categorical effect modifiers. The
+    returned rows preserve the original columns and add ``effect_column``.
     """
 
-    public_tuple = tuple(public_columns)
-    hidden_tuple = tuple(hidden_columns)
-    missing_public = [column for column in public_tuple if column not in hidden_tuple]
-    if missing_public:
-        raise ValueError(
-            f"public columns must also be hidden columns: {missing_public!r}"
-        )
-    if min_arm_weight < 0:
-        raise ValueError("min_arm_weight must be non-negative")
+    import numpy as np
 
-    stats: dict[tuple[Any, ...], dict[int, list[float]]] = defaultdict(
-        lambda: {0: [0.0, 0.0], 1: [0.0, 0.0]}
+    records = [dict(row) for row in rows]
+    if not records:
+        raise ValueError("rows must contain at least one record")
+    feature_tuple = tuple(feature_columns)
+    if not feature_tuple:
+        raise ValueError("feature_columns must contain at least one column")
+
+    x_matrix, design_columns = _categorical_design_matrix(records, feature_tuple)
+    y = np.array(
+        [_as_float(row[outcome_column], name=outcome_column) for row in records],
+        dtype=float,
     )
-    source_rows = 0
-    for row in rows:
-        source_rows += 1
-        key = tuple(_clean_category(row[column]) for column in hidden_tuple)
-        treatment = 1 if _as_treatment(row[treatment_column]) else 0
-        outcome = _as_float(row[outcome_column], name=outcome_column)
-        weight = _row_weight(row, weight_column)
-        stats[key][treatment][0] += weight
-        stats[key][treatment][1] += weight * outcome
+    treatment = np.array(
+        [1 if _as_treatment(row[treatment_column]) else 0 for row in records],
+        dtype=int,
+    )
+    sample_weight = np.array(
+        [_row_weight(row, weight_column) for row in records],
+        dtype=float,
+    )
 
-    effect_rows: list[dict[str, Any]] = []
-    dropped = 0
-    total_effect_weight = 0.0
-    for key in sorted(stats, key=str):
-        control_weight, control_sum = stats[key][0]
-        treated_weight, treated_sum = stats[key][1]
-        if control_weight < min_arm_weight or treated_weight < min_arm_weight:
-            dropped += 1
-            continue
-        control_mean = control_sum / control_weight
-        treated_mean = treated_sum / treated_weight
-        effect_weight = control_weight + treated_weight
-        total_effect_weight += effect_weight
-        effect_row = {column: key[index] for index, column in enumerate(hidden_tuple)}
-        effect_row[effect_column] = treated_mean - control_mean
-        effect_row[WEIGHT_COLUMN] = effect_weight
+    estimator = (
+        _default_econml_estimator(random_state)
+        if estimator_factory is None
+        else estimator_factory(random_state)
+    )
+    estimator.fit(
+        y,
+        treatment,
+        X=x_matrix,
+        sample_weight=sample_weight,
+        inference=None,
+    )
+    tau_hat = np.asarray(estimator.effect(x_matrix), dtype=float).reshape(-1)
+    if len(tau_hat) != len(records):
+        raise ValueError("estimator.effect(X) must return one effect per row")
+
+    effect_rows = []
+    for row, effect in zip(records, tau_hat, strict=True):
+        effect_row = dict(row)
+        effect_row[effect_column] = float(effect)
+        if weight_column is None or weight_column not in effect_row:
+            effect_row[WEIGHT_COLUMN] = 1.0
+        elif weight_column != WEIGHT_COLUMN:
+            effect_row[WEIGHT_COLUMN] = _row_weight(row, weight_column)
         effect_rows.append(effect_row)
 
     return EffectBuildResult(
         rows=tuple(effect_rows),
-        source_rows=source_rows,
-        retained_strata=len(effect_rows),
-        dropped_strata=dropped,
-        total_effect_weight=total_effect_weight,
+        source_rows=len(records),
+        feature_columns=feature_tuple,
+        design_columns=design_columns,
+        estimator_name=estimator.__class__.__name__,
     )
 
 
@@ -121,7 +129,7 @@ def render_causal_report(
     candidate_columns: Sequence[str],
     treatment_label: str,
     outcome_label: str,
-    estimator_label: str = "stratified difference in weighted outcome means",
+    estimator_label: str | None = None,
     min_cell_weight: float = 1.0,
     q: Any = "saturated",
     q_radius: float | None = None,
@@ -129,6 +137,7 @@ def render_causal_report(
 ) -> str:
     """Render a causal-estimation handoff plus an update-support audit."""
 
+    label = estimator_label or f"EconML {effect_result.estimator_name}"
     report = us.audit_effects(
         effect_result.rows,
         public=public_columns,
@@ -140,8 +149,8 @@ def render_causal_report(
         title="Representation Stability Audit",
         effect_description="estimated treatment effect",
         observed_label="Observed weighted effect estimate",
-        row_count=effect_result.retained_strata,
-        row_count_label="Retained effect strata",
+        row_count=effect_result.source_rows,
+        row_count_label="Rows with EconML effect predictions",
         q=q,
         q_radius=q_radius,
         top=top,
@@ -154,16 +163,16 @@ def render_causal_report(
         "",
         f"- Treatment: {treatment_label}",
         f"- Outcome: {outcome_label}",
-        f"- Effect estimator: {estimator_label}",
+        f"- Effect estimator: {label}",
+        "- Effect target: `__tau_hat__ = estimator.effect(X)`",
         f"- Source rows: {effect_result.source_rows}",
-        f"- Retained hidden strata with both treatment arms: {effect_result.retained_strata}",
-        f"- Dropped hidden strata without enough arm support: {effect_result.dropped_strata}",
+        f"- Effect modifier columns: {', '.join(effect_result.feature_columns)}",
+        f"- Encoded design columns: {len(effect_result.design_columns)}",
         f"- Observed weighted effect estimate: {report.observed_value:.4f}",
         "",
-        "This first stage creates an estimated effect target, `__tau_hat__`, for "
-        "each retained hidden stratum. A causal library can replace this stage "
-        "as long as it produces a row-level, unit-level, subgroup-level, or "
-        "cell-level effect target.",
+        "The first stage fits an EconML CATE estimator and writes `__tau_hat__` "
+        "for each row. The update-support stage then aggregates those effect "
+        "predictions by hidden cell and audits the public reporting categories.",
         "",
         "## Update-Support Question",
         "",
@@ -265,24 +274,87 @@ def default_causal_columns(
     return public, tuple(column for column in candidates if column in available)
 
 
+def _default_econml_estimator(random_state: int):
+    try:
+        from econml.dml import CausalForestDML
+        from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+    except ImportError as exc:
+        raise SystemExit(
+            "Install causal example dependencies with: uv sync --extra causal"
+        ) from exc
+
+    return CausalForestDML(
+        model_y=RandomForestRegressor(
+            n_estimators=80,
+            min_samples_leaf=5,
+            random_state=random_state,
+        ),
+        model_t=RandomForestClassifier(
+            n_estimators=80,
+            min_samples_leaf=5,
+            random_state=random_state,
+        ),
+        discrete_treatment=True,
+        n_estimators=80,
+        min_samples_leaf=5,
+        cv=2,
+        random_state=random_state,
+    )
+
+
+def _categorical_design_matrix(
+    rows: Sequence[Mapping[str, Any]], columns: Sequence[str]
+):
+    import numpy as np
+
+    categories = {
+        column: tuple(sorted({_clean_category(row[column]) for row in rows}, key=str))
+        for column in columns
+    }
+    design_columns = tuple(
+        f"{column}={value}" for column in columns for value in categories[column]
+    )
+    matrix = np.zeros((len(rows), len(design_columns)), dtype=float)
+    column_index = {name: index for index, name in enumerate(design_columns)}
+    for row_index, row in enumerate(rows):
+        for column in columns:
+            value = _clean_category(row[column])
+            matrix[row_index, column_index[f"{column}={value}"]] = 1.0
+    return matrix, design_columns
+
+
 def synthetic_causal_source_rows() -> tuple[
     list[dict[str, Any]], tuple[str, ...], tuple[str, ...], tuple[str, ...]
 ]:
     public = ("AGE_BAND", "SEX")
     candidates = ("OCC_MAJOR", "WKHP_BAND", "RAC1P")
     hidden = public + candidates
-    rows = [
-        _arm_row("25_34", "1", "tech", "36_45", "1", 1, 0.82, 80),
-        _arm_row("25_34", "1", "tech", "36_45", "1", 0, 0.38, 80),
-        _arm_row("25_34", "1", "service", "21_35", "1", 1, 0.56, 120),
-        _arm_row("25_34", "1", "service", "21_35", "1", 0, 0.50, 120),
-        _arm_row("25_34", "2", "tech", "36_45", "2", 1, 0.72, 70),
-        _arm_row("25_34", "2", "tech", "36_45", "2", 0, 0.36, 70),
-        _arm_row("45_54", "1", "service", "36_45", "1", 1, 0.60, 100),
-        _arm_row("45_54", "1", "service", "36_45", "1", 0, 0.52, 100),
-        _arm_row("45_54", "2", "admin", "36_45", "2", 1, 0.62, 90),
-        _arm_row("45_54", "2", "admin", "36_45", "2", 0, 0.54, 90),
+    cells = [
+        ("25_34", "1", "tech", "36_45", "1", 0.36, 0.34, 1.1),
+        ("25_34", "1", "service", "21_35", "1", 0.42, 0.06, 1.4),
+        ("25_34", "2", "tech", "36_45", "2", 0.34, 0.26, 1.0),
+        ("25_34", "2", "service", "21_35", "2", 0.46, 0.04, 1.2),
+        ("45_54", "1", "service", "36_45", "1", 0.52, 0.08, 1.3),
+        ("45_54", "2", "admin", "36_45", "2", 0.50, 0.07, 1.1),
     ]
+    rows = []
+    for cell in cells:
+        age, sex, occupation, hours, race, baseline, tau, weight = cell
+        for repeat in range(8):
+            noise = 0.01 * ((repeat % 3) - 1)
+            for treated in (0, 1):
+                rows.append(
+                    _arm_row(
+                        age,
+                        sex,
+                        occupation,
+                        hours,
+                        race,
+                        treated,
+                        baseline + tau * treated + noise,
+                        weight,
+                    )
+                )
     return rows, public, hidden, candidates
 
 
@@ -347,7 +419,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--horizon", default="1-Year")
     parser.add_argument("--sample", type=int, default=50000)
     parser.add_argument("--random-state", type=int, default=0)
-    parser.add_argument("--min-arm-weight", type=float, default=10.0)
     parser.add_argument("--min-cell-weight", type=float, default=25.0)
     parser.add_argument("--top", type=int, default=8)
     parser.add_argument(
@@ -368,7 +439,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--synthetic",
         action="store_true",
-        help="Run a tiny built-in demo without Folktables or network access.",
+        help="Run a built-in EconML demo without Folktables or network access.",
     )
     return parser.parse_args()
 
@@ -379,7 +450,6 @@ def main() -> None:
         source_rows, public_columns, hidden_columns, candidate_columns = (
             synthetic_causal_source_rows()
         )
-        min_arm_weight = 1.0
         min_cell_weight = 1.0
     else:
         source_rows, public_columns, hidden_columns, candidate_columns = (
@@ -393,7 +463,6 @@ def main() -> None:
                 random_state=args.random_state,
             )
         )
-        min_arm_weight = args.min_arm_weight
         min_cell_weight = args.min_cell_weight
 
     q: Any = args.q
@@ -401,16 +470,11 @@ def main() -> None:
     if args.q == "bounded_shift":
         q = us.q_bounded_shift(args.q_radius)
 
-    effect_result = build_stratified_effect_rows(
+    effect_result = estimate_effects_with_econml(
         source_rows,
-        public_columns=public_columns,
-        hidden_columns=hidden_columns,
-        min_arm_weight=min_arm_weight,
+        feature_columns=hidden_columns,
+        random_state=args.random_state,
     )
-    if not effect_result.rows:
-        raise SystemExit(
-            "No hidden strata have both treatment arms after min-arm filtering."
-        )
 
     print(
         render_causal_report(

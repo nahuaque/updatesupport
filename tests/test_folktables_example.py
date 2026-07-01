@@ -13,10 +13,23 @@ from examples.folktables_acs import (
 )
 from examples.folktables_acs_causal import (
     EFFECT_COLUMN,
-    build_stratified_effect_rows,
+    estimate_effects_with_econml,
     render_causal_report,
     synthetic_causal_source_rows,
 )
+
+
+class FakeEconMLEstimator:
+    def fit(self, y, treatment, *, X, sample_weight=None, inference="auto"):
+        self.y = y
+        self.treatment = treatment
+        self.x_shape = X.shape
+        self.sample_weight = sample_weight
+        self.inference = inference
+        return self
+
+    def effect(self, X):
+        return [0.05 + 0.001 * index for index in range(X.shape[0])]
 
 
 class FolktablesExampleTests(unittest.TestCase):
@@ -112,42 +125,36 @@ class FolktablesExampleTests(unittest.TestCase):
         self.assertIn("measurement-value table", report)
         self.assertIn("## Analyst Notes", report)
 
-    def test_causal_example_builds_stratified_effect_targets(self):
+    def test_causal_example_builds_econml_effect_targets(self):
         rows, public_columns, hidden_columns, _candidate_columns = (
             synthetic_causal_source_rows()
         )
+        estimator = FakeEconMLEstimator()
 
-        result = build_stratified_effect_rows(
+        result = estimate_effects_with_econml(
             rows,
-            public_columns=public_columns,
-            hidden_columns=hidden_columns,
-            min_arm_weight=1,
+            feature_columns=hidden_columns,
+            estimator_factory=lambda _random_state: estimator,
         )
 
-        self.assertEqual(result.source_rows, 10)
-        self.assertEqual(result.retained_strata, 5)
-        self.assertEqual(result.dropped_strata, 0)
-        by_key = {
-            tuple(row[column] for column in hidden_columns): row for row in result.rows
-        }
-        self.assertAlmostEqual(
-            by_key[("25_34", "1", "tech", "36_45", "1")][EFFECT_COLUMN],
-            0.44,
-        )
-        self.assertAlmostEqual(
-            by_key[("25_34", "1", "service", "21_35", "1")][EFFECT_COLUMN],
-            0.06,
-        )
+        self.assertEqual(result.source_rows, len(rows))
+        self.assertEqual(len(result.rows), len(rows))
+        self.assertEqual(result.feature_columns, hidden_columns)
+        self.assertGreater(len(result.design_columns), 0)
+        self.assertEqual(estimator.x_shape[0], len(rows))
+        self.assertEqual(len(estimator.sample_weight), len(rows))
+        self.assertIsNone(estimator.inference)
+        self.assertAlmostEqual(result.rows[0][EFFECT_COLUMN], 0.05)
+        self.assertAlmostEqual(result.rows[-1][EFFECT_COLUMN], 0.05 + 0.001 * 95)
 
     def test_causal_example_report_shows_handoff_to_updatesupport(self):
         rows, public_columns, hidden_columns, candidate_columns = (
             synthetic_causal_source_rows()
         )
-        effect_result = build_stratified_effect_rows(
+        effect_result = estimate_effects_with_econml(
             rows,
-            public_columns=public_columns,
-            hidden_columns=hidden_columns,
-            min_arm_weight=1,
+            feature_columns=hidden_columns,
+            estimator_factory=lambda _random_state: FakeEconMLEstimator(),
         )
 
         markdown = render_causal_report(
@@ -164,6 +171,8 @@ class FolktablesExampleTests(unittest.TestCase):
 
         self.assertIn("# Folktables ACS Causal-Effect Reporting Demo", markdown)
         self.assertIn("## Causal Estimation Step", markdown)
+        self.assertIn("Effect estimator: EconML FakeEconMLEstimator", markdown)
+        self.assertIn("`__tau_hat__ = estimator.effect(X)`", markdown)
         self.assertIn("`__tau_hat__`", markdown)
         self.assertIn("## Update-Support Question", markdown)
         self.assertIn("# Representation Stability Audit", markdown)

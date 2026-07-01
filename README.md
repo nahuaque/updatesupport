@@ -94,6 +94,12 @@ For the Folktables examples:
 uv sync --extra examples
 ```
 
+For the EconML causal example:
+
+```bash
+uv sync --extra causal
+```
+
 ## Core Model
 
 The library implements a finite-linear version of the update-support machinery
@@ -307,12 +313,12 @@ There is also a no-download smoke demo:
 uv run python examples/folktables_acs.py --synthetic
 ```
 
-There is also a causal-effect reporting example. It first estimates a
-treatment-effect target, then audits whether that effect is stable when reported
-by coarse public categories:
+There is also a causal-effect reporting example. It fits an EconML CATE
+estimator, computes `tau_hat = estimator.effect(X)`, then audits whether that
+effect is stable when reported by coarse public categories:
 
 ```bash
-uv run --extra examples python examples/folktables_acs_causal.py \
+uv run --extra examples --extra causal python examples/folktables_acs_causal.py \
   --task income \
   --states CA \
   --year 2018 \
@@ -322,12 +328,12 @@ uv run --extra examples python examples/folktables_acs_causal.py \
 The no-download version is:
 
 ```bash
-uv run python examples/folktables_acs_causal.py --synthetic
+uv run --extra causal python examples/folktables_acs_causal.py --synthetic
 ```
 
-The built-in first stage is a transparent stratified difference in outcome
-means. In a real causal workflow, replace that first stage with a DoWhy, EconML,
-CausalML, or DoubleML estimator that produces a `tau_hat` effect target; the
+The built-in first stage uses EconML `CausalForestDML`. In a real causal
+workflow, swap in the DoWhy, EconML, CausalML, or DoubleML estimator that fits
+your identification strategy and produces a `tau_hat` effect target; the
 `updatesupport` stage is the same.
 
 ## Current Python Surface
