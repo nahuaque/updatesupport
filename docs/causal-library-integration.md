@@ -100,6 +100,81 @@ one uncertainty statement:
 - hidden-composition ambiguity from the update-support stress test
 - public refinement recommendations for improving the reporting representation
 
+## Estimator Adapters
+
+The adapter helpers standardize common estimator outputs into row records with a
+single effect column. They do not fit causal models or change the identification
+argument; they only perform the handoff into `updatesupport`.
+
+For generic dataframe or model-output tables:
+
+```python
+adapted = us.adapt_dataframe_effects(
+    df,
+    effect="estimated_effect",
+    effect_column="tau_hat",
+)
+
+suite = adapted.causal_reporting_stability(
+    public=["age_band", "sex"],
+    hidden=["age_band", "sex", "region", "income_band"],
+    candidate_refinements=["region", "income_band"],
+    weight="sample_weight",
+    q=us.q_bounded_shift(0.5),
+)
+```
+
+For EconML:
+
+```python
+est.fit(Y, T, X=X, W=W)
+adapted = us.adapt_econml_effects(est, df, X)
+
+report = adapted.audit_effects(
+    public=["age_band", "sex"],
+    hidden=["age_band", "sex", "region", "income_band"],
+    candidate_refinements=["region", "income_band"],
+    weight="sample_weight",
+)
+```
+
+For DoWhy:
+
+```python
+estimate = model.estimate_effect(...)
+
+# If you have heterogeneous row-level effects, pass them explicitly.
+adapted = us.adapt_dowhy_effects(
+    estimate,
+    df,
+    effect_values=row_level_effects,
+)
+```
+
+If `effect_values` is omitted, the DoWhy adapter repeats the scalar estimate on
+each row. That is useful for documenting an average-effect handoff, but it will
+not expose hidden CATE heterogeneity.
+
+For DoubleML:
+
+```python
+dml.fit()
+
+# Common DoubleML estimators expose scalar coefficients.
+adapted = us.adapt_doubleml_effects(dml, df)
+
+# Prefer explicit row-level or subgroup-level effects when your workflow has them.
+adapted = us.adapt_doubleml_effects(
+    dml,
+    df,
+    effect_values=row_or_group_effects,
+)
+```
+
+Scalar DoubleML coefficients are repeated on every row by default. As with
+DoWhy, pass heterogeneous effect values when the reporting question is about
+hidden treatment-effect variation.
+
 ## Folktables ACS Causal-Effect Example
 
 The repository includes an executable ACS example that makes the handoff
@@ -249,10 +324,9 @@ import updatesupport as us
 est = CausalForestDML(...)
 est.fit(Y, T, X=X, W=W)
 
-df["tau_hat"] = est.effect(X)
+adapted = us.adapt_econml_effects(est, df, X)
 
-report = us.audit_effects(
-    df,
+report = adapted.audit_effects(
     public=["age_band", "sex"],
     hidden=[
         "age_band",
@@ -261,7 +335,6 @@ report = us.audit_effects(
         "region",
         "prior_usage_band",
     ],
-    effect="tau_hat",
     weight="sample_weight",
     candidate_refinements=["income_band", "region", "prior_usage_band"],
 )

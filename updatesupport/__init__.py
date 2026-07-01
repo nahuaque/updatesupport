@@ -1,5 +1,12 @@
 """Representation adequacy and transport-stability auditing in Python."""
 
+from .adapters import (
+    EstimatorAdapterResult,
+    adapt_dataframe_effects,
+    adapt_doubleml_effects,
+    adapt_dowhy_effects,
+    adapt_econml_effects,
+)
 from .data import GroupedProblem, from_dataframe
 from .dowhy import (
     DoWhyRepresentationAudit,
@@ -67,6 +74,10 @@ from .results import (
 
 __all__ = [
     "AdequacyResult",
+    "adapt_dataframe_effects",
+    "adapt_doubleml_effects",
+    "adapt_dowhy_effects",
+    "adapt_econml_effects",
     "CardinalGapResult",
     "CausalReportingStabilitySuite",
     "ConstraintDual",
@@ -77,6 +88,7 @@ __all__ = [
     "causal_reporting_stability",
     "DoWhyRepresentationAudit",
     "eq",
+    "EstimatorAdapterResult",
     "audit_effects",
     "audit_dowhy_effects",
     "dowhy_refutation_from_report",

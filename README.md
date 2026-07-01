@@ -466,6 +466,9 @@ Implemented now:
 - `causal_reporting_stability(...)` for packaging causal estimate,
   statistical uncertainty metadata, hidden-composition ambiguity, sensitivity
   grids, and public refinement recommendations
+- estimator adapters: `adapt_dataframe_effects(...)`,
+  `adapt_econml_effects(...)`, `adapt_dowhy_effects(...)`, and
+  `adapt_doubleml_effects(...)`
 - `audit_dowhy_effects(...)` and `dowhy_refutation_from_report(...)` for DoWhy
   workflows
 - `recommend_refinements(...)` for ranking candidate hidden variables
