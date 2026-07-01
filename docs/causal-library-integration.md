@@ -303,7 +303,11 @@ print(representation_refutation)
 Install the optional DoWhy dependency with:
 
 ```bash
-uv sync --extra dowhy
+# with pip
+pip install "updatesupport[dowhy]"
+
+# with uv
+uv add "updatesupport[dowhy]"
 ```
 
 This is a DoWhy-compatible refutation object, not a registered

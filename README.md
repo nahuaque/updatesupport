@@ -93,41 +93,64 @@ suite = us.causal_reporting_stability(
 print(suite.to_markdown())
 ```
 
-## Install Locally
+## Install
+
+Install the released package from PyPI into an environment with `pip`:
 
 ```bash
-uv sync
-uv run python -m unittest
+pip install updatesupport
 ```
 
-For the Folktables examples:
+Or add it to a `uv`-managed project:
 
 ```bash
-uv sync --extra examples
+uv add updatesupport
 ```
 
-For the EconML causal example:
+Optional extras install integrations and heavier backends:
 
 ```bash
-uv sync --extra causal
+# with pip
+pip install "updatesupport[cvxpy]"      # TV, chi-square, KL, Wasserstein, custom CVXPY Q
+pip install "updatesupport[examples]"   # Folktables, pandas, plotting examples
+pip install "updatesupport[causal]"     # EconML causal-effect examples
+pip install "updatesupport[dowhy]"      # DoWhy CausalRefutation conversion
 ```
 
-For convex Q presets and custom CVXPY environments:
+For a `uv` project, use the same extras with `uv add`:
 
 ```bash
-uv sync --extra cvxpy
+# with uv
+uv add "updatesupport[cvxpy]"
+uv add "updatesupport[examples]"
+uv add "updatesupport[causal]"
+uv add "updatesupport[dowhy]"
 ```
 
-For the reproducible benchmark gallery:
+You can combine extras when needed:
 
 ```bash
-uv sync --extra examples --extra causal
+# with pip
+pip install "updatesupport[examples,causal,cvxpy]"
+
+# with uv
+uv add "updatesupport[examples,causal,cvxpy]"
 ```
 
-For DoWhy `CausalRefutation` conversion:
+To work from a source checkout, clone the repository and use `uv sync`:
 
 ```bash
-uv sync --extra dowhy
+git clone https://github.com/nahuaque/updatesupport.git
+cd updatesupport
+uv sync --group dev --extra cvxpy --extra examples
+uv run pytest
+```
+
+Example scripts in `examples/` are run from a source checkout. Add the relevant
+extras for the examples you want to run:
+
+```bash
+uv sync --extra examples --extra causal --extra cvxpy
 ```
 
 ## Core Model
@@ -205,7 +228,11 @@ Install the CVXPY extra before using TV, chi-square, KL, Wasserstein, custom
 convex environments, or parameterized CVXPY radius sweeps:
 
 ```bash
-uv sync --extra cvxpy
+# with pip
+pip install "updatesupport[cvxpy]"
+
+# with uv
+uv add "updatesupport[cvxpy]"
 ```
 
 See [docs/transport-presets.md](docs/transport-presets.md) for guidance on

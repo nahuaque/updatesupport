@@ -191,7 +191,11 @@ q = us.q_tv_budget(0.15)
 Install the CVXPY extra first:
 
 ```bash
-uv sync --extra cvxpy
+# with pip
+pip install "updatesupport[cvxpy]"
+
+# with uv
+uv add "updatesupport[cvxpy]"
 ```
 
 This constrains total variation distance from the observed hidden distribution:
@@ -234,7 +238,11 @@ q = us.q_chi_square_budget(0.15)
 Install the CVXPY extra first:
 
 ```bash
-uv sync --extra cvxpy
+# with pip
+pip install "updatesupport[cvxpy]"
+
+# with uv
+uv add "updatesupport[cvxpy]"
 ```
 
 This constrains Pearson chi-square divergence from the observed hidden
@@ -277,7 +285,11 @@ q = us.q_kl_budget(0.05)
 Install the CVXPY extra first:
 
 ```bash
-uv sync --extra cvxpy
+# with pip
+pip install "updatesupport[cvxpy]"
+
+# with uv
+uv add "updatesupport[cvxpy]"
 ```
 
 This constrains KL divergence from the observed hidden distribution:
@@ -328,7 +340,11 @@ q = us.q_wasserstein(cost, radius=0.15)
 Install the CVXPY extra first:
 
 ```bash
-uv sync --extra cvxpy
+# with pip
+pip install "updatesupport[cvxpy]"
+
+# with uv
+uv add "updatesupport[cvxpy]"
 ```
 
 This constrains the minimum transport cost from the observed hidden distribution

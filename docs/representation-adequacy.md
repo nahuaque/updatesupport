@@ -185,7 +185,11 @@ The Q preset surface now supports several levels of conservatism:
 Install the CVXPY extra before using TV, chi-square, KL, or Wasserstein presets:
 
 ```bash
-uv sync --extra cvxpy
+# with pip
+pip install "updatesupport[cvxpy]"
+
+# with uv
+uv add "updatesupport[cvxpy]"
 ```
 
 For dense radius sweeps on a fixed compiled state space, pass
