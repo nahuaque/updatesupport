@@ -119,6 +119,29 @@ state is the weighted empirical target mean inside the cell, and the environment
 fixes the observed public law while allowing saturated reweighting inside public
 fibers.
 
+## Public Descent Report
+
+Use `public_descent_report(...)` to produce a structured report and render it as
+Markdown:
+
+```python
+report = us.public_descent_report(
+    rows_or_frame,
+    public=["AGE_BAND", "EDU_BAND", "SEX"],
+    hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND"],
+    target="__target__",
+    weight="PWGTP",
+    candidate_refinements=["OCC_MAJOR", "WKHP_BAND"],
+    min_cell_weight=25,
+    title="ACSIncome Representation Adequacy Report",
+)
+
+print(report.to_markdown())
+```
+
+The report includes the observed value, stress interval, transport ambiguity,
+public adequacy flag, worst public fibers, and one-column refinement candidates.
+
 ## Public-Fiber-Saturated Example
 
 When all reweightings inside public fibers are admissible, the transport
@@ -227,6 +250,9 @@ Implemented now:
 - `LineSegment`
 - `PolytopeEnvironments` via SciPy `linprog`
 - `from_dataframe(...)` for compiling grouped tabular data into a finite problem
+- `PublicDescentReport` with Markdown output
+- `public_descent_report(...)` for analyst-facing report objects
+- `recommend_refinements(...)` for ranking candidate hidden variables
 - adequacy checks with witnesses
 - adequate, minimal, and least support enumeration for small finite problems
 - local and global transport moduli
@@ -236,8 +262,6 @@ Implemented now:
 
 Planned next slices:
 
-- `public_descent_report(...)` for analyst-facing report objects
-- `recommend_refinements(...)` for ranking candidate hidden variables
 - named `Q` presets for common stress tests
 - sensitivity reports over `min_cell_weight`, hidden-variable sets, and `Q`
   choices

@@ -111,22 +111,31 @@ against hidden refinements while preserving the public law.
 
 ## Near-Term Implementation Slices
 
-The first compiler slice is now exposed as `updatesupport.from_dataframe(...)`.
-It compiles weighted tabular observations into a finite problem by grouping rows
-into retained hidden cells, estimating one target value per hidden cell, and
-fixing the observed public law.
-
-The next report API should make the analyst workflow direct:
+The first compiler and report slices are now exposed as
+`updatesupport.from_dataframe(...)` and `updatesupport.public_descent_report(...)`.
+Together, they compile weighted tabular observations into a finite problem,
+compute a public-descent audit, and render the result as Markdown.
 
 ```python
 report = us.public_descent_report(
     data,
     target="PINCP_GT_50000",
     public=["AGE_BAND", "EDU_BAND", "SEX"],
-    hidden=["OCC_MAJOR", "COW", "WKHP_BAND", "RAC1P", "MAR", "POBP", "RELP"],
+    hidden=[
+        "AGE_BAND",
+        "EDU_BAND",
+        "SEX",
+        "OCC_MAJOR",
+        "COW",
+        "WKHP_BAND",
+        "RAC1P",
+        "MAR",
+        "POBP",
+        "RELP",
+    ],
     weight="PWGTP",
+    candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P", "RELP"],
     min_cell_weight=25,
-    q="saturated",
 )
 
 print(report.to_markdown())
@@ -134,12 +143,8 @@ print(report.to_markdown())
 
 Implementation should land in this order:
 
-1. `PublicDescentReport`: store observed value, stress interval, ambiguity,
-   adequacy, worst fibers, and refinements.
-2. `recommend_refinements(...)`: rank candidate hidden variables by ambiguity
-   reduction.
-3. named `Q` presets: make stress-test assumptions explicit and repeatable.
-4. sensitivity reports: vary `min_cell_weight`, hidden columns, and `Q`.
+1. named `Q` presets: make stress-test assumptions explicit and repeatable.
+2. sensitivity reports: vary `min_cell_weight`, hidden columns, and `Q`.
 
 The documentation should keep the ACSIncome case study as the primary example
 and put the finite-support theory underneath it.

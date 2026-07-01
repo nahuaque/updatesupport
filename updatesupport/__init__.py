@@ -15,6 +15,14 @@ from .environments import (
 )
 from .partition import Partition, PartitionError
 from .problem import FiniteProblem, TooManyPartitions
+from .report import (
+    PublicDescentReport,
+    PublicFiberDiagnostic,
+    RefinementCandidate,
+    public_descent_report,
+    public_fiber_diagnostics,
+    recommend_refinements,
+)
 from .results import (
     AdequacyResult,
     CardinalGapResult,
@@ -42,6 +50,12 @@ __all__ = [
     "PartitionError",
     "PolytopeEnvironments",
     "PublicFiberSaturated",
+    "PublicDescentReport",
+    "PublicFiberDiagnostic",
+    "public_descent_report",
+    "public_fiber_diagnostics",
+    "recommend_refinements",
+    "RefinementCandidate",
     "TooManyPartitions",
     "TransportResult",
     "Witness",

@@ -48,32 +48,9 @@ def build_problem_from_rows(
 def fiber_diagnostics(
     grouped: GroupedProblem, *, top: int = 10
 ) -> list[dict[str, Any]]:
-    """Return worst public fibers by ambiguity contribution."""
+    """Compatibility wrapper around :func:`updatesupport.public_fiber_diagnostics`."""
 
-    problem = grouped.problem
-    rows = []
-    for public_value in problem.public_values:
-        states = problem.public_fibers[public_value]
-        ordered_states = sorted(states, key=lambda state: problem.estimand_map[state])
-        min_state = ordered_states[0]
-        max_state = ordered_states[-1]
-        fiber_range = problem.estimand_map[max_state] - problem.estimand_map[min_state]
-        public_mass = grouped.public_law[public_value]
-        rows.append(
-            {
-                "public_value": public_value,
-                "public_mass": public_mass,
-                "hidden_cells": len(states),
-                "range": fiber_range,
-                "contribution": public_mass * fiber_range,
-                "min_state": min_state,
-                "min_value": problem.estimand_map[min_state],
-                "max_state": max_state,
-                "max_value": problem.estimand_map[max_state],
-            }
-        )
-    rows.sort(key=lambda row: row["contribution"], reverse=True)
-    return rows[:top]
+    return [row.as_dict() for row in us.public_fiber_diagnostics(grouped, top=top)]
 
 
 def refinement_candidates(
@@ -87,45 +64,21 @@ def refinement_candidates(
     min_cell_weight: float = 1.0,
     top: int = 8,
 ) -> list[dict[str, Any]]:
-    """Rank one-column public refinements by transport-modulus reduction."""
+    """Compatibility wrapper around :func:`updatesupport.recommend_refinements`."""
 
-    baseline = build_problem_from_rows(
-        rows,
-        public_columns=public_columns,
-        hidden_columns=hidden_columns,
-        target_column=target_column,
-        weight_column=weight_column,
-        min_cell_weight=min_cell_weight,
-    )
-    baseline_diameter = baseline.problem.global_transport_modulus().diameter
-
-    scores = []
-    for column in candidate_columns:
-        if column in public_columns:
-            continue
-        if column not in hidden_columns:
-            continue
-        refined_public = tuple(public_columns) + (column,)
-        refined = build_problem_from_rows(
+    return [
+        row.as_dict()
+        for row in us.recommend_refinements(
             rows,
-            public_columns=refined_public,
-            hidden_columns=hidden_columns,
-            target_column=target_column,
-            weight_column=weight_column,
+            public=public_columns,
+            hidden=hidden_columns,
+            target=target_column,
+            weight=weight_column,
+            candidate_refinements=candidate_columns,
             min_cell_weight=min_cell_weight,
+            top=top,
         )
-        diameter = refined.problem.global_transport_modulus().diameter
-        scores.append(
-            {
-                "column": column,
-                "diameter": diameter,
-                "reduction": baseline_diameter - diameter,
-                "public_cells": len(refined.problem.public_values),
-            }
-        )
-
-    scores.sort(key=lambda row: row["reduction"], reverse=True)
-    return scores[:top]
+    ]
 
 
 def load_folktables_rows(
@@ -349,121 +302,20 @@ def render_report(
     top: int,
     min_cell_weight: float,
 ) -> str:
-    problem = grouped.problem
-    interval = problem.global_transport_modulus()
-    observed_rate = sum(
-        grouped.cell_weights[state] * problem.estimand_map[state]
-        for state in problem.states
-    )
-    all_fibers = fiber_diagnostics(grouped, top=len(problem.public_values))
-    top_fibers = all_fibers[:top]
-    top_contribution = sum(row["contribution"] for row in top_fibers)
-    top_share = (
-        top_contribution / interval.diameter if interval.diameter > problem.tol else 0.0
-    )
-    interval_contains_observed = interval.lower <= observed_rate <= interval.upper
-    lines = [
-        f"# Folktables ACS{task.title()} Update-Support Demo",
-        "",
-        f"- Rows after sampling: {len(rows)}",
-        f"- Hidden cells: {len(problem.states)}",
-        f"- Public cells: {len(problem.public_values)}",
-        f"- Public columns: {', '.join(grouped.public_columns)}",
-        f"- Hidden columns: {', '.join(grouped.hidden_columns)}",
-        f"- Minimum hidden-cell weight: {min_cell_weight:g}",
-        f"- Observed target rate: {observed_rate:.4f}",
-        f"- Public adequate: {'yes' if problem.is_public_adequate() else 'no'}",
-        f"- Observed-law partial-ID interval: [{interval.lower:.4f}, {interval.upper:.4f}]",
-        f"- Observed-law transport ambiguity: {interval.diameter:.4f}",
-        f"- Top {len(top_fibers)} fiber contribution share: {percent(top_share)}",
-        "",
-        "## Statistical Interpretation",
-        "",
-        f"The estimand is the aggregate {task_target_description(task)}. Each hidden cell "
-        "gets its own empirical label rate, and the current observed rate is the "
-        "sample-weighted average over the observed hidden-cell mix.",
-        "",
-        "The partial-ID interval fixes the observed public distribution and then allows "
-        "arbitrary reweighting among retained hidden cells inside each public cell. "
-        f"Under that stress test, the aggregate target rate can range from "
-        f"{interval.lower:.4f} to {interval.upper:.4f}. The observed rate "
-        f"{observed_rate:.4f} {'falls inside' if interval_contains_observed else 'does not fall inside'} "
-        "that interval.",
-        "",
-        f"The transport ambiguity is the interval width, {interval.diameter:.4f}. "
-        "It is a sensitivity / partial-identification diameter, not a sampling "
-        "confidence interval. It does not include binomial standard errors, design "
-        "weights, survey design uncertainty, model uncertainty, or uncertainty in the "
-        "hidden-cell label rates.",
-        "",
-        "Public adequacy asks whether the public categories alone determine the "
-        "estimand under the chosen hidden-reweighting class. If public adequacy is "
-        "`no`, then at least one public cell contains hidden cells with different "
-        "target rates, so the aggregate can move even when public cell shares are held "
-        "fixed.",
-        "",
-        "For each public fiber below, `range` is the max-minus-min hidden-cell target "
-        "rate inside that public cell. `contribution = mass * range`, so it is the "
-        "amount that fiber contributes to the overall interval width. The listed "
-        f"top fibers account for {percent(top_share)} of total transport ambiguity.",
-        "",
-        "## Worst Public Fibers",
-    ]
-    for row in top_fibers:
-        lines.extend(
-            [
-                f"- {format_key(grouped.public_columns, row['public_value'])}",
-                f"  mass={row['public_mass']:.4f}, hidden_cells={row['hidden_cells']}, "
-                f"range={row['range']:.4f}, contribution={row['contribution']:.4f}",
-                f"  min: {row['min_value']:.4f} at {format_key(grouped.hidden_columns, row['min_state'])}",
-                f"  max: {row['max_value']:.4f} at {format_key(grouped.hidden_columns, row['max_state'])}",
-            ]
-        )
-
-    refinements = refinement_candidates(
-        rows,
-        public_columns=grouped.public_columns,
-        hidden_columns=grouped.hidden_columns,
-        candidate_columns=candidate_columns,
-        target_column=grouped.target_column,
-        weight_column="weight" if rows and "weight" in rows[0] else None,
-        min_cell_weight=min_cell_weight,
+    report = us.public_descent_report(
+        grouped,
+        source_data=rows,
+        candidate_refinements=candidate_columns,
         top=top,
+        min_cell_weight=min_cell_weight,
+        title=f"Folktables ACS{task.title()} Update-Support Demo",
+        target_description=task_target_description(task),
+        observed_label="Observed target rate",
+        row_count=len(rows),
+        row_count_label="Rows after sampling",
+        weight_column="weight" if rows and "weight" in rows[0] else None,
     )
-    if refinements:
-        lines.extend(
-            [
-                "",
-                "## One-Column Refinement Candidates",
-                "",
-                "Each row asks: what if this hidden column were promoted into the public "
-                "representation? `reduction` is the drop in transport ambiguity, and "
-                "`public_cells` is the resulting number of public strata. This is a "
-                "measurement-value table: large reductions identify variables that "
-                "make the coarse public representation more stable, with the usual "
-                "tradeoff that more strata may increase sparsity.",
-            ]
-        )
-        for row in refinements:
-            lines.append(
-                f"- add {row['column']}: ambiguity={row['diameter']:.4f}, "
-                f"reduction={row['reduction']:.4f}, public_cells={row['public_cells']}"
-            )
-    lines.extend(
-        [
-            "",
-            "## Analyst Notes",
-            "",
-            "- Treat very small hidden cells cautiously. Raising `--min-cell-weight` "
-            "shrinks the state space and reduces noisy one-off hidden-cell rates, but "
-            "it also changes the admissible hidden support.",
-            "- A wide interval means the chosen public categories are not stable for "
-            "this estimand under within-public-cell composition shift.",
-            "- A narrow interval does not prove causal validity; it says this specific "
-            "support/reweighting stress test leaves little residual ambiguity.",
-        ]
-    )
-    return "\n".join(lines)
+    return report.to_markdown()
 
 
 def parse_args() -> argparse.Namespace:
