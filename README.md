@@ -326,6 +326,33 @@ print(refinements.to_markdown())
 The aggregate ranking reports mean reduction, worst-case reduction, rank
 stability, and the number of scenarios where each refinement ranked first.
 
+## Public Representation Frontier
+
+Use `public_representation_frontier(...)` when you want the smallest public
+representation that keeps ambiguity low across a stress-test grid:
+
+```python
+frontier = us.public_representation_frontier(
+    rows_or_frame,
+    base_public=["AGE_BAND", "EDU_BAND"],
+    hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND"],
+    target="__target__",
+    weight="PWGTP",
+    candidate_refinements=["SEX", "OCC_MAJOR", "WKHP_BAND"],
+    q_presets=["saturated", us.q_bounded_shift(0.5), "observed"],
+    ambiguity_limit=0.01,
+    bucket_budget=40,
+)
+
+print(frontier.minimal_stable)
+print(frontier.to_markdown())
+```
+
+The frontier compares public-cell count, added-column count, and ambiguity under
+every supplied stress test. See
+[docs/public-representation-frontier.md](docs/public-representation-frontier.md)
+for interpretation guidance.
+
 ## Public-Fiber-Saturated Example
 
 When all reweightings inside public fibers are admissible, the transport
@@ -661,5 +688,6 @@ for support in least.minimal_supports:
 - [Transport preset guide](docs/transport-presets.md)
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)
 - [Extension and plugin architecture](docs/extensions.md)
+- [Release guide](docs/releasing.md)
 - [Folktables ACSIncome result interpretation](docs/folktables-acs-income-interpretation.md)
 - [Update-Relevant Support: Hume's Missing Descent](https://philpapers.org/go.pl?id=BRUUSH&proxyId=&u=https%3A%2F%2Fphilpapers.org%2Farchive%2FBRUUSH.pdf)

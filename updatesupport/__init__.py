@@ -32,6 +32,12 @@ from .environments import (
     leq,
     linear_constraint,
 )
+from .frontier import (
+    FrontierScenarioResult,
+    PublicRepresentationCandidate,
+    PublicRepresentationFrontier,
+    public_representation_frontier,
+)
 from .metrics import RowMetric, row_metric
 from .partition import Partition, PartitionError
 from .plugins import (
@@ -116,6 +122,7 @@ __all__ = [
     "dowhy_refutation_from_report",
     "FiniteEnvironments",
     "FiniteProblem",
+    "FrontierScenarioResult",
     "from_dataframe",
     "geq",
     "GroupedProblem",
@@ -133,8 +140,11 @@ __all__ = [
     "PublicFiberSaturated",
     "PublicDescentReport",
     "PublicFiberDiagnostic",
+    "PublicRepresentationCandidate",
+    "PublicRepresentationFrontier",
     "public_descent_report",
     "public_fiber_diagnostics",
+    "public_representation_frontier",
     "QPreset",
     "q_bounded_shift",
     "q_chi_square_budget",

@@ -60,6 +60,9 @@ A useful analyst-facing report should include:
   absolute reduction, and percentage reduction.
 - **Sensitivity-aware refinements**: variables whose ambiguity reduction remains
   useful across Q presets, hidden-state choices, and sparse-cell thresholds.
+- **Public representation frontier**: the Pareto frontier of candidate public
+  representations when the review asks for the smallest public bucket design
+  that remains stable across stress tests.
 
 This report should be readable without requiring the audience to know the
 underlying finite-support theory. In causal or model-based workflows, the report
@@ -99,6 +102,9 @@ not interpretable.
 
 For practical guidance on when to use each preset, see
 [Transport presets](transport-presets.md).
+
+For public bucket design, see
+[Public representation frontier](public-representation-frontier.md).
 
 ## Interpretation Rules
 
