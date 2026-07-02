@@ -470,8 +470,7 @@ def _oracle_column_pairs() -> tuple[tuple[str, str], ...]:
 
 def _derived_column_name(column: str) -> str:
     clean = "".join(
-        character if character.isalnum() else "_"
-        for character in str(column)
+        character if character.isalnum() else "_" for character in str(column)
     )
     return f"{clean}_BAND"
 

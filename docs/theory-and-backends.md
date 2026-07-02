@@ -39,6 +39,8 @@ Core finite objects:
 Tabular and reporting helpers:
 
 - `from_dataframe(...)`
+- `DataDiagnostic`
+- `DataDiagnostics`
 - `AuditSpec`
 - `AuditRun`
 - `QSpec`

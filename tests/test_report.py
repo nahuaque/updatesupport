@@ -44,6 +44,33 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertAlmostEqual(report.refinements[0].reduction_percent, 100.0)
         self.assertAlmostEqual(report.refinements[0].reduction_fraction, 1.0)
 
+    def test_public_descent_report_includes_data_diagnostics(self):
+        rows = [
+            {"public": "A", "hidden": "x", "target": 0.0, "weight": 1},
+            {"public": "A", "hidden": "y", "target": 1.0, "weight": 10},
+            {"public": "B", "hidden": "z", "target": 0.5, "weight": 10},
+        ]
+
+        report = us.public_descent_report(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["public", "hidden", "missing"],
+            min_cell_weight=2,
+        )
+        markdown = report.to_markdown()
+        payload = report.as_dict()
+
+        codes = {row.code for row in report.diagnostics}
+        self.assertIn("min_cell_weight_dropped_cells", codes)
+        self.assertIn("candidate_refinement_already_public", codes)
+        self.assertIn("candidate_refinement_not_hidden", codes)
+        self.assertIn("## Data Diagnostics", markdown)
+        self.assertIn("candidate_refinement_not_hidden", markdown)
+        self.assertIn("diagnostics", payload)
+
     def test_public_descent_report_renders_markdown(self):
         rows = [
             {"public": "A", "hidden": "x", "target": 0.0, "weight": 30},

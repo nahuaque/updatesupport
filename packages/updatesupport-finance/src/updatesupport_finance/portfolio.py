@@ -42,7 +42,9 @@ class ReviewThresholds:
         if self.ambiguity_limit is not None and self.ambiguity_limit < 0:
             raise ValueError("ambiguity_limit must be non-negative")
 
-    def evaluate(self, core_report: us.PublicDescentReport) -> tuple[str, tuple[str, ...]]:
+    def evaluate(
+        self, core_report: us.PublicDescentReport
+    ) -> tuple[str, tuple[str, ...]]:
         reasons = []
         if (
             self.ambiguity_limit is not None
@@ -113,9 +115,7 @@ class ModelRiskReport:
             f"- Status: {self.review_status}",
         ]
         if self.thresholds.ambiguity_limit is not None:
-            lines.append(
-                f"- Ambiguity limit: {self.thresholds.ambiguity_limit:.4f}"
-            )
+            lines.append(f"- Ambiguity limit: {self.thresholds.ambiguity_limit:.4f}")
         lines.append(
             "- Public adequacy required: "
             f"{'yes' if self.thresholds.public_adequacy_required else 'no'}"

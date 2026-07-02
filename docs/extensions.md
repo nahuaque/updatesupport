@@ -66,15 +66,63 @@ import updatesupport as us
 
 plugin = us.UpdateSupportPlugin(
     name="finance",
+    version="0.1.0",
+    description="Financial model-risk extensions for updatesupport.",
     metrics={"expected_loss": expected_loss},
     q_presets={"portfolio_mix_shift": q_portfolio_mix_shift},
     report_profiles={"model_risk": model_risk_report},
     compilers={"portfolio": from_portfolio},
+    metadata=us.PluginMetadata(
+        package="updatesupport-finance",
+        homepage="https://github.com/nahuaque/updatesupport",
+        domain="financial-model-risk",
+        tags=("credit-risk", "expected-loss", "model-validation"),
+        min_updatesupport_version="0.1.1",
+    ),
 )
 ```
 
 The descriptor is intentionally lightweight. It gives discovery, namespacing,
 and lookup, while each plugin keeps its own user-facing API.
+
+## Plugin SDK Checks
+
+Core validates plugin descriptors before registration. A valid plugin has a
+non-empty slug-like name, optional string metadata, and callable values in each
+surface map.
+
+```python
+report = us.validate_plugin(plugin)
+report.raise_for_errors()
+
+print(plugin.as_dict())
+```
+
+Use this in plugin tests so packaging errors fail before release:
+
+```python
+def test_plugin_contract():
+    assert us.validate_plugin(plugin).ok
+```
+
+`register_plugin(...)` protects duplicate plugin names by default:
+
+```python
+us.register_plugin(plugin)
+
+# Only use replace=True intentionally, for example in an interactive notebook
+# after reloading local plugin code.
+us.register_plugin(plugin, replace=True)
+```
+
+Entry-point discovery uses the same validation and duplicate-name checks. A
+package that exposes a plugin entry point should keep the entry point name and
+the descriptor name aligned:
+
+```toml
+[project.entry-points."updatesupport.plugins"]
+finance = "updatesupport_finance:plugin"
+```
 
 ## Row Metrics
 

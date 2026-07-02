@@ -9,7 +9,7 @@ from .adapters import (
     adapt_dowhy_effects,
     adapt_econml_effects,
 )
-from .data import GroupedProblem, from_dataframe
+from .data import DataDiagnostic, DataDiagnostics, GroupedProblem, from_dataframe
 from .dowhy import (
     DoWhyRepresentationAudit,
     audit_dowhy_effects,
@@ -32,7 +32,12 @@ from .environments import (
     leq,
     linear_constraint,
 )
-from .exports import report_dataframes, report_tables, report_to_json, tables_to_dataframes
+from .exports import (
+    report_dataframes,
+    report_tables,
+    report_to_json,
+    tables_to_dataframes,
+)
 from .frontier import (
     FrontierCandidateExplanation,
     FrontierCloseAlternative,
@@ -47,8 +52,12 @@ from .frontier import (
 from .metrics import RowMetric, row_metric
 from .partition import Partition, PartitionError
 from .plugins import (
+    PluginMetadata,
     PluginRegistry,
+    PluginValidationIssue,
+    PluginValidationReport,
     UpdateSupportPlugin,
+    assert_valid_plugin,
     discover_plugins,
     get_plugin,
     list_plugins,
@@ -58,6 +67,7 @@ from .plugins import (
     plugin_report_profile,
     register_plugin,
     unregister_plugin,
+    validate_plugin,
 )
 from .problem import FiniteProblem, TooManyPartitions
 from .presets import (
@@ -123,6 +133,8 @@ __all__ = [
     "CvxpyError",
     "cvxpy_constraint",
     "causal_reporting_stability",
+    "DataDiagnostic",
+    "DataDiagnostics",
     "DoWhyRepresentationAudit",
     "eq",
     "EstimatorAdapterResult",
@@ -149,7 +161,10 @@ __all__ = [
     "Partition",
     "PartitionError",
     "ParameterizedCvxpyEnvironments",
+    "PluginMetadata",
     "PluginRegistry",
+    "PluginValidationIssue",
+    "PluginValidationReport",
     "PolytopeEnvironments",
     "PublicFiberSaturated",
     "PublicDescentReport",
@@ -175,6 +190,7 @@ __all__ = [
     "report_tables",
     "report_to_json",
     "tables_to_dataframes",
+    "assert_valid_plugin",
     "discover_plugins",
     "get_plugin",
     "list_plugins",
@@ -199,5 +215,6 @@ __all__ = [
     "TransportResult",
     "unregister_plugin",
     "UpdateSupportPlugin",
+    "validate_plugin",
     "Witness",
 ]

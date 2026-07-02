@@ -219,10 +219,13 @@ class CvxpyBackendTests(unittest.TestCase):
             )
 
         self.assertEqual(from_dataframe.call_count, 1)
-        self.assertEqual([row.q_name for row in report.rows], [
-            "tv_budget(radius=0.15)",
-            "tv_budget(radius=0.3)",
-        ])
+        self.assertEqual(
+            [row.q_name for row in report.rows],
+            [
+                "tv_budget(radius=0.15)",
+                "tv_budget(radius=0.3)",
+            ],
+        )
         self.assertAlmostEqual(report.rows[0].lower, 0.35, places=6)
         self.assertAlmostEqual(report.rows[0].upper, 0.65, places=6)
         self.assertAlmostEqual(report.rows[1].lower, 0.20, places=6)
@@ -252,10 +255,13 @@ class CvxpyBackendTests(unittest.TestCase):
 
         self.assertEqual(from_dataframe.call_count, 2)
         self.assertEqual(len(report.scenarios), 2)
-        self.assertEqual([row.q_name for row in report.scenarios], [
-            "tv_budget(radius=0.15)",
-            "tv_budget(radius=0.3)",
-        ])
+        self.assertEqual(
+            [row.q_name for row in report.scenarios],
+            [
+                "tv_budget(radius=0.15)",
+                "tv_budget(radius=0.3)",
+            ],
+        )
         self.assertEqual(report.scenarios[0].best_column, "HIDDEN")
         self.assertEqual(report.scenarios[1].best_column, "HIDDEN")
 

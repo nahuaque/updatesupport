@@ -43,6 +43,77 @@ class PluginRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(KeyError, "has no metric"):
             us.plugin_metric("demo", "missing")
 
+    def test_plugin_metadata_and_validation_report_are_serializable(self):
+        plugin = us.UpdateSupportPlugin(
+            name="demo",
+            version="0.0.1",
+            description="demo plugin",
+            metadata=us.PluginMetadata(
+                package="updatesupport-demo",
+                homepage="https://example.invalid/updatesupport-demo",
+                domain="demo",
+                tags=["example", "sdk"],
+                min_updatesupport_version="0.1.1",
+            ),
+        )
+
+        report = us.validate_plugin(plugin)
+
+        self.assertTrue(report.ok)
+        self.assertEqual(report.errors, ())
+        self.assertEqual(plugin.metadata.tags, ("example", "sdk"))
+        self.assertEqual(plugin.as_dict()["metadata"]["package"], "updatesupport-demo")
+        self.assertEqual(plugin.as_dict()["metrics"], [])
+        self.assertEqual(report.as_dict()["plugin_name"], "demo")
+
+    def test_validation_reports_invalid_plugin_surfaces(self):
+        plugin = us.UpdateSupportPlugin(
+            name="bad plugin",
+            metrics={"not_callable": object()},
+            q_presets={1: lambda: None},
+            metadata=us.PluginMetadata(tags=["ok", ""]),
+        )
+
+        report = us.validate_plugin(plugin)
+
+        self.assertFalse(report.ok)
+        codes = {issue.code for issue in report.errors}
+        self.assertIn("plugin-name", codes)
+        self.assertIn("surface-callable", codes)
+        self.assertIn("surface-key", codes)
+        self.assertIn("metadata-tags", codes)
+        with self.assertRaisesRegex(ValueError, "invalid updatesupport plugin"):
+            us.assert_valid_plugin(plugin)
+
+    def test_validation_reports_non_plugin_objects(self):
+        report = us.validate_plugin(object())
+
+        self.assertFalse(report.ok)
+        self.assertEqual(report.errors[0].code, "plugin-type")
+
+    def test_validation_reports_non_iterable_metadata_tags(self):
+        plugin = us.UpdateSupportPlugin(
+            name="demo",
+            metadata=us.PluginMetadata(tags=1),
+        )
+
+        report = us.validate_plugin(plugin)
+
+        self.assertFalse(report.ok)
+        self.assertEqual(report.errors[0].code, "metadata-tags")
+
+    def test_duplicate_plugin_registration_requires_replace(self):
+        first = us.UpdateSupportPlugin(name="demo", description="first")
+        second = us.UpdateSupportPlugin(name="demo", description="second")
+
+        us.register_plugin(first)
+
+        with self.assertRaisesRegex(ValueError, "already registered"):
+            us.register_plugin(second)
+
+        us.register_plugin(second, replace=True)
+        self.assertIs(us.get_plugin("demo"), second)
+
 
 if __name__ == "__main__":
     unittest.main()

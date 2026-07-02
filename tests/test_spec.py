@@ -122,7 +122,9 @@ class AuditSpecTests(unittest.TestCase):
 
         self.assertIsInstance(run.report, us.PublicRepresentationFrontier)
         self.assertEqual(run.report.minimal_stable.added_columns, ("driver",))
-        self.assertEqual(payload["report"]["minimal_stable"]["added_columns"], ("driver",))
+        self.assertEqual(
+            payload["report"]["minimal_stable"]["added_columns"], ("driver",)
+        )
         self.assertIn("# Configured Frontier", run.to_markdown())
 
     def test_q_spec_rejects_unknown_keys(self):

@@ -289,7 +289,9 @@ class FrontierCandidateExplanation:
             "bucket_budget": self.bucket_budget,
         }
 
-    def to_markdown(self, *, heading: str = "## Selected Representation Explanation") -> str:
+    def to_markdown(
+        self, *, heading: str = "## Selected Representation Explanation"
+    ) -> str:
         return "\n".join(_candidate_explanation_markdown(self, heading=heading))
 
     def to_json(self, **kwargs: Any) -> str:
@@ -359,7 +361,9 @@ class PublicRepresentationFrontier:
             return None
         if effective_budget < 0:
             raise ValueError("budget must be non-negative")
-        feasible = [row for row in self.candidates if row.public_cells <= effective_budget]
+        feasible = [
+            row for row in self.candidates if row.public_cells <= effective_budget
+        ]
         if not feasible:
             return None
         return min(
@@ -800,7 +804,9 @@ class _EvaluationState:
         )
 
     def result_candidates(self) -> tuple[PublicRepresentationCandidate, ...]:
-        return tuple(self.candidates_by_subset[subset] for subset in self.result_subsets)
+        return tuple(
+            self.candidates_by_subset[subset] for subset in self.result_subsets
+        )
 
 
 def _search_candidates(
@@ -1207,9 +1213,7 @@ def _scenario_comparisons(
     rows = []
     for selected_row in selected.scenarios:
         baseline_row = baseline_by_scenario.get(selected_row.scenario)
-        baseline_ambiguity = (
-            None if baseline_row is None else baseline_row.ambiguity
-        )
+        baseline_ambiguity = None if baseline_row is None else baseline_row.ambiguity
         reduction = (
             None
             if baseline_ambiguity is None
@@ -1440,10 +1444,14 @@ def _validate_column_constraints(
     allowed = base_set | hidden_set
     missing_required = [column for column in must_include if column not in allowed]
     if missing_required:
-        raise ValueError(f"must_include columns are not in hidden: {missing_required!r}")
+        raise ValueError(
+            f"must_include columns are not in hidden: {missing_required!r}"
+        )
     missing_excluded = [column for column in must_exclude if column not in allowed]
     if missing_excluded:
-        raise ValueError(f"must_exclude columns are not in hidden: {missing_excluded!r}")
+        raise ValueError(
+            f"must_exclude columns are not in hidden: {missing_excluded!r}"
+        )
 
 
 def _ordered_subset(
@@ -1649,8 +1657,7 @@ def _candidate_explanation_markdown(
         reduction_percent = explanation.ambiguity_reduction_percent
         lines.extend(
             [
-                "- Baseline max ambiguity: "
-                f"{explanation.baseline.max_ambiguity:.4f}",
+                f"- Baseline max ambiguity: {explanation.baseline.max_ambiguity:.4f}",
                 "- Selected vs baseline max ambiguity: "
                 f"{explanation.baseline.max_ambiguity:.4f} -> "
                 f"{candidate.max_ambiguity:.4f}",
@@ -1684,9 +1691,13 @@ def _candidate_explanation_markdown(
     if explanation.failing_scenarios:
         lines.extend(_scenario_comparison_table(explanation.failing_scenarios))
     elif explanation.ambiguity_limit is None:
-        lines.append("- No ambiguity limit was supplied, so no pass/fail scenario test was applied.")
+        lines.append(
+            "- No ambiguity limit was supplied, so no pass/fail scenario test was applied."
+        )
     else:
-        lines.append("- No selected-representation scenario exceeds the ambiguity limit.")
+        lines.append(
+            "- No selected-representation scenario exceeds the ambiguity limit."
+        )
 
     lines.extend(["", "### Close Dominated Alternatives", ""])
     if explanation.close_dominated_alternatives:

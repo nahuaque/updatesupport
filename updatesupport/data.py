@@ -3,13 +3,88 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isfinite
 from typing import Any, Hashable, Iterable, Mapping, Sequence
 
 from .metrics import RowMetric, evaluate_target
 from .problem import FiniteProblem
 from .presets import QPreset, resolve_q_environment
+
+
+@dataclass(frozen=True)
+class DataDiagnostic:
+    """One data preflight diagnostic emitted before solving."""
+
+    code: str
+    severity: str
+    message: str
+    count: int | None = None
+    columns: tuple[str, ...] = ()
+    public_value: tuple[Hashable, ...] | None = None
+    hidden_cell: tuple[Hashable, ...] | None = None
+    details: dict[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "severity": self.severity,
+            "message": self.message,
+            "count": self.count,
+            "columns": self.columns,
+            "public_value": self.public_value,
+            "hidden_cell": self.hidden_cell,
+            "details": self.details,
+        }
+
+
+@dataclass(frozen=True)
+class DataDiagnostics:
+    """Pre-solve diagnostics for a compiled tabular problem."""
+
+    rows_seen: int
+    total_weight: float
+    retained_weight: float
+    dropped_weight: float
+    hidden_cells: int
+    retained_hidden_cells: int
+    dropped_hidden_cells: int
+    public_cells: int
+    singleton_public_fibers: int
+    constant_public_fibers: int
+    diagnostics: tuple[DataDiagnostic, ...] = ()
+
+    @property
+    def dropped_weight_share(self) -> float:
+        if self.total_weight <= 0:
+            return 0.0
+        return self.dropped_weight / self.total_weight
+
+    @property
+    def warning_count(self) -> int:
+        return sum(1 for row in self.diagnostics if row.severity == "warning")
+
+    @property
+    def info_count(self) -> int:
+        return sum(1 for row in self.diagnostics if row.severity == "info")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "rows_seen": self.rows_seen,
+            "total_weight": self.total_weight,
+            "retained_weight": self.retained_weight,
+            "dropped_weight": self.dropped_weight,
+            "dropped_weight_share": self.dropped_weight_share,
+            "hidden_cells": self.hidden_cells,
+            "retained_hidden_cells": self.retained_hidden_cells,
+            "dropped_hidden_cells": self.dropped_hidden_cells,
+            "public_cells": self.public_cells,
+            "singleton_public_fibers": self.singleton_public_fibers,
+            "constant_public_fibers": self.constant_public_fibers,
+            "warning_count": self.warning_count,
+            "info_count": self.info_count,
+            "diagnostics": [row.as_dict() for row in self.diagnostics],
+        }
 
 
 @dataclass(frozen=True)
@@ -29,6 +104,7 @@ class GroupedProblem:
         "arbitrary reweighting among retained hidden cells inside each observed "
         "public cell"
     )
+    diagnostics: DataDiagnostics | None = None
 
 
 def from_dataframe(
@@ -88,9 +164,7 @@ def from_dataframe(
         raise ValueError("hidden must contain at least one column")
 
     missing_public = [
-        column
-        for column in public_columns_tuple
-        if column not in hidden_columns_tuple
+        column for column in public_columns_tuple if column not in hidden_columns_tuple
     ]
     if missing_public:
         raise ValueError(
@@ -100,23 +174,25 @@ def from_dataframe(
     cell_weight: dict[tuple[Hashable, ...], float] = defaultdict(float)
     cell_target_sum: dict[tuple[Hashable, ...], float] = defaultdict(float)
     public_by_cell: dict[tuple[Hashable, ...], tuple[Hashable, ...]] = {}
+    missing_category_counts: dict[str, int] = defaultdict(int)
+    zero_weight_rows = 0
+    observed_weight = 0.0
 
     rows_seen = 0
     for row_number, row in enumerate(_iter_records(data), start=1):
         rows_seen += 1
-        hidden_key = tuple(
-            _hashable_category(
-                _record_value(row, column, row_number=row_number)
-            )
-            for column in hidden_columns_tuple
-        )
-        public_key = tuple(
-            _hashable_category(
-                _record_value(row, column, row_number=row_number)
-            )
-            for column in public_columns_tuple
-        )
+        values_by_column: dict[str, Hashable] = {}
+        for column in hidden_columns_tuple:
+            raw_value = _record_value(row, column, row_number=row_number)
+            if _is_missing(raw_value):
+                missing_category_counts[column] += 1
+            values_by_column[column] = _hashable_category(raw_value)
+        hidden_key = tuple(values_by_column[column] for column in hidden_columns_tuple)
+        public_key = tuple(values_by_column[column] for column in public_columns_tuple)
         row_weight = _row_weight(row, weight, row_number=row_number)
+        if row_weight == 0:
+            zero_weight_rows += 1
+        observed_weight += row_weight
         target_value = _target_value(row, target, row_number=row_number)
         cell_weight[hidden_key] += row_weight
         cell_target_sum[hidden_key] += row_weight * target_value
@@ -136,18 +212,25 @@ def from_dataframe(
     total_weight = sum(cell_weight[cell] for cell in kept_cells)
     states = tuple(sorted(kept_cells, key=str))
     public_map = {cell: public_by_cell[cell] for cell in states}
-    estimand = {
-        cell: cell_target_sum[cell] / cell_weight[cell]
-        for cell in states
-    }
-    normalized_cell_weight = {
-        cell: cell_weight[cell] / total_weight
-        for cell in states
-    }
+    estimand = {cell: cell_target_sum[cell] / cell_weight[cell] for cell in states}
+    normalized_cell_weight = {cell: cell_weight[cell] / total_weight for cell in states}
 
     public_law: dict[tuple[Hashable, ...], float] = defaultdict(float)
     for cell, mass in normalized_cell_weight.items():
         public_law[public_map[cell]] += mass
+
+    diagnostics = _data_diagnostics(
+        rows_seen=rows_seen,
+        observed_weight=observed_weight,
+        retained_weight=total_weight,
+        cell_weight=cell_weight,
+        public_by_cell=public_by_cell,
+        retained_cells=states,
+        estimand=estimand,
+        missing_category_counts=missing_category_counts,
+        zero_weight_rows=zero_weight_rows,
+        min_cell_weight=min_cell_weight,
+    )
 
     q_environment = resolve_q_environment(
         q,
@@ -173,6 +256,141 @@ def from_dataframe(
         q=q_environment.preset,
         q_name=q_environment.name,
         q_description=q_environment.description,
+        diagnostics=diagnostics,
+    )
+
+
+def _data_diagnostics(
+    *,
+    rows_seen: int,
+    observed_weight: float,
+    retained_weight: float,
+    cell_weight: Mapping[tuple[Hashable, ...], float],
+    public_by_cell: Mapping[tuple[Hashable, ...], tuple[Hashable, ...]],
+    retained_cells: Sequence[tuple[Hashable, ...]],
+    estimand: Mapping[tuple[Hashable, ...], float],
+    missing_category_counts: Mapping[str, int],
+    zero_weight_rows: int,
+    min_cell_weight: float,
+) -> DataDiagnostics:
+    retained_set = set(retained_cells)
+    dropped_cells = tuple(cell for cell in cell_weight if cell not in retained_set)
+    dropped_weight = sum(cell_weight[cell] for cell in dropped_cells)
+
+    diagnostics: list[DataDiagnostic] = []
+    if zero_weight_rows:
+        diagnostics.append(
+            DataDiagnostic(
+                code="zero_weight_rows",
+                severity="warning",
+                message=(
+                    "Rows with zero weight were read but do not affect retained "
+                    "hidden-cell masses or target values."
+                ),
+                count=zero_weight_rows,
+            )
+        )
+    missing_columns = tuple(
+        column for column, count in missing_category_counts.items() if count
+    )
+    if missing_columns:
+        diagnostics.append(
+            DataDiagnostic(
+                code="missing_category_values",
+                severity="warning",
+                message="Missing category values were encoded as 'NA'.",
+                count=sum(
+                    missing_category_counts[column] for column in missing_columns
+                ),
+                columns=missing_columns,
+                details={
+                    column: missing_category_counts[column]
+                    for column in missing_columns
+                },
+            )
+        )
+    positive_dropped = tuple(cell for cell in dropped_cells if cell_weight[cell] > 0)
+    if positive_dropped:
+        diagnostics.append(
+            DataDiagnostic(
+                code="min_cell_weight_dropped_cells",
+                severity="warning",
+                message=(
+                    "Hidden cells were dropped before solving because their weight "
+                    "was below min_cell_weight."
+                ),
+                count=len(positive_dropped),
+                details={
+                    "min_cell_weight": min_cell_weight,
+                    "dropped_weight": dropped_weight,
+                    "dropped_weight_share": (
+                        0.0
+                        if observed_weight <= 0
+                        else dropped_weight / observed_weight
+                    ),
+                },
+            )
+        )
+
+    retained_by_public: dict[tuple[Hashable, ...], list[tuple[Hashable, ...]]] = (
+        defaultdict(list)
+    )
+    for cell in retained_cells:
+        retained_by_public[public_by_cell[cell]].append(cell)
+
+    singleton_public_values = tuple(
+        public_value
+        for public_value, cells in retained_by_public.items()
+        if len(cells) == 1
+    )
+    if singleton_public_values:
+        diagnostics.append(
+            DataDiagnostic(
+                code="singleton_public_fibers",
+                severity="info",
+                message=(
+                    "Some retained public cells contain only one retained hidden "
+                    "cell; those cells cannot contribute within-fiber ambiguity."
+                ),
+                count=len(singleton_public_values),
+                details={"public_values": singleton_public_values[:10]},
+            )
+        )
+
+    constant_public_values = []
+    for public_value, cells in retained_by_public.items():
+        if len(cells) <= 1:
+            continue
+        values = [estimand[cell] for cell in cells]
+        if max(values) - min(values) <= 1e-12:
+            constant_public_values.append(public_value)
+    if constant_public_values:
+        diagnostics.append(
+            DataDiagnostic(
+                code="constant_target_public_fibers",
+                severity="info",
+                message=(
+                    "Some retained public cells have constant hidden-cell target "
+                    "values; those cells cannot contribute target ambiguity under "
+                    "within-public-cell reweighting."
+                ),
+                count=len(constant_public_values),
+                details={"public_values": tuple(constant_public_values[:10])},
+            )
+        )
+
+    return DataDiagnostics(
+        rows_seen=rows_seen,
+        total_weight=observed_weight,
+        retained_weight=retained_weight,
+        dropped_weight=dropped_weight,
+        hidden_cells=len(cell_weight),
+        retained_hidden_cells=len(retained_cells),
+        dropped_hidden_cells=len(dropped_cells),
+        public_cells=len(retained_by_public),
+        singleton_public_fibers=len(singleton_public_values),
+        constant_public_fibers=len(constant_public_values),
+        diagnostics=tuple(diagnostics),
     )
 
 
@@ -211,9 +429,7 @@ def _resolve_scalar_arg(
     return primary if primary is not None else alias
 
 
-def _record_value(
-    row: Mapping[str, Any], column: str, *, row_number: int
-) -> Any:
+def _record_value(row: Mapping[str, Any], column: str, *, row_number: int) -> Any:
     try:
         return row[column]
     except KeyError as exc:

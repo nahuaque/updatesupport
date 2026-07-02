@@ -145,6 +145,10 @@ class FinancePluginTests(unittest.TestCase):
     def test_plugin_descriptor_can_be_registered(self):
         us.register_plugin(usf.plugin)
 
+        report = us.validate_plugin(usf.plugin)
+        self.assertTrue(report.ok)
+        self.assertEqual(usf.plugin.metadata.package, "updatesupport-finance")
+        self.assertEqual(usf.plugin.metadata.domain, "financial-model-risk")
         self.assertIs(us.plugin_metric("finance", "expected_loss"), usf.expected_loss)
         self.assertIs(
             us.plugin_q_preset("finance", "portfolio_mix_shift"),
@@ -160,9 +164,7 @@ class FinancePluginTests(unittest.TestCase):
 
     def test_synthetic_portfolio_example_builds_model_risk_report(self):
         example_path = (
-            Path(__file__).resolve().parents[1]
-            / "examples"
-            / "model_risk_portfolio.py"
+            Path(__file__).resolve().parents[1] / "examples" / "model_risk_portfolio.py"
         )
         namespace = runpy.run_path(str(example_path), run_name="updatesupport_example")
 
@@ -176,7 +178,9 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIsInstance(report, usf.ModelRiskReport)
         self.assertIsInstance(frontier, us.PublicRepresentationFrontier)
         self.assertEqual(frontier.search_trace.search, "beam")
-        self.assertIn("Synthetic Finance Public Representation Frontier", combined_markdown)
+        self.assertIn(
+            "Synthetic Finance Public Representation Frontier", combined_markdown
+        )
         self.assertIn("Selected Representation Explanation", combined_markdown)
         self.assertIn("EL_SYNTHETIC_RETAIL_001", markdown)
         self.assertIn("hardship_history", markdown)

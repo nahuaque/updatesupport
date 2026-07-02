@@ -84,6 +84,42 @@ class FromDataFrameTests(unittest.TestCase):
         self.assertAlmostEqual(grouped.total_weight, 20.0)
         self.assertAlmostEqual(grouped.public_law[("A",)], 0.5)
         self.assertAlmostEqual(grouped.public_law[("B",)], 0.5)
+        self.assertIsInstance(grouped.diagnostics, us.DataDiagnostics)
+        self.assertAlmostEqual(grouped.diagnostics.total_weight, 21.0)
+        self.assertAlmostEqual(grouped.diagnostics.retained_weight, 20.0)
+        self.assertAlmostEqual(grouped.diagnostics.dropped_weight, 1.0)
+        self.assertAlmostEqual(grouped.diagnostics.dropped_weight_share, 1 / 21)
+        self.assertEqual(grouped.diagnostics.hidden_cells, 3)
+        self.assertEqual(grouped.diagnostics.retained_hidden_cells, 2)
+        self.assertEqual(grouped.diagnostics.dropped_hidden_cells, 1)
+        self.assertIn(
+            "min_cell_weight_dropped_cells",
+            {row.code for row in grouped.diagnostics.diagnostics},
+        )
+        self.assertIn(
+            "singleton_public_fibers",
+            {row.code for row in grouped.diagnostics.diagnostics},
+        )
+
+    def test_from_dataframe_diagnoses_missing_categories_and_constant_fibers(self):
+        rows = [
+            {"public": "A", "hidden": "x", "target": 1.0, "weight": 1},
+            {"public": "A", "hidden": "y", "target": 1.0, "weight": 1},
+            {"public": None, "hidden": "z", "target": 0.5, "weight": 1},
+        ]
+
+        grouped = us.from_dataframe(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+        )
+
+        codes = {row.code for row in grouped.diagnostics.diagnostics}
+        self.assertIn("missing_category_values", codes)
+        self.assertIn("constant_target_public_fibers", codes)
+        self.assertIn(("NA", "z"), grouped.problem.states)
 
     def test_from_dataframe_requires_public_columns_to_refine_hidden_columns(self):
         with self.assertRaisesRegex(

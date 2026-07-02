@@ -67,9 +67,7 @@ class QSpec:
             backend = value.get("backend")
             return cls(
                 name=str(value["name"]),
-                radius=None
-                if value.get("radius") is None
-                else float(value["radius"]),
+                radius=None if value.get("radius") is None else float(value["radius"]),
                 backend=None if backend is None else str(backend),
                 cost=value.get("cost"),
             )
@@ -156,10 +154,14 @@ class AuditSpec:
                 "q_presets",
                 tuple(QSpec.from_value(value) for value in self.q_presets),
             )
-        object.__setattr__(self, "min_cell_weight", _nonnegative_float(
-            self.min_cell_weight,
+        object.__setattr__(
+            self,
             "min_cell_weight",
-        ))
+            _nonnegative_float(
+                self.min_cell_weight,
+                "min_cell_weight",
+            ),
+        )
         if self.min_cell_weights is not None:
             object.__setattr__(
                 self,

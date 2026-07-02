@@ -149,6 +149,10 @@ run.to_dataframes()  # requires pandas
 
 See [docs/structured-exports.md](docs/structured-exports.md).
 
+Reports include pre-solve data diagnostics for sparse cells, dropped mass,
+singleton public fibers, constant-target fibers, and skipped refinement
+candidates. See [docs/data-diagnostics.md](docs/data-diagnostics.md).
+
 ### 2. Run Robustness Checks
 
 Use `sensitivity_report(...)` when the conclusion should be checked across Q
@@ -322,6 +326,7 @@ uv run pytest
 - [Representation adequacy guide](docs/representation-adequacy.md)
 - [Audit specs](docs/audit-specs.md)
 - [Structured exports](docs/structured-exports.md)
+- [Data diagnostics](docs/data-diagnostics.md)
 - [Public representation frontier](docs/public-representation-frontier.md)
 - [Transport preset guide](docs/transport-presets.md)
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)

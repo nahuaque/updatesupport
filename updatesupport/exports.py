@@ -135,10 +135,15 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
                 "interval_contains_observed": report.interval_contains_observed,
                 "top_fiber_contribution": report.top_fiber_contribution,
                 "top_fiber_contribution_share": report.top_fiber_contribution_share,
+                "diagnostic_count": len(report.diagnostics),
+                "diagnostic_warning_count": sum(
+                    1 for row in report.diagnostics if row.severity == "warning"
+                ),
             },
         ),
         "worst_fibers": tuple(row.as_dict() for row in report.fibers),
         "refinements": tuple(row.as_dict() for row in report.refinements),
+        "data_diagnostics": tuple(row.as_dict() for row in report.diagnostics),
         "dual_diagnostics": tuple(
             row.as_dict() for row in report.interval.dual_summary(top=20)
         ),
@@ -198,11 +203,11 @@ def _causal_suite_tables(report: CausalReportingStabilitySuite) -> ReportTables:
     }
     tables.update(_prefix_tables("primary", _public_descent_tables(report.primary)))
     if report.statistical_uncertainty is not None:
-        tables["statistical_uncertainty"] = (
-            report.statistical_uncertainty.as_dict(),
-        )
+        tables["statistical_uncertainty"] = (report.statistical_uncertainty.as_dict(),)
     if report.sensitivity is not None:
-        tables.update(_prefix_tables("sensitivity", _sensitivity_tables(report.sensitivity)))
+        tables.update(
+            _prefix_tables("sensitivity", _sensitivity_tables(report.sensitivity))
+        )
     if report.refinement_sensitivity is not None:
         tables.update(
             _prefix_tables(

@@ -14,6 +14,12 @@ All notable changes to `updatesupport` are documented here.
 - Added structured export helpers and report methods: `to_json()`,
   `to_tables()`, `to_dataframes()`, `report_to_json(...)`,
   `report_tables(...)`, and `report_dataframes(...)`.
+- Added pre-solve data diagnostics for retained/dropped support, sparse-cell
+  filtering, missing category encoding, singleton public fibers, constant-target
+  fibers, and skipped refinement candidates.
+- Added plugin SDK polish with `PluginMetadata`, plugin validation reports,
+  duplicate-name protection, `validate_plugin(...)`, `assert_valid_plugin(...)`,
+  and plugin descriptor serialization.
 
 ## 0.1.1 - 2026-07-02
 

@@ -33,15 +33,20 @@ class StructuredExportTests(unittest.TestCase):
         self.assertEqual(payload["title"], "Export Demo")
         self.assertEqual(payload["q_name"], "bounded_shift(radius=0.5)")
         self.assertEqual(payload["top_fibers"][0]["public_value"], ["A"])
-        self.assertEqual(set(tables), {
-            "summary",
-            "worst_fibers",
-            "refinements",
-            "dual_diagnostics",
-        })
+        self.assertEqual(
+            set(tables),
+            {
+                "summary",
+                "worst_fibers",
+                "refinements",
+                "data_diagnostics",
+                "dual_diagnostics",
+            },
+        )
         self.assertEqual(tables["summary"][0]["title"], "Export Demo")
         self.assertAlmostEqual(tables["summary"][0]["ambiguity"], 0.3)
         self.assertEqual(tables["refinements"][0]["column"], "driver")
+        self.assertIn("diagnostic_count", tables["summary"][0])
         self.assertEqual(
             json.loads(us.report_to_json(report))["q_name"],
             "bounded_shift(radius=0.5)",
@@ -142,7 +147,9 @@ class StructuredExportTests(unittest.TestCase):
         self.assertIn("dowhy_refutation", tables)
         self.assertIn("dowhy_refutation", helper_tables)
         self.assertIn("refinements", tables)
-        self.assertEqual(payload["report"]["title"], "DoWhy Effect Representation Stability Audit")
+        self.assertEqual(
+            payload["report"]["title"], "DoWhy Effect Representation Stability Audit"
+        )
 
 
 if __name__ == "__main__":

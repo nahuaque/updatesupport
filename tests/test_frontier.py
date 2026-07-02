@@ -240,7 +240,9 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
 
         self.assertEqual(report.candidate_refinements, ("driver",))
         self.assertEqual(report.search_trace.candidate_space_size, 1)
-        self.assertEqual([row.added_columns for row in report.candidates], [("driver",)])
+        self.assertEqual(
+            [row.added_columns for row in report.candidates], [("driver",)]
+        )
 
     def test_public_representation_frontier_supports_sensitivity_grid(self):
         rows = [

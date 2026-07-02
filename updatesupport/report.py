@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Hashable, Sequence
 
-from .data import GroupedProblem, from_dataframe
+from .data import DataDiagnostic, GroupedProblem, from_dataframe
 from .metrics import RowMetric, target_description as describe_target
 from .presets import (
     QPreset,
@@ -559,6 +559,7 @@ class PublicDescentReport:
     row_count: int | None = None
     row_count_label: str = "Rows"
     min_cell_weight: float | None = None
+    diagnostics: tuple[DataDiagnostic, ...] = ()
 
     @property
     def top_fiber_contribution(self) -> float:
@@ -683,6 +684,8 @@ class PublicDescentReport:
                 "themselves.",
             ]
         )
+
+        lines.extend(_data_diagnostics_markdown(self.diagnostics))
 
         lines.extend(_dual_diagnostics_markdown(self.interval))
 
@@ -825,6 +828,17 @@ def public_descent_report(
     interval = grouped.problem.global_transport_modulus()
     observed_value = _observed_value(grouped)
     fibers = public_fiber_diagnostics(grouped, top=top)
+    diagnostics = (
+        tuple(grouped.diagnostics.diagnostics)
+        if grouped.diagnostics is not None
+        else ()
+    )
+    if candidate_refinements:
+        diagnostics = diagnostics + _candidate_refinement_diagnostics(
+            candidate_refinements,
+            public=grouped.public_columns,
+            hidden=grouped.hidden_columns,
+        )
     refinements: tuple[RefinementCandidate, ...] = ()
     if candidate_refinements:
         if refinement_data is None:
@@ -857,6 +871,7 @@ def public_descent_report(
         row_count=row_count,
         row_count_label=row_count_label,
         min_cell_weight=min_cell_weight,
+        diagnostics=diagnostics,
     )
 
 
@@ -2224,6 +2239,67 @@ def _suite_refinement_review_markdown(
     ]
 
 
+def _candidate_refinement_diagnostics(
+    candidate_refinements: Sequence[str],
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+) -> tuple[DataDiagnostic, ...]:
+    diagnostics: list[DataDiagnostic] = []
+    public_set = set(public)
+    hidden_set = set(hidden)
+    already_public = tuple(
+        column for column in candidate_refinements if column in public_set
+    )
+    not_hidden = tuple(
+        column
+        for column in candidate_refinements
+        if column not in hidden_set and column not in public_set
+    )
+    if already_public:
+        diagnostics.append(
+            DataDiagnostic(
+                code="candidate_refinement_already_public",
+                severity="info",
+                message=(
+                    "Some candidate refinements are already public columns and "
+                    "were skipped by refinement ranking."
+                ),
+                count=len(already_public),
+                columns=already_public,
+            )
+        )
+    if not_hidden:
+        diagnostics.append(
+            DataDiagnostic(
+                code="candidate_refinement_not_hidden",
+                severity="warning",
+                message=(
+                    "Some candidate refinements are not present in the hidden "
+                    "state space and were skipped by refinement ranking."
+                ),
+                count=len(not_hidden),
+                columns=not_hidden,
+            )
+        )
+    return tuple(diagnostics)
+
+
+def _data_diagnostics_markdown(
+    diagnostics: Sequence[DataDiagnostic],
+) -> list[str]:
+    lines = ["", "## Data Diagnostics", ""]
+    if not diagnostics:
+        lines.append("- No pre-solve data diagnostics were raised.")
+        return lines
+
+    for row in diagnostics:
+        columns = f" columns={', '.join(row.columns)}" if row.columns else ""
+        count = "" if row.count is None else f" count={row.count}"
+        lines.append(f"- {row.severity}: `{row.code}`{count}{columns} - {row.message}")
+    return lines
+
+
 def _dual_diagnostics_markdown(interval: TransportResult) -> list[str]:
     lines = [
         "",
@@ -2287,6 +2363,7 @@ def _public_descent_summary_dict(report: PublicDescentReport) -> dict[str, Any]:
         "public_cells": len(report.grouped.problem.public_values),
         "top_fibers": [row.as_dict() for row in report.fibers],
         "refinements": [row.as_dict() for row in report.refinements],
+        "diagnostics": [row.as_dict() for row in report.diagnostics],
         "duals": [row.as_dict() for row in report.interval.dual_summary(top=20)],
     }
 

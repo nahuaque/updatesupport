@@ -1038,7 +1038,9 @@ class CvxpyEnvironments:
                 variable=variable,
             ),
         ]
-        records.extend(self._linear_constraint_records(cp, problem, q, variable=variable))
+        records.extend(
+            self._linear_constraint_records(cp, problem, q, variable=variable)
+        )
 
         fixed_public_law = self._fixed_public_law(problem)
         if fixed_public_law is not None:
@@ -1313,8 +1315,7 @@ class CvxpyEnvironments:
         if any(item < -1e-7 for item in vector):
             raise CvxpyError("CVXPY returned a negative probability")
         return tuple(
-            0.0 if item < 0.0 or abs(item) <= problem.tol else item
-            for item in vector
+            0.0 if item < 0.0 or abs(item) <= problem.tol else item for item in vector
         )
 
     def _estimand_vector(self, problem) -> tuple[float, ...]:
@@ -1368,12 +1369,12 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
     ] = ()
     parameter_values: Mapping[str, Any] = field(default_factory=dict)
     name: str = "parameterized-cvxpy"
-    _single_cache: dict[
-        tuple[Any, ...], _ParameterizedCvxpySingleProblem
-    ] = field(default_factory=dict, init=False, repr=False, compare=False)
-    _pair_cache: dict[
-        tuple[Any, ...], _ParameterizedCvxpyPairProblem
-    ] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _single_cache: dict[tuple[Any, ...], _ParameterizedCvxpySingleProblem] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
+    _pair_cache: dict[tuple[Any, ...], _ParameterizedCvxpyPairProblem] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "parameter_values", dict(self.parameter_values))
@@ -1487,7 +1488,9 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
         objective_vector = np.array(objective, dtype=float)
         compiled.objective.value = objective_vector
         if compiled.public_law is not None:
-            compiled.public_law.value = self._public_law_array(problem, fixed_public_law)
+            compiled.public_law.value = self._public_law_array(
+                problem, fixed_public_law
+            )
         self._set_extra_parameter_values(compiled.extra_parameters)
         self._solve_problem(compiled.problem)
         q1_vector = self._clean_vector(problem, compiled.q1.value)
@@ -1521,7 +1524,9 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
         cp = self._cvxpy()
         q = cp.Variable(len(problem.states))
         objective = cp.Parameter(len(problem.states))
-        public_law = cp.Parameter(len(problem.public_values)) if use_public_law else None
+        public_law = (
+            cp.Parameter(len(problem.public_values)) if use_public_law else None
+        )
         extra_parameters: dict[str, Any] = {}
         records = self._parameterized_labeled_constraints_for_variable(
             cp,
@@ -1569,7 +1574,9 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
         q1 = cp.Variable(n)
         q2 = cp.Variable(n)
         objective = cp.Parameter(n)
-        public_law = cp.Parameter(len(problem.public_values)) if use_public_law else None
+        public_law = (
+            cp.Parameter(len(problem.public_values)) if use_public_law else None
+        )
         extra_parameters: dict[str, Any] = {}
         records = [
             *self._parameterized_labeled_constraints_for_variable(
@@ -1666,7 +1673,9 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
                 variable=variable,
             ),
         ]
-        records.extend(self._linear_constraint_records(cp, problem, q, variable=variable))
+        records.extend(
+            self._linear_constraint_records(cp, problem, q, variable=variable)
+        )
         if public_law is not None:
             records.extend(
                 self._public_law_parameter_constraint_records(

@@ -34,4 +34,16 @@ plugin = us.UpdateSupportPlugin(
     compilers={
         "portfolio": from_portfolio,
     },
+    metadata=us.PluginMetadata(
+        package="updatesupport-finance",
+        homepage="https://github.com/nahuaque/updatesupport",
+        domain="financial-model-risk",
+        tags=(
+            "credit-risk",
+            "expected-loss",
+            "model-validation",
+            "portfolio-stability",
+        ),
+        min_updatesupport_version="0.1.1",
+    ),
 )

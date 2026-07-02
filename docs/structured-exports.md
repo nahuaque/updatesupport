@@ -65,6 +65,7 @@ Public-descent reports expose:
 - `summary`
 - `worst_fibers`
 - `refinements`
+- `data_diagnostics`
 - `dual_diagnostics`
 
 Sensitivity reports expose:

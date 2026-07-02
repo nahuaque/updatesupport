@@ -88,11 +88,7 @@ class TransportResult:
     def dual_summary(
         self, *, top: int | None = 10, min_magnitude: float = 0.0
     ) -> tuple[ConstraintDual, ...]:
-        rows = [
-            row
-            for row in self.duals
-            if row.magnitude >= min_magnitude
-        ]
+        rows = [row for row in self.duals if row.magnitude >= min_magnitude]
         rows.sort(key=lambda row: row.magnitude, reverse=True)
         return tuple(rows if top is None else rows[:top])
 
