@@ -41,9 +41,10 @@ The generated `data/benchmark_gallery/index.md` links to each saved case study.
   public representation is stable for reporting the effect.
 - **ACIC 2016 oracle SATT-style audit**: a real ACIC CSV report using the
   simulated potential-outcome contrast as the oracle effect target.
-- **ACIC 2016 EconML estimated-effect audit**: a real ACIC CSV report that fits
-  an EconML first stage, computes `tau_hat = estimator.effect(X)`, and audits
-  the estimated-effect target.
+- **ACIC 2016 [EconML](https://www.pywhy.org/EconML/) estimated-effect audit**:
+  a real ACIC CSV report that fits an [EconML](https://www.pywhy.org/EconML/)
+  first stage, computes
+  `tau_hat = estimator.effect(X)`, and audits the estimated-effect target.
 
 ## ACIC Data
 
@@ -87,7 +88,8 @@ reporting representation may be interacting in a way worth diagnosing.
 ## Reproducibility Notes
 
 The default ACIC estimated-effect report samples 1,000 rows before fitting
-EconML so that the gallery remains practical for local iteration:
+[EconML](https://www.pywhy.org/EconML/) so that the gallery remains practical
+for local iteration:
 
 ```bash
 uv run --extra examples --extra causal python examples/benchmark_gallery.py \

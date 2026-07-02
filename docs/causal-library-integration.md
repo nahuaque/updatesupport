@@ -10,8 +10,8 @@ It sits after those steps as a representation-stability audit:
 > used in the report stable enough, or could hidden composition inside those
 > categories move the aggregate?
 
-This makes `updatesupport` complementary to libraries such as DoWhy, EconML,
-CausalML, DoubleML, and uplift-modeling packages.
+This makes `updatesupport` complementary to libraries such as [DoWhy],
+[EconML], [CausalML], [DoubleML], and uplift-modeling packages.
 
 ## Where It Fits
 
@@ -29,13 +29,9 @@ the reported aggregate is adequate.
 
 In plain terms:
 
-```text
-DoWhy / EconML / CausalML:
-    causal assumptions + effect estimation + causal validation
-
-updatesupport:
-    public-category adequacy + hidden-composition transport ambiguity
-```
+[DoWhy], [EconML], and [CausalML] handle causal assumptions, effect estimation,
+and causal validation. `updatesupport` handles public-category adequacy and
+hidden-composition transport ambiguity.
 
 The input to `updatesupport` can be an observed outcome rate, an estimated CATE,
 an uplift score, a subgroup treatment effect, or any other linear target value
@@ -129,7 +125,7 @@ suite = adapted.causal_reporting_stability(
 )
 ```
 
-For EconML:
+For [EconML]:
 
 ```python
 est.fit(Y, T, X=X, W=W)
@@ -143,7 +139,7 @@ report = adapted.audit_effects(
 )
 ```
 
-For DoWhy:
+For [DoWhy]:
 
 ```python
 estimate = model.estimate_effect(...)
@@ -156,16 +152,16 @@ adapted = us.adapt_dowhy_effects(
 )
 ```
 
-If `effect_values` is omitted, the DoWhy adapter repeats the scalar estimate on
+If `effect_values` is omitted, the [DoWhy] adapter repeats the scalar estimate on
 each row. That is useful for documenting an average-effect handoff, but it will
 not expose hidden CATE heterogeneity.
 
-For DoubleML:
+For [DoubleML]:
 
 ```python
 dml.fit()
 
-# Common DoubleML estimators expose scalar coefficients.
+# Common estimators here expose scalar coefficients.
 adapted = us.adapt_doubleml_effects(dml, df)
 
 # Prefer explicit row-level or subgroup-level effects when your workflow has them.
@@ -176,8 +172,8 @@ adapted = us.adapt_doubleml_effects(
 )
 ```
 
-Scalar DoubleML coefficients are repeated on every row by default. As with
-DoWhy, pass heterogeneous effect values when the reporting question is about
+Scalar [DoubleML] coefficients are repeated on every row by default. As with
+[DoWhy], pass heterogeneous effect values when the reporting question is about
 hidden treatment-effect variation.
 
 ## Folktables ACS Causal-Effect Example
@@ -201,8 +197,8 @@ The example uses:
 - hidden reporting refinements: occupation, weekly-hours band, race, marital
   status, class of worker, and relationship status when available
 
-The built-in first stage fits an EconML `CausalForestDML` estimator and computes
-one row-level effect target:
+The built-in first stage fits an [EconML] `CausalForestDML` estimator and
+computes one row-level effect target:
 
 ```python
 df["__tau_hat__"] = estimator.effect(X)
@@ -246,10 +242,10 @@ The important separation is:
 > public categories used to report that effect are stable to hidden-composition
 > changes.
 
-## With DoWhy
+## With [DoWhy]
 
-Use DoWhy for causal modeling, identification, estimation, and refutation. Then
-use `updatesupport` to audit the reporting layer.
+Use [DoWhy] for causal modeling, identification, estimation, and refutation.
+Then use `updatesupport` to audit the reporting layer.
 
 Sketch:
 
@@ -274,7 +270,7 @@ estimate = model.estimate_effect(
 If the estimator only returns a single ATE, `updatesupport` has little to audit
 unless you also estimate effects by hidden cells, target units, or subgroups.
 Once you have a row-level, cell-level, or subgroup-level target, feed that target
-into the DoWhy adapter:
+into the [DoWhy] adapter:
 
 ```python
 df["tau_hat"] = subgroup_or_unit_level_effect
@@ -292,7 +288,7 @@ audit = us.audit_dowhy_effects(
 print(audit.to_markdown())
 ```
 
-If DoWhy is installed, the audit can also be converted into a DoWhy
+If [DoWhy] is installed, the audit can also be converted into a [DoWhy]
 `CausalRefutation`:
 
 ```python
@@ -300,7 +296,7 @@ representation_refutation = audit.to_refutation()
 print(representation_refutation)
 ```
 
-Install the optional DoWhy dependency with:
+Install the optional [DoWhy] dependency with:
 
 ```bash
 # with pip
@@ -310,7 +306,7 @@ pip install "updatesupport[dowhy]"
 uv add "updatesupport[dowhy]"
 ```
 
-This is a DoWhy-compatible refutation object, not a registered
+This is a [DoWhy]-compatible refutation object, not a registered
 `model.refute_estimate(..., method_name=...)` plugin. The `new_effect` field is
 the update-support partial-ID interval, and the object also carries
 `updatesupport_report`, `updatesupport_interval`, `updatesupport_ambiguity`, and
@@ -319,9 +315,9 @@ the update-support partial-ID interval, and the object also carries
 This refutation does not refute the causal graph itself. It stress-tests the
 adequacy of the public representation used to report the estimate.
 
-## With EconML
+## With [EconML]
 
-EconML is a natural fit because many estimators expose conditional treatment
+[EconML] is a natural fit because many estimators expose conditional treatment
 effect predictions.
 
 Sketch:
@@ -356,7 +352,7 @@ Interpretation:
 > reported effect, or whether hidden CATE heterogeneity inside those groups can
 > move the answer.
 
-## With CausalML Or Uplift Models
+## With [CausalML] or Uplift Models
 
 For uplift or treatment-response models, use the predicted uplift or estimated
 treatment effect as the target:
@@ -443,6 +439,11 @@ The right claim is narrower:
 
 For causal workflows:
 
-> Use DoWhy, EconML, CausalML, or DoubleML to estimate causal effects; then use
-> `updatesupport` to audit whether the public categories used to report those
-> effects are stable to hidden composition changes.
+> Use [DoWhy], [EconML], [CausalML], or [DoubleML] to estimate causal effects;
+> then use `updatesupport` to audit whether the public categories used to report
+> those effects are stable to hidden composition changes.
+
+[CausalML]: https://causalml.readthedocs.io/en/latest/
+[DoWhy]: https://www.pywhy.org/dowhy/
+[DoubleML]: https://docs.doubleml.org/
+[EconML]: https://www.pywhy.org/EconML/

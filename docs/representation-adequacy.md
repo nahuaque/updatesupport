@@ -13,7 +13,11 @@ The central question is:
 That question is different from causal identification, prediction accuracy, and
 sampling uncertainty. It is a stability question about a representation.
 
-For causal workflows, use causal inference libraries to identify and estimate
+For causal workflows, use causal inference libraries such as
+[EconML](https://www.pywhy.org/EconML/),
+[DoWhy](https://www.pywhy.org/dowhy/),
+[DoubleML](https://docs.doubleml.org/), or
+[CausalML](https://causalml.readthedocs.io/en/latest/) to identify and estimate
 effects first, then use `updatesupport` to audit the public reporting
 representation. See
 [Using `updatesupport` with causal inference libraries](causal-library-integration.md).
