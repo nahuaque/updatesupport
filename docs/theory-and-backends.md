@@ -39,6 +39,10 @@ Core finite objects:
 Tabular and reporting helpers:
 
 - `from_dataframe(...)`
+- `AuditSpec`
+- `AuditRun`
+- `QSpec`
+- `run_audit(...)`
 - `public_descent_report(...)`
 - `sensitivity_report(...)`
 - `recommend_refinements(...)`

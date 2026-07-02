@@ -98,6 +98,7 @@ from .results import (
     TransportResult,
     Witness,
 )
+from .spec import AuditRun, AuditSpec, QSpec, run_audit
 
 try:
     __version__ = version("updatesupport")
@@ -107,6 +108,8 @@ except PackageNotFoundError:
 __all__ = [
     "__version__",
     "AdequacyResult",
+    "AuditRun",
+    "AuditSpec",
     "adapt_dataframe_effects",
     "adapt_doubleml_effects",
     "adapt_dowhy_effects",
@@ -156,6 +159,7 @@ __all__ = [
     "public_fiber_diagnostics",
     "public_representation_frontier",
     "QPreset",
+    "QSpec",
     "q_bounded_shift",
     "q_chi_square_budget",
     "q_kl_budget",
@@ -165,6 +169,7 @@ __all__ = [
     "q_wasserstein",
     "RowMetric",
     "row_metric",
+    "run_audit",
     "discover_plugins",
     "get_plugin",
     "list_plugins",

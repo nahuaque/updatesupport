@@ -540,6 +540,9 @@ class PublicDescentReport:
             <= self.interval.upper + tol
         )
 
+    def as_dict(self) -> dict[str, Any]:
+        return _public_descent_summary_dict(self)
+
     def to_markdown(self) -> str:
         grouped = self.grouped
         problem = grouped.problem
@@ -1508,6 +1511,14 @@ class SensitivityReport:
     @property
     def summary(self) -> SensitivitySummary:
         return _sensitivity_summary(self.rows)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "row_count": self.row_count,
+            "summary": self.summary.as_dict(),
+            "rows": [row.as_dict() for row in self.rows],
+        }
 
     def to_markdown(self) -> str:
         lines = [f"# {self.title}", ""]

@@ -2,6 +2,16 @@
 
 All notable changes to `updatesupport` are documented here.
 
+## Unreleased
+
+### Added
+
+- Added `AuditSpec`, `QSpec`, `AuditRun`, and `run_audit(...)` for
+  JSON-serializable public-descent, sensitivity, and public-representation
+  frontier audit configurations.
+- Added `as_dict()` methods for public-descent and sensitivity reports so
+  executed audit specs can emit structured report payloads.
+
 ## 0.1.1 - 2026-07-02
 
 ### Added

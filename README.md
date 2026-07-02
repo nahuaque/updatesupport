@@ -121,6 +121,24 @@ report = us.public_descent_report(
 )
 ```
 
+Use `AuditSpec` when the audit configuration should be serialized, reviewed, or
+rerun:
+
+```python
+spec = us.AuditSpec(
+    public=["segment"],
+    hidden=["segment", "region", "tenure_band"],
+    target="outcome_rate",
+    candidate_refinements=["region", "tenure_band"],
+    q={"name": "bounded_shift", "radius": 0.5},
+)
+
+run = spec.run(rows_or_frame)
+print(run.to_markdown())
+```
+
+See [docs/audit-specs.md](docs/audit-specs.md).
+
 ### 2. Run Robustness Checks
 
 Use `sensitivity_report(...)` when the conclusion should be checked across Q
@@ -292,6 +310,7 @@ uv run pytest
 ## Documentation
 
 - [Representation adequacy guide](docs/representation-adequacy.md)
+- [Audit specs](docs/audit-specs.md)
 - [Public representation frontier](docs/public-representation-frontier.md)
 - [Transport preset guide](docs/transport-presets.md)
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)
