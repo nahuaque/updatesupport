@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Any, Hashable, Iterable, Mapping, Sequence
 
+from .metrics import RowMetric, evaluate_target
 from .problem import FiniteProblem
 from .presets import QPreset, resolve_q_environment
 
@@ -19,7 +20,7 @@ class GroupedProblem:
     public_law: dict[tuple[Hashable, ...], float]
     public_columns: tuple[str, ...]
     hidden_columns: tuple[str, ...]
-    target_column: str
+    target_column: str | RowMetric
     total_weight: float
     cell_weights: dict[tuple[Hashable, ...], float]
     q: QPreset | None = None
@@ -35,11 +36,11 @@ def from_dataframe(
     *,
     public: Sequence[str] | None = None,
     hidden: Sequence[str] | None = None,
-    target: str | None = None,
+    target: str | RowMetric | None = None,
     weight: str | None = None,
     public_columns: Sequence[str] | None = None,
     hidden_columns: Sequence[str] | None = None,
-    target_column: str | None = None,
+    target_column: str | RowMetric | None = None,
     weight_column: str | None = None,
     min_cell_weight: float = 1.0,
     q: Any = "saturated",
@@ -199,12 +200,12 @@ def _resolve_sequence_arg(
 
 
 def _resolve_scalar_arg(
-    primary: str | None,
-    alias: str | None,
+    primary: Any | None,
+    alias: Any | None,
     *,
     primary_name: str,
     alias_name: str,
-) -> str | None:
+) -> Any | None:
     if primary is not None and alias is not None and primary != alias:
         raise TypeError(f"use either {primary_name!r} or {alias_name!r}, not both")
     return primary if primary is not None else alias
@@ -232,11 +233,24 @@ def _row_weight(
     return value
 
 
-def _target_value(row: Mapping[str, Any], target_column: str, *, row_number: int) -> float:
-    value = float(_record_value(row, target_column, row_number=row_number))
-    if not isfinite(value):
-        raise ValueError(f"row {row_number} has non-finite target")
-    return value
+def _target_value(
+    row: Mapping[str, Any],
+    target_column: str | RowMetric,
+    *,
+    row_number: int,
+) -> float:
+    try:
+        return evaluate_target(
+            row,
+            target_column,
+            get_value=lambda record, column: _record_value(
+                record,
+                column,
+                row_number=row_number,
+            ),
+        )
+    except ValueError as exc:
+        raise ValueError(f"row {row_number} has invalid target") from exc
 
 
 def _hashable_category(value: Any) -> Hashable:

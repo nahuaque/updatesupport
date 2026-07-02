@@ -106,6 +106,32 @@ class FromDataFrameTests(unittest.TestCase):
                 weight="weight",
             )
 
+    def test_from_dataframe_accepts_row_metric_target(self):
+        rows = [
+            {"public": "A", "hidden": "x", "pd": 0.02, "lgd": 0.5, "ead": 100},
+            {"public": "A", "hidden": "y", "pd": 0.04, "lgd": 0.5, "ead": 100},
+            {"public": "B", "hidden": "z", "pd": 0.01, "lgd": 0.4, "ead": 200},
+        ]
+        metric = us.row_metric(
+            "expected_loss_rate",
+            lambda row: row["pd"] * row["lgd"],
+            columns=("pd", "lgd"),
+            description="expected loss rate",
+        )
+
+        grouped = us.from_dataframe(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            target=metric,
+            weight="ead",
+        )
+
+        self.assertIs(grouped.target_column, metric)
+        self.assertAlmostEqual(grouped.problem.estimand_map[("A", "x")], 0.01)
+        self.assertAlmostEqual(grouped.problem.estimand_map[("A", "y")], 0.02)
+        self.assertAlmostEqual(grouped.problem.estimand_map[("B", "z")], 0.004)
+
 
 if __name__ == "__main__":
     unittest.main()

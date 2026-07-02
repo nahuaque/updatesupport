@@ -115,6 +115,7 @@ pip install "updatesupport[cvxpy]"      # TV, chi-square, KL, Wasserstein, custo
 pip install "updatesupport[examples]"   # Folktables, pandas, plotting examples
 pip install "updatesupport[causal]"     # EconML causal-effect examples
 pip install "updatesupport[dowhy]"      # DoWhy CausalRefutation conversion
+pip install "updatesupport[finance]"    # financial model-risk plugin package
 ```
 
 For a `uv` project, use the same extras with `uv add`:
@@ -125,16 +126,17 @@ uv add "updatesupport[cvxpy]"
 uv add "updatesupport[examples]"
 uv add "updatesupport[causal]"
 uv add "updatesupport[dowhy]"
+uv add "updatesupport[finance]"
 ```
 
 You can combine extras when needed:
 
 ```bash
 # with pip
-pip install "updatesupport[examples,causal,cvxpy]"
+pip install "updatesupport[examples,causal,cvxpy,finance]"
 
 # with uv
-uv add "updatesupport[examples,causal,cvxpy]"
+uv add "updatesupport[examples,causal,cvxpy,finance]"
 ```
 
 To work from a source checkout, clone the repository and use `uv sync`:
@@ -142,7 +144,7 @@ To work from a source checkout, clone the repository and use `uv sync`:
 ```bash
 git clone https://github.com/nahuaque/updatesupport.git
 cd updatesupport
-uv sync --group dev --extra cvxpy --extra examples
+uv sync --all-packages --group dev --extra cvxpy --extra examples
 uv run pytest
 ```
 
@@ -658,5 +660,6 @@ for support in least.minimal_supports:
 - [Benchmark gallery](docs/benchmark-gallery.md)
 - [Transport preset guide](docs/transport-presets.md)
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)
+- [Extension and plugin architecture](docs/extensions.md)
 - [Folktables ACSIncome result interpretation](docs/folktables-acs-income-interpretation.md)
 - [Update-Relevant Support: Hume's Missing Descent](https://philpapers.org/go.pl?id=BRUUSH&proxyId=&u=https%3A%2F%2Fphilpapers.org%2Farchive%2FBRUUSH.pdf)

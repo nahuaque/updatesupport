@@ -39,10 +39,13 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked --group dev --extra cvxpy --extra examples
+        run: uv sync --locked --all-packages --group dev --extra cvxpy --extra examples
 
-      - name: Test
+      - name: Test core
         run: uv run pytest
+
+      - name: Test finance
+        run: uv run --package updatesupport-finance pytest packages/updatesupport-finance/tests
 
   quality:
     name: Quality
@@ -60,13 +63,13 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked --group dev --extra cvxpy --extra examples
+        run: uv sync --locked --all-packages --group dev --extra cvxpy --extra examples
 
       - name: Lint
         run: uv run ruff check .
 
       - name: Security check
-        run: uv run bandit -q -r updatesupport examples tests
+        run: uv run bandit -q -r updatesupport examples tests packages
 
   package:
     name: Package
@@ -84,10 +87,16 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked --group dev --extra cvxpy --extra examples
+        run: uv sync --locked --all-packages --group dev --extra cvxpy --extra examples
 
-      - name: Build distributions
+      - name: Build core distributions
         run: uv build
 
-      - name: Check distributions
-        run: uv run twine check dist/*
+      - name: Build finance distributions
+        run: uv build --package updatesupport-finance --out-dir dist/finance
+
+      - name: Check core distributions
+        run: uv run twine check dist/*.whl dist/*.tar.gz
+
+      - name: Check finance distributions
+        run: uv run twine check dist/finance/*

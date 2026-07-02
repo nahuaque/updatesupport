@@ -32,7 +32,21 @@ from .environments import (
     leq,
     linear_constraint,
 )
+from .metrics import RowMetric, row_metric
 from .partition import Partition, PartitionError
+from .plugins import (
+    PluginRegistry,
+    UpdateSupportPlugin,
+    discover_plugins,
+    get_plugin,
+    list_plugins,
+    plugin_compiler,
+    plugin_metric,
+    plugin_q_preset,
+    plugin_report_profile,
+    register_plugin,
+    unregister_plugin,
+)
 from .problem import FiniteProblem, TooManyPartitions
 from .presets import (
     QPreset,
@@ -114,6 +128,7 @@ __all__ = [
     "Partition",
     "PartitionError",
     "ParameterizedCvxpyEnvironments",
+    "PluginRegistry",
     "PolytopeEnvironments",
     "PublicFiberSaturated",
     "PublicDescentReport",
@@ -128,8 +143,18 @@ __all__ = [
     "q_saturated",
     "q_tv_budget",
     "q_wasserstein",
+    "RowMetric",
+    "row_metric",
+    "discover_plugins",
+    "get_plugin",
+    "list_plugins",
+    "plugin_compiler",
+    "plugin_metric",
+    "plugin_q_preset",
+    "plugin_report_profile",
     "recommend_refinements",
     "recommend_refinements_sensitivity",
+    "register_plugin",
     "RefinementCandidate",
     "RefinementSensitivityCandidate",
     "RefinementSensitivityReport",
@@ -142,5 +167,7 @@ __all__ = [
     "sensitivity_report",
     "TooManyPartitions",
     "TransportResult",
+    "unregister_plugin",
+    "UpdateSupportPlugin",
     "Witness",
 ]

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Hashable, Sequence
 
 from .data import GroupedProblem, from_dataframe
+from .metrics import RowMetric, target_description as describe_target
 from .presets import (
     QPreset,
     normalize_q_preset,
@@ -700,11 +701,11 @@ def public_descent_report(
     source_data: Any | None = None,
     public: Sequence[str] | None = None,
     hidden: Sequence[str] | None = None,
-    target: str | None = None,
+    target: str | RowMetric | None = None,
     weight: str | None = None,
     public_columns: Sequence[str] | None = None,
     hidden_columns: Sequence[str] | None = None,
-    target_column: str | None = None,
+    target_column: str | RowMetric | None = None,
     weight_column: str | None = None,
     candidate_refinements: Sequence[str] | None = None,
     candidate_columns: Sequence[str] | None = None,
@@ -760,6 +761,9 @@ def public_descent_report(
             q_radius=q_radius,
         )
         refinement_data = source_data if source_data is not None else compile_data
+
+    if target_description == "target value" and grouped.target_column is not None:
+        target_description = describe_target(grouped.target_column)
 
     interval = grouped.problem.global_transport_modulus()
     observed_value = _observed_value(grouped)
@@ -1068,7 +1072,7 @@ def recommend_refinements(
     *,
     public: Sequence[str],
     hidden: Sequence[str],
-    target: str,
+    target: str | RowMetric,
     candidate_refinements: Sequence[str] | None = None,
     candidate_columns: Sequence[str] | None = None,
     weight: str | None = None,
@@ -1204,7 +1208,7 @@ def _parameterized_refinement_candidates(
     *,
     public: Sequence[str],
     hidden: Sequence[str],
-    target: str,
+    target: str | RowMetric,
     candidate_refinements: Sequence[str],
     weight: str | None,
     min_cell_weight: float,
@@ -1269,7 +1273,7 @@ def recommend_refinements_sensitivity(
     *,
     public: Sequence[str],
     hidden: Sequence[str],
-    target: str,
+    target: str | RowMetric,
     candidate_refinements: Sequence[str] | None = None,
     candidate_columns: Sequence[str] | None = None,
     weight: str | None = None,
@@ -1561,7 +1565,7 @@ def sensitivity_report(
     *,
     public: Sequence[str],
     hidden: Sequence[str],
-    target: str,
+    target: str | RowMetric,
     weight: str | None = None,
     min_cell_weights: Sequence[float] = (1.0,),
     hidden_sets: Sequence[Sequence[str]] | None = None,

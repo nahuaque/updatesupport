@@ -1,0 +1,68 @@
+name: Publish Finance
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Package index to publish to
+        required: true
+        default: testpypi
+        type: choice
+        options:
+          - testpypi
+          - pypi
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-finance:
+    runs-on: ubuntu-latest
+    environment: finance-${{ inputs.repository }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --all-packages --group dev --extra cvxpy --extra examples
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Test core
+        run: uv run pytest
+
+      - name: Test finance
+        run: uv run --package updatesupport-finance pytest packages/updatesupport-finance/tests
+
+      - name: Security check
+        run: uv run bandit -q -r updatesupport examples tests packages
+
+      - name: Build distributions
+        run: uv build --package updatesupport-finance --out-dir dist/finance
+
+      - name: Check distributions
+        run: uv run twine check dist/finance/*
+
+      - name: Publish to TestPyPI
+        if: inputs.repository == 'testpypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/finance/
+          repository-url: https://test.pypi.org/legacy/
+
+      - name: Publish to PyPI
+        if: inputs.repository == 'pypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/finance/
+          attestations: false

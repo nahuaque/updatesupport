@@ -16,6 +16,12 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
+[manifest]
+members = [
+    "updatesupport",
+    "updatesupport-finance",
+]
+
 [[package]]
 name = "backports-tarfile"
 version = "1.2.0"
@@ -2944,7 +2950,7 @@ wheels = [
 
 [[package]]
 name = "updatesupport"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version != '3.11.*'" },
@@ -2973,6 +2979,9 @@ examples = [
     { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' and python_full_version < '3.14'" },
     { name = "seaborn" },
 ]
+finance = [
+    { name = "updatesupport-finance" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -2995,12 +3004,38 @@ requires-dist = [
     { name = "pandas", marker = "extra == 'examples'", specifier = ">=2.0" },
     { name = "scipy", specifier = ">=1.15.3" },
     { name = "seaborn", marker = "extra == 'examples'", specifier = ">=0.13" },
+    { name = "updatesupport-finance", marker = "extra == 'finance'", editable = "packages/updatesupport-finance" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "bandit", specifier = ">=1.9.4" },
     { name = "hypothesis", specifier = ">=6.155.7" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "ruff", specifier = ">=0.8" },
+    { name = "twine", specifier = ">=6.1" },
+]
+
+[[package]]
+name = "updatesupport-finance"
+version = "0.1.0"
+source = { editable = "packages/updatesupport-finance" }
+dependencies = [
+    { name = "updatesupport" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "twine" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "updatesupport", editable = "." }]
+
+[package.metadata.requires-dev]
+dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.8" },
     { name = "twine", specifier = ">=6.1" },
