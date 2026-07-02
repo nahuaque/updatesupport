@@ -50,6 +50,24 @@ frontier = us.public_representation_frontier(
         us.q_bounded_shift(0.5),
         "observed",
     ],
+    min_cell_weights=[1, 10, 25],
+    hidden_sets=[
+        [
+            "product",
+            "region",
+            "credit_score_band",
+            "ltv_band",
+            "broker_channel",
+            "vintage",
+        ],
+        [
+            "product",
+            "region",
+            "credit_score_band",
+            "ltv_band",
+            "broker_channel",
+        ],
+    ],
     ambiguity_limit=0.005,
     bucket_budget=40,
     search="beam",
@@ -101,6 +119,8 @@ The returned report includes `frontier.search_trace` with:
 - `exact`: whether the reported frontier is exhaustive over the requested
   candidate space.
 - `evaluated_candidates` and `candidate_space_size`.
+- `scenario_count`: the number of Q / min-cell / hidden-set scenarios evaluated
+  for each representation.
 - `stopping_reason`, such as `completed`, `ambiguity_limit reached`, or
   `max_evaluations reached`.
 - pruning counts for beam and optional bucket-budget enforcement.
@@ -116,6 +136,39 @@ Useful constraints:
 By default, `bucket_budget` is a recommendation/reporting budget used by
 `best_under_bucket_budget(...)`; set `enforce_bucket_budget=True` when it should
 also prune the search.
+
+## Sensitivity-Aware Grids
+
+The frontier can score every representation across more than Q presets. Add
+`min_cell_weights` to test sparse-cell thresholds, and add `hidden_sets` to test
+alternate retained hidden-state definitions:
+
+```python
+frontier = us.public_representation_frontier(
+    rows_or_frame,
+    base_public=["AGE_BAND", "EDU_BAND"],
+    hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND"],
+    target="__target__",
+    weight="PWGTP",
+    candidate_refinements=["SEX", "OCC_MAJOR", "WKHP_BAND"],
+    q_presets=["saturated", us.q_bounded_shift(0.5)],
+    min_cell_weights=[1, 10, 25],
+    hidden_sets=[
+        ["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND"],
+        ["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR"],
+    ],
+)
+```
+
+Every candidate must be evaluable in every hidden-set scenario. Candidate
+refinements are therefore limited to columns that are present in all supplied
+hidden sets. If a hidden column appears only in one scenario, it can still affect
+that scenario's hidden state space, but it will not be promoted into the public
+representation by the frontier search.
+
+Candidate-level `public_cells` and `hidden_cells` are conservative maxima across
+the scenario grid. The Markdown table shows ranges when those counts vary across
+min-cell thresholds or hidden-set definitions.
 
 ## How To Use It
 

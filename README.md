@@ -340,6 +340,7 @@ frontier = us.public_representation_frontier(
     weight="PWGTP",
     candidate_refinements=["SEX", "OCC_MAJOR", "WKHP_BAND"],
     q_presets=["saturated", us.q_bounded_shift(0.5), "observed"],
+    min_cell_weights=[1, 10, 25],
     ambiguity_limit=0.01,
     bucket_budget=40,
     search="beam",
@@ -356,7 +357,9 @@ print(frontier.to_markdown())
 The frontier compares public-cell count, added-column count, and ambiguity under
 every supplied stress test. Use `search="exhaustive"` for small candidate sets,
 `search="greedy"` for a fast first pass, and `search="beam"` for larger
-candidate lists with an explicit evaluation budget. See
+candidate lists with an explicit evaluation budget. Add `min_cell_weights` and
+`hidden_sets` when the frontier should be robust to sparse-cell thresholds or
+alternate hidden-state definitions. See
 [docs/public-representation-frontier.md](docs/public-representation-frontier.md)
 for interpretation guidance.
 

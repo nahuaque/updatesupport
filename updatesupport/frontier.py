@@ -19,6 +19,10 @@ class FrontierScenarioResult:
     scenario: str
     q_name: str
     q_description: str
+    min_cell_weight: float
+    hidden_columns: tuple[str, ...]
+    public_cells: int
+    hidden_cells: int
     lower: float
     upper: float
     ambiguity: float
@@ -30,6 +34,10 @@ class FrontierScenarioResult:
             "scenario": self.scenario,
             "q_name": self.q_name,
             "q_description": self.q_description,
+            "min_cell_weight": self.min_cell_weight,
+            "hidden_columns": self.hidden_columns,
+            "public_cells": self.public_cells,
+            "hidden_cells": self.hidden_cells,
             "lower": self.lower,
             "upper": self.upper,
             "ambiguity": self.ambiguity,
@@ -46,6 +54,7 @@ class FrontierSearchTrace:
     exact: bool
     evaluated_candidates: int
     candidate_space_size: int
+    scenario_count: int
     max_added_columns: int
     max_evaluations: int | None = None
     beam_width: int | None = None
@@ -61,6 +70,7 @@ class FrontierSearchTrace:
             "exact": self.exact,
             "evaluated_candidates": self.evaluated_candidates,
             "candidate_space_size": self.candidate_space_size,
+            "scenario_count": self.scenario_count,
             "max_added_columns": self.max_added_columns,
             "max_evaluations": self.max_evaluations,
             "beam_width": self.beam_width,
@@ -73,6 +83,14 @@ class FrontierSearchTrace:
 
 
 @dataclass(frozen=True)
+class _ScenarioSpec:
+    scenario: str
+    hidden_columns: tuple[str, ...]
+    min_cell_weight: float
+    q: Any
+
+
+@dataclass(frozen=True)
 class PublicRepresentationCandidate:
     """A public column set evaluated over a stress-test grid."""
 
@@ -80,6 +98,10 @@ class PublicRepresentationCandidate:
     public_columns: tuple[str, ...]
     public_cells: int
     hidden_cells: int
+    min_public_cells: int
+    max_public_cells: int
+    min_hidden_cells: int
+    max_hidden_cells: int
     scenarios: tuple[FrontierScenarioResult, ...]
     max_ambiguity: float
     mean_ambiguity: float
@@ -115,6 +137,10 @@ class PublicRepresentationCandidate:
             "public_columns": self.public_columns,
             "public_cells": self.public_cells,
             "hidden_cells": self.hidden_cells,
+            "min_public_cells": self.min_public_cells,
+            "max_public_cells": self.max_public_cells,
+            "min_hidden_cells": self.min_hidden_cells,
+            "max_hidden_cells": self.max_hidden_cells,
             "observed_value": self.observed_value,
             "max_ambiguity": self.max_ambiguity,
             "mean_ambiguity": self.mean_ambiguity,
@@ -133,6 +159,8 @@ class PublicRepresentationFrontier:
     dominated: tuple[PublicRepresentationCandidate, ...]
     base_public: tuple[str, ...]
     hidden_columns: tuple[str, ...]
+    hidden_sets: tuple[tuple[str, ...], ...]
+    min_cell_weights: tuple[float, ...]
     candidate_refinements: tuple[str, ...]
     ambiguity_limit: float | None = None
     bucket_budget: int | None = None
@@ -191,6 +219,8 @@ class PublicRepresentationFrontier:
             "row_count": self.row_count,
             "base_public": self.base_public,
             "hidden_columns": self.hidden_columns,
+            "hidden_sets": self.hidden_sets,
+            "min_cell_weights": self.min_cell_weights,
             "candidate_refinements": self.candidate_refinements,
             "ambiguity_limit": self.ambiguity_limit,
             "bucket_budget": self.bucket_budget,
@@ -216,6 +246,9 @@ class PublicRepresentationFrontier:
             [
                 f"- Base public columns: {', '.join(self.base_public)}",
                 f"- Hidden columns: {', '.join(self.hidden_columns)}",
+                f"- Hidden-set scenarios: {len(self.hidden_sets)}",
+                "- Minimum hidden-cell weights: "
+                f"{', '.join(f'{value:g}' for value in self.min_cell_weights)}",
                 f"- Candidate refinements: {', '.join(self.candidate_refinements)}",
                 f"- Evaluated representations: {len(self.candidates)}",
                 f"- Pareto frontier representations: {len(self.frontier)}",
@@ -229,6 +262,8 @@ class PublicRepresentationFrontier:
                     "- Search evaluations: "
                     f"{self.search_trace.evaluated_candidates}/"
                     f"{self.search_trace.candidate_space_size}",
+                    f"- Stress-test scenarios per representation: "
+                    f"{self.search_trace.scenario_count}",
                     f"- Search stopping reason: {self.search_trace.stopping_reason}",
                 ]
             )
@@ -281,6 +316,8 @@ def public_representation_frontier(
     candidate_columns: Sequence[str] | None = None,
     weight: str | None = None,
     min_cell_weight: float = 1.0,
+    min_cell_weights: Sequence[float] | None = None,
+    hidden_sets: Sequence[Sequence[str]] | None = None,
     q_presets: Sequence[Any] = ("saturated",),
     ambiguity_limit: float | None = None,
     bucket_budget: int | None = None,
@@ -325,6 +362,10 @@ def public_representation_frontier(
         candidate_refinements = ()
     if min_cell_weight < 0:
         raise ValueError("min_cell_weight must be non-negative")
+    min_cell_weight_grid = _resolve_min_cell_weights(
+        min_cell_weight,
+        min_cell_weights,
+    )
     if ambiguity_limit is not None and ambiguity_limit < 0:
         raise ValueError("ambiguity_limit must be non-negative")
     if bucket_budget is not None and bucket_budget < 0:
@@ -346,11 +387,14 @@ def public_representation_frontier(
 
     base_public_tuple = tuple(base_public)
     hidden_tuple = tuple(hidden)
+    hidden_grid = _resolve_hidden_sets(hidden_tuple, hidden_sets)
+    _validate_hidden_grid(base_public_tuple, hidden_grid)
+    common_hidden = _common_hidden_columns(hidden_grid)
     must_include_tuple = _unique_tuple(must_include or ())
     must_exclude_tuple = _unique_tuple(must_exclude or ())
     candidate_tuple, required_columns = _valid_candidate_refinements(
         base_public_tuple,
-        hidden_tuple,
+        common_hidden,
         candidate_refinements,
         must_include=must_include_tuple,
         must_exclude=must_exclude_tuple,
@@ -365,6 +409,11 @@ def public_representation_frontier(
 
     repeatable_data, row_count = _repeatable_data(data)
     q_grid = tuple(q_presets)
+    scenario_specs = _frontier_scenarios(
+        hidden_sets=hidden_grid,
+        min_cell_weights=min_cell_weight_grid,
+        q_presets=q_grid,
+    )
     search_mode = _normalize_search(search)
     candidate_space_size = _candidate_space_size(
         candidate_tuple,
@@ -375,13 +424,11 @@ def public_representation_frontier(
     search_result = _search_candidates(
         repeatable_data,
         base_public=base_public_tuple,
-        hidden=hidden_tuple,
         target=target,
         candidate_refinements=candidate_tuple,
         required_columns=required_columns,
-        q_presets=q_grid,
+        scenario_specs=scenario_specs,
         weight=weight,
-        min_cell_weight=min_cell_weight,
         ambiguity_limit=ambiguity_limit,
         bucket_budget=bucket_budget,
         max_added_columns=max_added_columns,
@@ -401,6 +448,8 @@ def public_representation_frontier(
         dominated=dominated,
         base_public=base_public_tuple,
         hidden_columns=hidden_tuple,
+        hidden_sets=hidden_grid,
+        min_cell_weights=min_cell_weight_grid,
         candidate_refinements=candidate_tuple,
         ambiguity_limit=ambiguity_limit,
         bucket_budget=bucket_budget,
@@ -420,12 +469,10 @@ class _SearchResult:
 class _EvaluationState:
     data: Any
     base_public: tuple[str, ...]
-    hidden: tuple[str, ...]
     target: str | RowMetric
     candidate_refinements: tuple[str, ...]
-    q_presets: tuple[Any, ...]
+    scenario_specs: tuple[_ScenarioSpec, ...]
     weight: str | None
-    min_cell_weight: float
     ambiguity_limit: float | None
     bucket_budget: int | None
     max_evaluations: int | None
@@ -466,12 +513,10 @@ class _EvaluationState:
             candidate = _evaluate_candidate(
                 self.data,
                 base_public=self.base_public,
-                hidden=self.hidden,
                 target=self.target,
                 added_columns=subset,
-                q_presets=self.q_presets,
+                scenario_specs=self.scenario_specs,
                 weight=self.weight,
-                min_cell_weight=self.min_cell_weight,
                 ambiguity_limit=self.ambiguity_limit,
             )
             self.candidates_by_subset[subset] = candidate
@@ -501,13 +546,11 @@ def _search_candidates(
     data: Any,
     *,
     base_public: tuple[str, ...],
-    hidden: tuple[str, ...],
     target: str | RowMetric,
     candidate_refinements: tuple[str, ...],
     required_columns: tuple[str, ...],
-    q_presets: tuple[Any, ...],
+    scenario_specs: tuple[_ScenarioSpec, ...],
     weight: str | None,
-    min_cell_weight: float,
     ambiguity_limit: float | None,
     bucket_budget: int | None,
     max_added_columns: int,
@@ -521,12 +564,10 @@ def _search_candidates(
     state = _EvaluationState(
         data=data,
         base_public=base_public,
-        hidden=hidden,
         target=target,
         candidate_refinements=candidate_refinements,
-        q_presets=q_presets,
+        scenario_specs=scenario_specs,
         weight=weight,
-        min_cell_weight=min_cell_weight,
         ambiguity_limit=ambiguity_limit,
         bucket_budget=bucket_budget,
         max_evaluations=max_evaluations,
@@ -574,6 +615,7 @@ def _search_candidates(
             exact=exact,
             evaluated_candidates=state.evaluated_count,
             candidate_space_size=candidate_space_size,
+            scenario_count=len(scenario_specs),
             max_added_columns=max_added_columns,
             max_evaluations=max_evaluations,
             beam_width=beam_width if search == "beam" else None,
@@ -708,36 +750,40 @@ def _evaluate_candidate(
     data: Any,
     *,
     base_public: tuple[str, ...],
-    hidden: tuple[str, ...],
     target: str | RowMetric,
     added_columns: tuple[str, ...],
-    q_presets: tuple[Any, ...],
+    scenario_specs: tuple[_ScenarioSpec, ...],
     weight: str | None,
-    min_cell_weight: float,
     ambiguity_limit: float | None,
 ) -> PublicRepresentationCandidate:
     public_columns = base_public + added_columns
     scenarios = []
-    public_cells = 0
-    hidden_cells = 0
-    for index, q_preset in enumerate(q_presets, start=1):
+    public_cell_counts = []
+    hidden_cell_counts = []
+    for spec in scenario_specs:
         grouped = from_dataframe(
             data,
             public=public_columns,
-            hidden=hidden,
+            hidden=spec.hidden_columns,
             target=target,
             weight=weight,
-            min_cell_weight=min_cell_weight,
-            q=q_preset,
+            min_cell_weight=spec.min_cell_weight,
+            q=spec.q,
         )
         interval = grouped.problem.global_transport_modulus()
         public_cells = len(grouped.problem.public_values)
         hidden_cells = len(grouped.problem.states)
+        public_cell_counts.append(public_cells)
+        hidden_cell_counts.append(hidden_cells)
         scenarios.append(
             FrontierScenarioResult(
-                scenario=f"S{index}",
-                q_name=q_name(q_preset),
-                q_description=q_description(q_preset),
+                scenario=spec.scenario,
+                q_name=q_name(spec.q),
+                q_description=q_description(spec.q),
+                min_cell_weight=spec.min_cell_weight,
+                hidden_columns=spec.hidden_columns,
+                public_cells=public_cells,
+                hidden_cells=hidden_cells,
                 lower=interval.lower,
                 upper=interval.upper,
                 ambiguity=interval.diameter,
@@ -753,8 +799,12 @@ def _evaluate_candidate(
     return PublicRepresentationCandidate(
         added_columns=added_columns,
         public_columns=public_columns,
-        public_cells=public_cells,
-        hidden_cells=hidden_cells,
+        public_cells=max(public_cell_counts),
+        hidden_cells=max(hidden_cell_counts),
+        min_public_cells=min(public_cell_counts),
+        max_public_cells=max(public_cell_counts),
+        min_hidden_cells=min(hidden_cell_counts),
+        max_hidden_cells=max(hidden_cell_counts),
         scenarios=scenario_tuple,
         max_ambiguity=max_ambiguity,
         mean_ambiguity=mean_ambiguity,
@@ -882,6 +932,81 @@ def _candidate_subsets(
                 _ordered_subset(columns, (*required_columns, *optional_subset))
             )
     return tuple(subsets)
+
+
+def _resolve_min_cell_weights(
+    min_cell_weight: float,
+    min_cell_weights: Sequence[float] | None,
+) -> tuple[float, ...]:
+    if min_cell_weights is None:
+        return (float(min_cell_weight),)
+    weights = tuple(float(value) for value in min_cell_weights)
+    if not weights:
+        raise ValueError("min_cell_weights must contain at least one value")
+    if any(value < 0 for value in weights):
+        raise ValueError("min_cell_weights must be non-negative")
+    return weights
+
+
+def _resolve_hidden_sets(
+    hidden: tuple[str, ...],
+    hidden_sets: Sequence[Sequence[str]] | None,
+) -> tuple[tuple[str, ...], ...]:
+    if hidden_sets is None:
+        return (hidden,)
+    hidden_grid = tuple(tuple(columns) for columns in hidden_sets)
+    if not hidden_grid:
+        raise ValueError("hidden_sets must contain at least one hidden-column set")
+    if any(not columns for columns in hidden_grid):
+        raise ValueError("hidden_sets cannot contain an empty hidden-column set")
+    return hidden_grid
+
+
+def _validate_hidden_grid(
+    base_public: tuple[str, ...],
+    hidden_sets: tuple[tuple[str, ...], ...],
+) -> None:
+    for index, hidden_columns in enumerate(hidden_sets, start=1):
+        missing_public = [
+            column for column in base_public if column not in hidden_columns
+        ]
+        if missing_public:
+            raise ValueError(
+                "base_public columns must appear in every hidden set; "
+                f"hidden set {index} is missing {missing_public!r}"
+            )
+
+
+def _common_hidden_columns(
+    hidden_sets: tuple[tuple[str, ...], ...],
+) -> tuple[str, ...]:
+    common = set(hidden_sets[0])
+    for hidden_columns in hidden_sets[1:]:
+        common &= set(hidden_columns)
+    return tuple(column for column in hidden_sets[0] if column in common)
+
+
+def _frontier_scenarios(
+    *,
+    hidden_sets: tuple[tuple[str, ...], ...],
+    min_cell_weights: tuple[float, ...],
+    q_presets: tuple[Any, ...],
+) -> tuple[_ScenarioSpec, ...]:
+    scenarios = []
+    index = 0
+    for hidden_columns in hidden_sets:
+        for min_cell_weight in min_cell_weights:
+            for q_preset in q_presets:
+                index += 1
+                scenarios.append(
+                    _ScenarioSpec(
+                        scenario=f"S{index}",
+                        hidden_columns=hidden_columns,
+                        min_cell_weight=min_cell_weight,
+                        q=q_preset,
+                    )
+                )
+    return tuple(scenarios)
 
 
 def _valid_candidate_refinements(
@@ -1045,6 +1170,13 @@ def _frontier_interpretation(report: PublicRepresentationFrontier) -> list[str]:
         "`mean ambiguity` is useful for ranking, but the frontier itself checks "
         "every stress-test scenario.",
     ]
+    if len(report.hidden_sets) > 1 or len(report.min_cell_weights) > 1:
+        lines.append(
+            "- This frontier is sensitivity-aware: every evaluated representation "
+            "is scored across the requested hidden-column sets, min-cell "
+            "thresholds, and Q presets. Candidate complexity uses the maximum "
+            "public-cell count seen across those scenarios."
+        )
     if report.ambiguity_limit is not None:
         if report.minimal_stable is None:
             lines.append(
@@ -1069,8 +1201,8 @@ def _frontier_interpretation(report: PublicRepresentationFrontier) -> list[str]:
 
 def _candidate_table(candidates: Sequence[PublicRepresentationCandidate]) -> list[str]:
     lines = [
-        "| representation | public cells | added columns | max ambiguity | mean ambiguity | public adequate | stable |",
-        "| --- | ---: | ---: | ---: | ---: | --- | --- |",
+        "| representation | public cells | hidden cells | added columns | max ambiguity | mean ambiguity | public adequate | stable |",
+        "| --- | --- | --- | ---: | ---: | ---: | --- | --- |",
     ]
     for row in candidates:
         stable = (
@@ -1083,7 +1215,8 @@ def _candidate_table(candidates: Sequence[PublicRepresentationCandidate]) -> lis
             + " | ".join(
                 [
                     _escape_table(row.label),
-                    str(row.public_cells),
+                    _format_range(row.min_public_cells, row.max_public_cells),
+                    _format_range(row.min_hidden_cells, row.max_hidden_cells),
                     str(row.added_column_count),
                     f"{row.max_ambiguity:.4f}",
                     f"{row.mean_ambiguity:.4f}",
@@ -1098,8 +1231,8 @@ def _candidate_table(candidates: Sequence[PublicRepresentationCandidate]) -> lis
 
 def _scenario_table(candidates: Sequence[PublicRepresentationCandidate]) -> list[str]:
     lines = [
-        "| representation | scenario | Q | observed | lower | upper | ambiguity | public adequate |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
+        "| representation | scenario | Q | min_cell_weight | hidden columns | public cells | hidden cells | observed | lower | upper | ambiguity | public adequate |",
+        "| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for candidate in candidates:
         for row in candidate.scenarios:
@@ -1110,6 +1243,10 @@ def _scenario_table(candidates: Sequence[PublicRepresentationCandidate]) -> list
                         _escape_table(candidate.label),
                         row.scenario,
                         _escape_table(row.q_name),
+                        f"{row.min_cell_weight:g}",
+                        _escape_table(", ".join(row.hidden_columns)),
+                        str(row.public_cells),
+                        str(row.hidden_cells),
                         f"{row.observed_value:.4f}",
                         f"{row.lower:.4f}",
                         f"{row.upper:.4f}",
@@ -1124,3 +1261,9 @@ def _scenario_table(candidates: Sequence[PublicRepresentationCandidate]) -> list
 
 def _escape_table(value: str) -> str:
     return value.replace("|", "\\|")
+
+
+def _format_range(lower: int, upper: int) -> str:
+    if lower == upper:
+        return str(upper)
+    return f"{lower}-{upper}"

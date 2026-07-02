@@ -49,6 +49,7 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
         self.assertEqual(report.search_trace.search, "exhaustive")
         self.assertTrue(report.search_trace.exact)
         self.assertEqual(report.search_trace.candidate_space_size, 4)
+        self.assertEqual(report.search_trace.scenario_count, 2)
         self.assertEqual(report.search_trace.evaluated_candidates, 4)
         self.assertEqual(len(report.candidates), 4)
         self.assertEqual(len(report.frontier), 2)
@@ -239,6 +240,79 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
         self.assertEqual(report.candidate_refinements, ("driver",))
         self.assertEqual(report.search_trace.candidate_space_size, 1)
         self.assertEqual([row.added_columns for row in report.candidates], [("driver",)])
+
+    def test_public_representation_frontier_supports_sensitivity_grid(self):
+        rows = [
+            {
+                "segment": "A",
+                "driver": "low",
+                "noise": "n",
+                "extra": "e1",
+                "target": 0.0,
+                "weight": 30,
+            },
+            {
+                "segment": "A",
+                "driver": "high",
+                "noise": "n",
+                "extra": "e2",
+                "target": 1.0,
+                "weight": 30,
+            },
+            {
+                "segment": "B",
+                "driver": "flat",
+                "noise": "n",
+                "extra": "e1",
+                "target": 0.5,
+                "weight": 40,
+            },
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver", "noise", "extra"],
+            hidden_sets=[
+                ["segment", "driver", "noise", "extra"],
+                ["segment", "driver", "noise"],
+            ],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver", "extra", "noise"],
+            q_presets=["saturated", us.q_bounded_shift(0.5)],
+            min_cell_weights=[1, 35],
+            ambiguity_limit=0.05,
+        )
+        markdown = report.to_markdown()
+
+        self.assertEqual(report.hidden_sets[0], ("segment", "driver", "noise", "extra"))
+        self.assertEqual(report.hidden_sets[1], ("segment", "driver", "noise"))
+        self.assertEqual(report.min_cell_weights, (1.0, 35.0))
+        self.assertEqual(report.candidate_refinements, ("driver", "noise"))
+        self.assertEqual(report.search_trace.scenario_count, 8)
+        self.assertEqual(len(report.candidates[0].scenarios), 8)
+        self.assertEqual(report.candidates[0].min_public_cells, 1)
+        self.assertEqual(report.candidates[0].max_public_cells, 2)
+        self.assertEqual(report.candidates[0].min_hidden_cells, 1)
+        self.assertEqual(report.candidates[0].max_hidden_cells, 3)
+        self.assertEqual(report.minimal_stable.added_columns, ("driver",))
+        self.assertEqual(report.minimal_stable.max_public_cells, 3)
+        self.assertIn("Hidden-set scenarios: 2", markdown)
+        self.assertIn("Minimum hidden-cell weights: 1, 35", markdown)
+        self.assertIn("Stress-test scenarios per representation: 8", markdown)
+        self.assertIn("sensitivity-aware", markdown)
+        self.assertIn("min_cell_weight", markdown)
+
+    def test_public_representation_frontier_rejects_hidden_sets_missing_public(self):
+        with self.assertRaisesRegex(ValueError, "base_public columns"):
+            us.public_representation_frontier(
+                [{"segment": "A", "driver": "x", "target": 1.0}],
+                base_public=["segment"],
+                hidden=["segment", "driver"],
+                hidden_sets=[["driver"]],
+                target="target",
+            )
 
     def test_public_representation_frontier_rejects_conflicting_public_aliases(self):
         with self.assertRaisesRegex(TypeError, "use either 'base_public'"):
