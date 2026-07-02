@@ -34,6 +34,7 @@ from .environments import (
 )
 from .frontier import (
     FrontierScenarioResult,
+    FrontierSearchTrace,
     PublicRepresentationCandidate,
     PublicRepresentationFrontier,
     public_representation_frontier,
@@ -123,6 +124,7 @@ __all__ = [
     "FiniteEnvironments",
     "FiniteProblem",
     "FrontierScenarioResult",
+    "FrontierSearchTrace",
     "from_dataframe",
     "geq",
     "GroupedProblem",

@@ -45,6 +45,11 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
         payload = report.as_dict()
 
         self.assertIsInstance(report, us.PublicRepresentationFrontier)
+        self.assertIsInstance(report.search_trace, us.FrontierSearchTrace)
+        self.assertEqual(report.search_trace.search, "exhaustive")
+        self.assertTrue(report.search_trace.exact)
+        self.assertEqual(report.search_trace.candidate_space_size, 4)
+        self.assertEqual(report.search_trace.evaluated_candidates, 4)
         self.assertEqual(len(report.candidates), 4)
         self.assertEqual(len(report.frontier), 2)
         self.assertEqual(len(report.dominated), 2)
@@ -111,10 +116,129 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
         self.assertIn("## Scenario Details", markdown)
         self.assertIn("Minimal stable representation", markdown)
         self.assertIn("Best representation within bucket budget", markdown)
+        self.assertIn("Search mode: exhaustive (exact)", markdown)
         self.assertIn("base public representation", markdown)
         self.assertIn("base + driver", markdown)
         self.assertIn("max ambiguity", markdown)
         self.assertIn("Pareto-frontier", markdown)
+
+    def test_public_representation_frontier_supports_greedy_search(self):
+        rows = [
+            {"segment": "A", "driver": "low", "noise": "n", "target": 0.0},
+            {"segment": "A", "driver": "high", "noise": "n", "target": 1.0},
+            {"segment": "B", "driver": "flat", "noise": "n", "target": 0.5},
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver", "noise"],
+            target="target",
+            candidate_refinements=["noise", "driver"],
+            q_presets=["saturated"],
+            ambiguity_limit=0.05,
+            search="greedy",
+            max_added_columns=2,
+        )
+
+        self.assertFalse(report.search_trace.exact)
+        self.assertEqual(report.search_trace.search, "greedy")
+        self.assertEqual(report.search_trace.stopping_reason, "ambiguity_limit reached")
+        self.assertEqual(report.search_trace.candidate_space_size, 4)
+        self.assertEqual(report.minimal_stable.added_columns, ("driver",))
+        self.assertIn(("driver",), [row.added_columns for row in report.candidates])
+
+    def test_public_representation_frontier_supports_beam_search(self):
+        rows = [
+            {
+                "segment": "A",
+                "driver": "low",
+                "noise": "n",
+                "extra": "e1",
+                "target": 0.0,
+            },
+            {
+                "segment": "A",
+                "driver": "high",
+                "noise": "n",
+                "extra": "e2",
+                "target": 1.0,
+            },
+            {
+                "segment": "B",
+                "driver": "flat",
+                "noise": "n",
+                "extra": "e1",
+                "target": 0.5,
+            },
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver", "noise", "extra"],
+            target="target",
+            candidate_refinements=["noise", "driver", "extra"],
+            q_presets=["saturated"],
+            ambiguity_limit=0.05,
+            search="beam",
+            beam_width=1,
+            max_added_columns=2,
+        )
+
+        self.assertFalse(report.search_trace.exact)
+        self.assertEqual(report.search_trace.search, "beam")
+        self.assertEqual(report.search_trace.beam_width, 1)
+        self.assertGreater(report.search_trace.pruned_by_beam, 0)
+        self.assertLess(
+            report.search_trace.evaluated_candidates,
+            report.search_trace.candidate_space_size,
+        )
+        self.assertIn(("driver",), [row.added_columns for row in report.frontier])
+
+    def test_public_representation_frontier_tracks_max_evaluations(self):
+        rows = [
+            {"segment": "A", "driver": "low", "noise": "n", "target": 0.0},
+            {"segment": "A", "driver": "high", "noise": "n", "target": 1.0},
+            {"segment": "B", "driver": "flat", "noise": "n", "target": 0.5},
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver", "noise"],
+            target="target",
+            candidate_refinements=["noise", "driver"],
+            q_presets=["saturated"],
+            max_evaluations=2,
+        )
+
+        self.assertFalse(report.search_trace.exact)
+        self.assertEqual(report.search_trace.evaluated_candidates, 2)
+        self.assertEqual(report.search_trace.candidate_space_size, 4)
+        self.assertEqual(report.search_trace.stopping_reason, "max_evaluations reached")
+
+    def test_public_representation_frontier_supports_column_constraints(self):
+        rows = [
+            {"segment": "A", "driver": "low", "noise": "n", "target": 0.0},
+            {"segment": "A", "driver": "high", "noise": "n", "target": 1.0},
+            {"segment": "B", "driver": "flat", "noise": "n", "target": 0.5},
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver", "noise"],
+            target="target",
+            candidate_refinements=["noise"],
+            q_presets=["saturated"],
+            must_include=["driver"],
+            must_exclude=["noise"],
+        )
+
+        self.assertEqual(report.candidate_refinements, ("driver",))
+        self.assertEqual(report.search_trace.candidate_space_size, 1)
+        self.assertEqual([row.added_columns for row in report.candidates], [("driver",)])
 
     def test_public_representation_frontier_rejects_conflicting_public_aliases(self):
         with self.assertRaisesRegex(TypeError, "use either 'base_public'"):

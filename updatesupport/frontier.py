@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import combinations
+from math import comb
 from typing import Any, Sequence
 
 from .data import from_dataframe
@@ -34,6 +35,40 @@ class FrontierScenarioResult:
             "ambiguity": self.ambiguity,
             "observed_value": self.observed_value,
             "public_adequate": self.public_adequate,
+        }
+
+
+@dataclass(frozen=True)
+class FrontierSearchTrace:
+    """Metadata describing how the frontier search was run."""
+
+    search: str
+    exact: bool
+    evaluated_candidates: int
+    candidate_space_size: int
+    max_added_columns: int
+    max_evaluations: int | None = None
+    beam_width: int | None = None
+    enforce_bucket_budget: bool = False
+    skipped_by_budget: int = 0
+    pruned_by_dominance: int = 0
+    pruned_by_beam: int = 0
+    stopping_reason: str = "completed"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "search": self.search,
+            "exact": self.exact,
+            "evaluated_candidates": self.evaluated_candidates,
+            "candidate_space_size": self.candidate_space_size,
+            "max_added_columns": self.max_added_columns,
+            "max_evaluations": self.max_evaluations,
+            "beam_width": self.beam_width,
+            "enforce_bucket_budget": self.enforce_bucket_budget,
+            "skipped_by_budget": self.skipped_by_budget,
+            "pruned_by_dominance": self.pruned_by_dominance,
+            "pruned_by_beam": self.pruned_by_beam,
+            "stopping_reason": self.stopping_reason,
         }
 
 
@@ -103,6 +138,7 @@ class PublicRepresentationFrontier:
     bucket_budget: int | None = None
     title: str = "Public Representation Frontier"
     row_count: int | None = None
+    search_trace: FrontierSearchTrace | None = None
 
     @property
     def minimal_stable(self) -> PublicRepresentationCandidate | None:
@@ -158,6 +194,9 @@ class PublicRepresentationFrontier:
             "candidate_refinements": self.candidate_refinements,
             "ambiguity_limit": self.ambiguity_limit,
             "bucket_budget": self.bucket_budget,
+            "search_trace": None
+            if self.search_trace is None
+            else self.search_trace.as_dict(),
             "minimal_stable": None
             if self.minimal_stable is None
             else self.minimal_stable.as_dict(),
@@ -182,6 +221,17 @@ class PublicRepresentationFrontier:
                 f"- Pareto frontier representations: {len(self.frontier)}",
             ]
         )
+        if self.search_trace is not None:
+            exact = "exact" if self.search_trace.exact else "heuristic"
+            lines.extend(
+                [
+                    f"- Search mode: {self.search_trace.search} ({exact})",
+                    "- Search evaluations: "
+                    f"{self.search_trace.evaluated_candidates}/"
+                    f"{self.search_trace.candidate_space_size}",
+                    f"- Search stopping reason: {self.search_trace.stopping_reason}",
+                ]
+            )
         if self.ambiguity_limit is not None:
             lines.append(f"- Ambiguity limit: {self.ambiguity_limit:.4f}")
         if self.bucket_budget is not None:
@@ -235,16 +285,23 @@ def public_representation_frontier(
     ambiguity_limit: float | None = None,
     bucket_budget: int | None = None,
     max_refinements: int | None = None,
+    max_added_columns: int | None = None,
+    search: str = "exhaustive",
+    beam_width: int = 12,
+    max_evaluations: int | None = None,
+    must_include: Sequence[str] | None = None,
+    must_exclude: Sequence[str] | None = None,
+    enforce_bucket_budget: bool = False,
     include_base: bool = True,
     title: str = "Public Representation Frontier",
 ) -> PublicRepresentationFrontier:
     """Search public-column refinements and return the Pareto frontier.
 
-    The first implementation searches over subsets of ``candidate_refinements``.
-    It does not learn arbitrary partitions: every candidate is a concrete public
-    representation formed by adding zero or more hidden columns to
-    ``base_public``. Pareto dominance compares public-cell count, added-column
-    count, and ambiguity under every supplied Q stress test.
+    The search runs over subsets of ``candidate_refinements``. It does not learn
+    arbitrary partitions: every candidate is a concrete public representation
+    formed by adding zero or more hidden columns to ``base_public``. Pareto
+    dominance compares public-cell count, added-column count, and ambiguity
+    under every supplied Q stress test.
     """
 
     base_public = _resolve_sequence_arg(
@@ -272,57 +329,72 @@ def public_representation_frontier(
         raise ValueError("ambiguity_limit must be non-negative")
     if bucket_budget is not None and bucket_budget < 0:
         raise ValueError("bucket_budget must be non-negative")
-    if max_refinements is not None and max_refinements < 0:
-        raise ValueError("max_refinements must be non-negative")
+    max_added_columns = _resolve_optional_int_arg(
+        max_added_columns,
+        max_refinements,
+        primary_name="max_added_columns",
+        alias_name="max_refinements",
+    )
+    if max_added_columns is not None and max_added_columns < 0:
+        raise ValueError("max_added_columns must be non-negative")
+    if beam_width <= 0:
+        raise ValueError("beam_width must be positive")
+    if max_evaluations is not None and max_evaluations < 0:
+        raise ValueError("max_evaluations must be non-negative")
     if not q_presets:
         raise ValueError("q_presets must contain at least one preset")
 
     base_public_tuple = tuple(base_public)
     hidden_tuple = tuple(hidden)
-    candidate_tuple = _valid_candidate_refinements(
+    must_include_tuple = _unique_tuple(must_include or ())
+    must_exclude_tuple = _unique_tuple(must_exclude or ())
+    candidate_tuple, required_columns = _valid_candidate_refinements(
         base_public_tuple,
         hidden_tuple,
         candidate_refinements,
+        must_include=must_include_tuple,
+        must_exclude=must_exclude_tuple,
     )
-    max_refinements = (
+    max_added_columns = (
         len(candidate_tuple)
-        if max_refinements is None
-        else min(max_refinements, len(candidate_tuple))
+        if max_added_columns is None
+        else min(max_added_columns, len(candidate_tuple))
     )
+    if len(required_columns) > max_added_columns:
+        raise ValueError("must_include contains more columns than max_added_columns")
 
     repeatable_data, row_count = _repeatable_data(data)
     q_grid = tuple(q_presets)
-    candidates = []
-    for added_columns in _candidate_subsets(
+    search_mode = _normalize_search(search)
+    candidate_space_size = _candidate_space_size(
         candidate_tuple,
-        max_refinements=max_refinements,
+        max_added_columns=max_added_columns,
         include_base=include_base,
-    ):
-        candidates.append(
-            _evaluate_candidate(
-                repeatable_data,
-                base_public=base_public_tuple,
-                hidden=hidden_tuple,
-                target=target,
-                added_columns=added_columns,
-                q_presets=q_grid,
-                weight=weight,
-                min_cell_weight=min_cell_weight,
-                ambiguity_limit=ambiguity_limit,
-            )
-        )
-
-    candidates_tuple = tuple(sorted(candidates, key=_candidate_sort_key))
-    frontier = tuple(
-        row
-        for row in candidates_tuple
-        if not any(
-            _dominates(other, row)
-            for other in candidates_tuple
-            if other is not row
-        )
+        required_columns=required_columns,
     )
-    dominated = tuple(row for row in candidates_tuple if row not in frontier)
+    search_result = _search_candidates(
+        repeatable_data,
+        base_public=base_public_tuple,
+        hidden=hidden_tuple,
+        target=target,
+        candidate_refinements=candidate_tuple,
+        required_columns=required_columns,
+        q_presets=q_grid,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        ambiguity_limit=ambiguity_limit,
+        bucket_budget=bucket_budget,
+        max_added_columns=max_added_columns,
+        include_base=include_base,
+        search=search_mode,
+        beam_width=beam_width,
+        max_evaluations=max_evaluations,
+        enforce_bucket_budget=enforce_bucket_budget,
+        candidate_space_size=candidate_space_size,
+    )
+
+    candidates_tuple = tuple(sorted(search_result.candidates, key=_candidate_sort_key))
+    frontier, dominated = _split_frontier(candidates_tuple)
     return PublicRepresentationFrontier(
         candidates=candidates_tuple,
         frontier=frontier,
@@ -334,7 +406,302 @@ def public_representation_frontier(
         bucket_budget=bucket_budget,
         title=title,
         row_count=row_count,
+        search_trace=search_result.trace,
     )
+
+
+@dataclass
+class _SearchResult:
+    candidates: tuple[PublicRepresentationCandidate, ...]
+    trace: FrontierSearchTrace
+
+
+@dataclass
+class _EvaluationState:
+    data: Any
+    base_public: tuple[str, ...]
+    hidden: tuple[str, ...]
+    target: str | RowMetric
+    candidate_refinements: tuple[str, ...]
+    q_presets: tuple[Any, ...]
+    weight: str | None
+    min_cell_weight: float
+    ambiguity_limit: float | None
+    bucket_budget: int | None
+    max_evaluations: int | None
+    enforce_bucket_budget: bool
+    candidates_by_subset: dict[
+        tuple[str, ...],
+        PublicRepresentationCandidate,
+    ]
+    result_subsets: list[tuple[str, ...]]
+    result_subset_set: set[tuple[str, ...]]
+    skipped_by_budget: int = 0
+    skipped_budget_subsets: set[tuple[str, ...]] | None = None
+    evaluation_limit_hit: bool = False
+
+    def __post_init__(self) -> None:
+        if self.skipped_budget_subsets is None:
+            self.skipped_budget_subsets = set()
+
+    @property
+    def evaluated_count(self) -> int:
+        return len(self.candidates_by_subset)
+
+    def evaluate(
+        self,
+        added_columns: Sequence[str],
+        *,
+        include_result: bool = True,
+    ) -> PublicRepresentationCandidate | None:
+        subset = _ordered_subset(self.candidate_refinements, added_columns)
+        candidate = self.candidates_by_subset.get(subset)
+        if candidate is None:
+            if (
+                self.max_evaluations is not None
+                and self.evaluated_count >= self.max_evaluations
+            ):
+                self.evaluation_limit_hit = True
+                return None
+            candidate = _evaluate_candidate(
+                self.data,
+                base_public=self.base_public,
+                hidden=self.hidden,
+                target=self.target,
+                added_columns=subset,
+                q_presets=self.q_presets,
+                weight=self.weight,
+                min_cell_weight=self.min_cell_weight,
+                ambiguity_limit=self.ambiguity_limit,
+            )
+            self.candidates_by_subset[subset] = candidate
+
+        if include_result:
+            if self.is_allowed(candidate):
+                if subset not in self.result_subset_set:
+                    self.result_subsets.append(subset)
+                    self.result_subset_set.add(subset)
+            elif subset not in self.skipped_budget_subsets:
+                self.skipped_by_budget += 1
+                self.skipped_budget_subsets.add(subset)
+        return candidate
+
+    def is_allowed(self, candidate: PublicRepresentationCandidate) -> bool:
+        return (
+            not self.enforce_bucket_budget
+            or self.bucket_budget is None
+            or candidate.public_cells <= self.bucket_budget
+        )
+
+    def result_candidates(self) -> tuple[PublicRepresentationCandidate, ...]:
+        return tuple(self.candidates_by_subset[subset] for subset in self.result_subsets)
+
+
+def _search_candidates(
+    data: Any,
+    *,
+    base_public: tuple[str, ...],
+    hidden: tuple[str, ...],
+    target: str | RowMetric,
+    candidate_refinements: tuple[str, ...],
+    required_columns: tuple[str, ...],
+    q_presets: tuple[Any, ...],
+    weight: str | None,
+    min_cell_weight: float,
+    ambiguity_limit: float | None,
+    bucket_budget: int | None,
+    max_added_columns: int,
+    include_base: bool,
+    search: str,
+    beam_width: int,
+    max_evaluations: int | None,
+    enforce_bucket_budget: bool,
+    candidate_space_size: int,
+) -> _SearchResult:
+    state = _EvaluationState(
+        data=data,
+        base_public=base_public,
+        hidden=hidden,
+        target=target,
+        candidate_refinements=candidate_refinements,
+        q_presets=q_presets,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        ambiguity_limit=ambiguity_limit,
+        bucket_budget=bucket_budget,
+        max_evaluations=max_evaluations,
+        enforce_bucket_budget=enforce_bucket_budget,
+        candidates_by_subset={},
+        result_subsets=[],
+        result_subset_set=set(),
+    )
+    pruned_by_dominance = 0
+    pruned_by_beam = 0
+    if search == "exhaustive":
+        stopping_reason = _exhaustive_search(
+            state,
+            required_columns=required_columns,
+            max_added_columns=max_added_columns,
+            include_base=include_base,
+        )
+    elif search == "greedy":
+        stopping_reason = _greedy_search(
+            state,
+            required_columns=required_columns,
+            max_added_columns=max_added_columns,
+            include_base=include_base,
+        )
+    else:
+        stopping_reason, pruned_by_dominance, pruned_by_beam = _beam_search(
+            state,
+            required_columns=required_columns,
+            max_added_columns=max_added_columns,
+            include_base=include_base,
+            beam_width=beam_width,
+        )
+
+    exact = (
+        search == "exhaustive"
+        and not state.evaluation_limit_hit
+        and not enforce_bucket_budget
+    )
+    if state.evaluation_limit_hit:
+        stopping_reason = "max_evaluations reached"
+    return _SearchResult(
+        candidates=state.result_candidates(),
+        trace=FrontierSearchTrace(
+            search=search,
+            exact=exact,
+            evaluated_candidates=state.evaluated_count,
+            candidate_space_size=candidate_space_size,
+            max_added_columns=max_added_columns,
+            max_evaluations=max_evaluations,
+            beam_width=beam_width if search == "beam" else None,
+            enforce_bucket_budget=enforce_bucket_budget,
+            skipped_by_budget=state.skipped_by_budget,
+            pruned_by_dominance=pruned_by_dominance,
+            pruned_by_beam=pruned_by_beam,
+            stopping_reason=stopping_reason,
+        ),
+    )
+
+
+def _exhaustive_search(
+    state: _EvaluationState,
+    *,
+    required_columns: tuple[str, ...],
+    max_added_columns: int,
+    include_base: bool,
+) -> str:
+    for added_columns in _candidate_subsets(
+        state.candidate_refinements,
+        max_added_columns=max_added_columns,
+        include_base=include_base,
+        required_columns=required_columns,
+    ):
+        if state.evaluate(added_columns) is None:
+            return "max_evaluations reached"
+    return "completed"
+
+
+def _greedy_search(
+    state: _EvaluationState,
+    *,
+    required_columns: tuple[str, ...],
+    max_added_columns: int,
+    include_base: bool,
+) -> str:
+    current = state.evaluate(
+        required_columns,
+        include_result=include_base or bool(required_columns),
+    )
+    if current is None:
+        return "max_evaluations reached"
+    if not state.is_allowed(current):
+        return "bucket_budget reached"
+
+    while len(current.added_columns) < max_added_columns:
+        if _is_stable(current, state.ambiguity_limit):
+            return "ambiguity_limit reached"
+
+        proposals: list[PublicRepresentationCandidate] = []
+        for column in state.candidate_refinements:
+            if column in current.added_columns:
+                continue
+            candidate = state.evaluate((*current.added_columns, column))
+            if candidate is None:
+                return "max_evaluations reached"
+            if state.is_allowed(candidate):
+                proposals.append(candidate)
+
+        if not proposals:
+            return "no candidates"
+
+        best = min(proposals, key=_candidate_search_rank)
+        if not _improves(best, current):
+            return "no improvement"
+        current = best
+
+    if _is_stable(current, state.ambiguity_limit):
+        return "ambiguity_limit reached"
+    return "max_added_columns reached"
+
+
+def _beam_search(
+    state: _EvaluationState,
+    *,
+    required_columns: tuple[str, ...],
+    max_added_columns: int,
+    include_base: bool,
+    beam_width: int,
+) -> tuple[str, int, int]:
+    start = state.evaluate(
+        required_columns,
+        include_result=include_base or bool(required_columns),
+    )
+    if start is None:
+        return "max_evaluations reached", 0, 0
+    if not state.is_allowed(start):
+        return "bucket_budget reached", 0, 0
+
+    beam = [start]
+    pruned_by_dominance = 0
+    pruned_by_beam = 0
+    while beam and len(beam[0].added_columns) < max_added_columns:
+        child_subsets: set[tuple[str, ...]] = set()
+        for candidate in beam:
+            for column in state.candidate_refinements:
+                if column in candidate.added_columns:
+                    continue
+                child_subsets.add(
+                    _ordered_subset(
+                        state.candidate_refinements,
+                        (*candidate.added_columns, column),
+                    )
+                )
+
+        if not child_subsets:
+            return "no candidates", pruned_by_dominance, pruned_by_beam
+
+        level_candidates = []
+        for subset in sorted(child_subsets, key=lambda row: (len(row), row)):
+            candidate = state.evaluate(subset)
+            if candidate is None:
+                return "max_evaluations reached", pruned_by_dominance, pruned_by_beam
+            if state.is_allowed(candidate):
+                level_candidates.append(candidate)
+
+        if not level_candidates:
+            return "no candidates", pruned_by_dominance, pruned_by_beam
+
+        nondominated = list(_nondominated(level_candidates))
+        pruned_by_dominance += len(level_candidates) - len(nondominated)
+        ranked = sorted(nondominated, key=_candidate_search_rank)
+        if len(ranked) > beam_width:
+            pruned_by_beam += len(ranked) - beam_width
+        beam = ranked[:beam_width]
+
+    return "completed", pruned_by_dominance, pruned_by_beam
 
 
 def _evaluate_candidate(
@@ -424,26 +791,117 @@ def _dominates(
     return no_worse and strictly_better
 
 
+def _split_frontier(
+    candidates: Sequence[PublicRepresentationCandidate],
+) -> tuple[
+    tuple[PublicRepresentationCandidate, ...],
+    tuple[PublicRepresentationCandidate, ...],
+]:
+    frontier = _nondominated(candidates)
+    dominated = tuple(row for row in candidates if row not in frontier)
+    return frontier, dominated
+
+
+def _nondominated(
+    candidates: Sequence[PublicRepresentationCandidate],
+) -> tuple[PublicRepresentationCandidate, ...]:
+    return tuple(
+        row
+        for row in candidates
+        if not any(_dominates(other, row) for other in candidates if other is not row)
+    )
+
+
+def _candidate_search_rank(
+    row: PublicRepresentationCandidate,
+) -> tuple[float, float, int, int, tuple[str, ...]]:
+    return (
+        row.max_ambiguity,
+        row.mean_ambiguity,
+        row.public_cells,
+        row.added_column_count,
+        row.added_columns,
+    )
+
+
+def _improves(
+    candidate: PublicRepresentationCandidate,
+    current: PublicRepresentationCandidate,
+    *,
+    tol: float = 1e-12,
+) -> bool:
+    return (
+        candidate.max_ambiguity < current.max_ambiguity - tol
+        or candidate.mean_ambiguity < current.mean_ambiguity - tol
+    )
+
+
+def _is_stable(
+    candidate: PublicRepresentationCandidate,
+    ambiguity_limit: float | None,
+) -> bool:
+    return ambiguity_limit is not None and candidate.max_ambiguity <= ambiguity_limit
+
+
+def _candidate_space_size(
+    columns: tuple[str, ...],
+    *,
+    max_added_columns: int,
+    include_base: bool,
+    required_columns: tuple[str, ...],
+) -> int:
+    required_count = len(required_columns)
+    optional_count = len(columns) - required_count
+    total = 0
+    for added_count in range(required_count, max_added_columns + 1):
+        if added_count == 0 and not include_base:
+            continue
+        optional_added = added_count - required_count
+        if 0 <= optional_added <= optional_count:
+            total += comb(optional_count, optional_added)
+    return total
+
+
 def _candidate_subsets(
     columns: tuple[str, ...],
     *,
-    max_refinements: int,
+    max_added_columns: int,
     include_base: bool,
+    required_columns: tuple[str, ...],
 ) -> tuple[tuple[str, ...], ...]:
-    start = 0 if include_base else 1
+    start = len(required_columns)
     subsets = []
-    for size in range(start, max_refinements + 1):
-        subsets.extend(combinations(columns, size))
-    return tuple(tuple(subset) for subset in subsets)
+    required_set = set(required_columns)
+    optional_columns = tuple(column for column in columns if column not in required_set)
+    for size in range(start, max_added_columns + 1):
+        if size == 0 and not include_base:
+            continue
+        optional_size = size - len(required_columns)
+        for optional_subset in combinations(optional_columns, optional_size):
+            subsets.append(
+                _ordered_subset(columns, (*required_columns, *optional_subset))
+            )
+    return tuple(subsets)
 
 
 def _valid_candidate_refinements(
     base_public: tuple[str, ...],
     hidden: tuple[str, ...],
     candidate_refinements: Sequence[str],
-) -> tuple[str, ...]:
+    *,
+    must_include: tuple[str, ...],
+    must_exclude: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
     hidden_set = set(hidden)
     base_set = set(base_public)
+    _validate_column_constraints(
+        base_set=base_set,
+        hidden_set=hidden_set,
+        must_include=must_include,
+        must_exclude=must_exclude,
+    )
+
+    excluded = set(must_exclude)
     candidates = []
     seen = set()
     for column in candidate_refinements:
@@ -452,15 +910,59 @@ def _valid_candidate_refinements(
         seen.add(column)
         if column in base_set:
             continue
+        if column in excluded:
+            continue
         if column not in hidden_set:
             continue
         candidates.append(column)
-    return tuple(candidates)
+
+    for column in must_include:
+        if column in base_set:
+            continue
+        if column not in seen:
+            candidates.append(column)
+            seen.add(column)
+
+    candidate_tuple = tuple(candidates)
+    required_columns = tuple(
+        column
+        for column in candidate_tuple
+        if column in must_include and column not in base_set
+    )
+    return candidate_tuple, required_columns
+
+
+def _validate_column_constraints(
+    *,
+    base_set: set[str],
+    hidden_set: set[str],
+    must_include: tuple[str, ...],
+    must_exclude: tuple[str, ...],
+) -> None:
+    overlap = sorted(set(must_include) & set(must_exclude))
+    if overlap:
+        raise ValueError(f"columns cannot be both required and excluded: {overlap!r}")
+
+    allowed = base_set | hidden_set
+    missing_required = [column for column in must_include if column not in allowed]
+    if missing_required:
+        raise ValueError(f"must_include columns are not in hidden: {missing_required!r}")
+    missing_excluded = [column for column in must_exclude if column not in allowed]
+    if missing_excluded:
+        raise ValueError(f"must_exclude columns are not in hidden: {missing_excluded!r}")
+
+
+def _ordered_subset(
+    columns: tuple[str, ...],
+    selected_columns: Sequence[str],
+) -> tuple[str, ...]:
+    selected = set(selected_columns)
+    return tuple(column for column in columns if column in selected)
 
 
 def _candidate_sort_key(
     row: PublicRepresentationCandidate,
-) -> tuple[float, float, int, int, tuple[str, ...]]:
+) -> tuple[int, float, float, int, tuple[str, ...]]:
     return (
         row.public_cells,
         row.max_ambiguity,
@@ -500,6 +1002,36 @@ def _resolve_sequence_arg(
     if primary is not None and alias is not None and tuple(primary) != tuple(alias):
         raise TypeError(f"use either {primary_name!r} or {alias_name!r}, not both")
     return primary if primary is not None else alias
+
+
+def _resolve_optional_int_arg(
+    primary: int | None,
+    alias: int | None,
+    *,
+    primary_name: str,
+    alias_name: str,
+) -> int | None:
+    if primary is not None and alias is not None and primary != alias:
+        raise TypeError(f"use either {primary_name!r} or {alias_name!r}, not both")
+    return primary if primary is not None else alias
+
+
+def _normalize_search(search: str) -> str:
+    search_mode = search.strip().lower()
+    if search_mode not in {"exhaustive", "greedy", "beam"}:
+        raise ValueError("search must be one of: 'exhaustive', 'greedy', 'beam'")
+    return search_mode
+
+
+def _unique_tuple(values: Sequence[str]) -> tuple[str, ...]:
+    output = []
+    seen = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        output.append(value)
+    return tuple(output)
 
 
 def _frontier_interpretation(report: PublicRepresentationFrontier) -> list[str]:

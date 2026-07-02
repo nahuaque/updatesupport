@@ -12,9 +12,8 @@ but:
 > What is the smallest public representation that keeps hidden-composition
 > ambiguity acceptably low across a set of stress tests?
 
-The first implementation searches over subsets of named candidate refinement
-columns. It does not learn arbitrary partitions. Every candidate is a concrete
-public representation:
+The search runs over subsets of named candidate refinement columns. It does not
+learn arbitrary partitions. Every candidate is a concrete public representation:
 
 ```text
 base_public + zero or more candidate_refinements
@@ -53,6 +52,10 @@ frontier = us.public_representation_frontier(
     ],
     ambiguity_limit=0.005,
     bucket_budget=40,
+    search="beam",
+    beam_width=12,
+    max_added_columns=4,
+    max_evaluations=500,
 )
 
 print(frontier.to_markdown())
@@ -77,6 +80,42 @@ The report also exposes two scalar conveniences:
 `max_ambiguity` is the conservative summary across Q presets. `mean_ambiguity`
 is useful for ranking, but the Pareto test itself compares each stress-test
 scenario.
+
+## Search Modes
+
+Use `search="exhaustive"` when the candidate set is small. This is the default
+and evaluates every allowed subset up to `max_added_columns`.
+
+Use `search="greedy"` for a fast first pass. It starts from the base public
+representation and repeatedly adds the best next refinement until it reaches the
+ambiguity limit, runs out of improving refinements, or hits `max_added_columns`.
+
+Use `search="beam"` when the candidate set is larger. Beam search keeps the
+best `beam_width` partial representations at each depth and expands only those.
+It is heuristic, but it preserves the same representation semantics: every
+evaluated candidate is still a named public-column refinement set.
+
+The returned report includes `frontier.search_trace` with:
+
+- `search`: the selected search mode.
+- `exact`: whether the reported frontier is exhaustive over the requested
+  candidate space.
+- `evaluated_candidates` and `candidate_space_size`.
+- `stopping_reason`, such as `completed`, `ambiguity_limit reached`, or
+  `max_evaluations reached`.
+- pruning counts for beam and optional bucket-budget enforcement.
+
+Useful constraints:
+
+- `max_added_columns`: maximum number of hidden columns promoted into public.
+- `max_evaluations`: hard cap on candidate evaluations.
+- `must_include`: columns that must appear in every evaluated representation.
+- `must_exclude`: columns to remove from the search space.
+- `enforce_bucket_budget=True`: treat `bucket_budget` as a hard pruning rule.
+
+By default, `bucket_budget` is a recommendation/reporting budget used by
+`best_under_bucket_budget(...)`; set `enforce_bucket_budget=True` when it should
+also prune the search.
 
 ## How To Use It
 

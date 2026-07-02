@@ -342,14 +342,21 @@ frontier = us.public_representation_frontier(
     q_presets=["saturated", us.q_bounded_shift(0.5), "observed"],
     ambiguity_limit=0.01,
     bucket_budget=40,
+    search="beam",
+    beam_width=12,
+    max_added_columns=4,
+    max_evaluations=500,
 )
 
 print(frontier.minimal_stable)
+print(frontier.search_trace)
 print(frontier.to_markdown())
 ```
 
 The frontier compares public-cell count, added-column count, and ambiguity under
-every supplied stress test. See
+every supplied stress test. Use `search="exhaustive"` for small candidate sets,
+`search="greedy"` for a fast first pass, and `search="beam"` for larger
+candidate lists with an explicit evaluation budget. See
 [docs/public-representation-frontier.md](docs/public-representation-frontier.md)
 for interpretation guidance.
 
