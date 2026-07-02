@@ -19,6 +19,7 @@ from examples.folktables_acs import (
     build_problem_from_rows,
     fiber_diagnostics,
     refinement_candidates,
+    render_frontier,
     render_report,
 )
 from examples.folktables_acs_causal import (
@@ -134,6 +135,49 @@ class FolktablesExampleTests(unittest.TestCase):
         self.assertIn("not a sampling confidence interval", report)
         self.assertIn("measurement-value table", report)
         self.assertIn("## Analyst Notes", report)
+        self.assertIn("# Folktables ACSIncome Public Representation Frontier", report)
+        self.assertIn("## Selected Representation Explanation", report)
+
+    def test_folktables_frontier_case_study_renders_choice_diagnostics(self):
+        rows = [
+            {
+                "public": "A",
+                "hidden": "x",
+                "noise": "n",
+                TARGET_COLUMN: 0.0,
+                "weight": 30,
+            },
+            {
+                "public": "A",
+                "hidden": "y",
+                "noise": "n",
+                TARGET_COLUMN: 1.0,
+                "weight": 30,
+            },
+            {
+                "public": "B",
+                "hidden": "z",
+                "noise": "n",
+                TARGET_COLUMN: 0.5,
+                "weight": 40,
+            },
+        ]
+
+        markdown = render_frontier(
+            task="income",
+            rows=rows,
+            public_columns=["public"],
+            hidden_columns=["public", "hidden", "noise"],
+            candidate_columns=["noise", "hidden"],
+            weight_column="weight",
+            ambiguity_limit=0.05,
+        )
+
+        self.assertIn("# Folktables ACSIncome Public Representation Frontier", markdown)
+        self.assertIn("Search mode: beam", markdown)
+        self.assertIn("base + hidden", markdown)
+        self.assertIn("Selected vs baseline max ambiguity", markdown)
+        self.assertIn("### Close Dominated Alternatives", markdown)
 
     def test_causal_example_builds_econml_effect_targets(self):
         rows, public_columns, hidden_columns, _candidate_columns = (
@@ -264,7 +308,12 @@ class FolktablesExampleTests(unittest.TestCase):
             self.assertTrue(
                 (output_dir / "folktables_acs_causal_synthetic.md").exists()
             )
+            folktables_report = (
+                output_dir / "folktables_acs_income_synthetic.md"
+            ).read_text(encoding="utf-8")
             index = (output_dir / "index.md").read_text(encoding="utf-8")
+            self.assertIn("Public Representation Frontier", folktables_report)
+            self.assertIn("Selected Representation Explanation", folktables_report)
             self.assertIn("updatesupport Benchmark Gallery", index)
             self.assertIn("ACIC CSV not found", index)
 

@@ -18,6 +18,7 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+import updatesupport as us
 import updatesupport_finance as usf
 
 
@@ -251,6 +252,36 @@ def build_report(
     )
 
 
+def build_frontier(
+    *,
+    q_radius: float = 0.35,
+    ambiguity_limit: float = 0.006,
+) -> us.PublicRepresentationFrontier:
+    """Choose the smallest stable public segmentation for the portfolio metric."""
+
+    return us.public_representation_frontier(
+        synthetic_portfolio_rows(),
+        base_public=PUBLIC_COLUMNS,
+        hidden=HIDDEN_COLUMNS,
+        target=usf.expected_loss(pd="pd", lgd="lgd"),
+        weight="ead",
+        candidate_refinements=CANDIDATE_REFINEMENTS,
+        q_presets=(
+            "saturated",
+            usf.q_portfolio_mix_shift(radius=q_radius),
+            "observed",
+        ),
+        min_cell_weights=(1.0,),
+        ambiguity_limit=ambiguity_limit,
+        bucket_budget=12,
+        search="beam",
+        beam_width=8,
+        max_added_columns=3,
+        max_evaluations=96,
+        title="Synthetic Finance Public Representation Frontier",
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate a synthetic finance model-risk report.",
@@ -278,7 +309,11 @@ def main() -> None:
         q_radius=args.q_radius,
         ambiguity_limit=args.ambiguity_limit,
     )
-    markdown = report.to_markdown()
+    frontier = build_frontier(
+        q_radius=args.q_radius,
+        ambiguity_limit=args.ambiguity_limit,
+    )
+    markdown = report.to_markdown() + "\n\n" + frontier.to_markdown()
     if args.output is None:
         print(markdown)
         return

@@ -29,11 +29,13 @@ The generated `data/benchmark_gallery/index.md` links to each saved case study.
 
 - **Folktables ACSIncome synthetic label-rate audit**: a no-download
   ACS-shaped label-rate example for testing the public/hidden reporting
-  workflow.
+  workflow. The report includes a public-representation frontier that asks
+  which small refinement set stabilizes the label-rate estimate.
 - **Folktables ACSIncome real sample label-rate audit**: a sampled real
   Folktables ACS report. By default this uses cached ACS data if available; use
   `--folktables-download` to fetch it. The gallery uses a lower retained-cell
-  threshold for this sampled report so the public/hidden structure is visible.
+  threshold for this sampled report so the public/hidden structure is visible,
+  and includes the same frontier-search section.
 - **Folktables ACS synthetic causal-effect audit**: a no-download causal
   handoff that computes row-level effects, then audits whether the coarse
   public representation is stable for reporting the effect.

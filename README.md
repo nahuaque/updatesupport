@@ -459,6 +459,8 @@ The script prints:
 - worst public fibers by ambiguity contribution
 - one-column refinements ranked by ambiguity reduction, including before/after
   ambiguity and percentage reduction
+- a public-representation frontier that searches for a small stable set of
+  public refinements and explains the selected representation
 
 There is also a no-download smoke demo:
 

@@ -137,6 +137,8 @@ The report answers:
 - Does the ambiguity exceed the review threshold?
 - Which public buckets drive the instability?
 - Which hidden fields are most valuable as public refinements?
+- Which small public segmentation sits on the stability frontier, and why did
+  it beat nearby alternatives?
 
 A synthetic portfolio example is available in `examples/model_risk_portfolio.py`
 in the source repository:
@@ -145,6 +147,11 @@ in the source repository:
 uv run --package updatesupport-finance python \
   packages/updatesupport-finance/examples/model_risk_portfolio.py
 ```
+
+The example prints both the finance model-risk report and a core
+`public_representation_frontier(...)` report for the same expected-loss metric.
+The frontier section compares baseline versus selected ambiguity, close
+dominated alternatives, and any screened-out refinement fields.
 
 To write the Markdown report:
 

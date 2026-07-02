@@ -309,6 +309,9 @@ def render_report(
     candidate_columns: Sequence[str],
     top: int,
     min_cell_weight: float,
+    include_frontier: bool = True,
+    frontier_ambiguity_limit: float = 0.01,
+    frontier_q_radius: float = 0.5,
 ) -> str:
     report = us.public_descent_report(
         grouped,
@@ -323,7 +326,56 @@ def render_report(
         row_count_label="Rows after sampling",
         weight_column="weight" if rows and "weight" in rows[0] else None,
     )
-    return report.to_markdown()
+    markdown = report.to_markdown()
+    if not include_frontier or not candidate_columns:
+        return markdown
+    frontier = render_frontier(
+        task=task,
+        rows=rows,
+        public_columns=grouped.public_columns,
+        hidden_columns=grouped.hidden_columns,
+        candidate_columns=candidate_columns,
+        target_column=grouped.target_column,
+        weight_column="weight" if rows and "weight" in rows[0] else None,
+        min_cell_weight=min_cell_weight,
+        ambiguity_limit=frontier_ambiguity_limit,
+        q_radius=frontier_q_radius,
+    )
+    return markdown + "\n\n" + frontier
+
+
+def render_frontier(
+    *,
+    task: str,
+    rows: Sequence[Mapping[str, Any]],
+    public_columns: Sequence[str],
+    hidden_columns: Sequence[str],
+    candidate_columns: Sequence[str],
+    target_column: str | us.RowMetric = TARGET_COLUMN,
+    weight_column: str | None = None,
+    min_cell_weight: float = 1.0,
+    ambiguity_limit: float = 0.01,
+    q_radius: float = 0.5,
+) -> str:
+    """Render a public-representation frontier for the Folktables case study."""
+
+    frontier = us.public_representation_frontier(
+        rows,
+        base_public=public_columns,
+        hidden=hidden_columns,
+        target=target_column,
+        weight=weight_column,
+        candidate_refinements=candidate_columns,
+        q_presets=("saturated", us.q_bounded_shift(q_radius), "observed"),
+        min_cell_weights=(min_cell_weight,),
+        ambiguity_limit=ambiguity_limit,
+        search="beam",
+        beam_width=8,
+        max_added_columns=min(3, len(candidate_columns)),
+        max_evaluations=96,
+        title=f"Folktables ACS{task.title()} Public Representation Frontier",
+    )
+    return frontier.to_markdown()
 
 
 def parse_args() -> argparse.Namespace:
@@ -352,6 +404,18 @@ def parse_args() -> argparse.Namespace:
         "--sensitivity",
         action="store_true",
         help="Also print a sensitivity grid over Q presets and min-cell weights.",
+    )
+    parser.add_argument(
+        "--frontier",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Also include public-representation frontier search in the report.",
+    )
+    parser.add_argument(
+        "--frontier-ambiguity-limit",
+        type=float,
+        default=0.01,
+        help="Frontier stability limit for hidden-composition ambiguity.",
     )
     parser.add_argument(
         "--sensitivity-min-cell-weights",
@@ -406,6 +470,9 @@ def main() -> None:
             candidate_columns=candidate_columns,
             top=args.top,
             min_cell_weight=min_cell_weight,
+            include_frontier=args.frontier,
+            frontier_ambiguity_limit=args.frontier_ambiguity_limit,
+            frontier_q_radius=0.5 if args.q_radius is None else args.q_radius,
         )
     )
     if args.sensitivity:

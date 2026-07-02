@@ -168,10 +168,16 @@ class FinancePluginTests(unittest.TestCase):
 
         rows = namespace["synthetic_portfolio_rows"]()
         report = namespace["build_report"]()
+        frontier = namespace["build_frontier"]()
         markdown = report.to_markdown()
+        combined_markdown = markdown + "\n\n" + frontier.to_markdown()
 
         self.assertEqual(len(rows), 10)
         self.assertIsInstance(report, usf.ModelRiskReport)
+        self.assertIsInstance(frontier, us.PublicRepresentationFrontier)
+        self.assertEqual(frontier.search_trace.search, "beam")
+        self.assertIn("Synthetic Finance Public Representation Frontier", combined_markdown)
+        self.assertIn("Selected Representation Explanation", combined_markdown)
         self.assertIn("EL_SYNTHETIC_RETAIL_001", markdown)
         self.assertIn("hardship_history", markdown)
         self.assertIn("local_housing_market", markdown)
