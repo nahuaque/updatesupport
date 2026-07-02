@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from typing import cast
 
 import updatesupport as us
 
@@ -74,7 +75,7 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
 
         minimal = report.minimal_stable
         self.assertIsNotNone(minimal)
-        assert minimal is not None
+        minimal = cast(us.PublicRepresentationCandidate, minimal)
         self.assertEqual(minimal.added_columns, ("driver",))
         self.assertEqual(minimal.public_cells, 3)
         self.assertAlmostEqual(minimal.max_ambiguity, 0.0)
@@ -83,7 +84,7 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
 
         budget_best = report.best_under_bucket_budget()
         self.assertIsNotNone(budget_best)
-        assert budget_best is not None
+        budget_best = cast(us.PublicRepresentationCandidate, budget_best)
         self.assertEqual(budget_best.added_columns, ())
         self.assertEqual(payload["minimal_stable"]["added_columns"], ("driver",))
         self.assertEqual(
@@ -350,7 +351,7 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
 
         explanation = report.explain_minimal_stable()
         self.assertIsInstance(explanation, us.FrontierCandidateExplanation)
-        assert explanation is not None
+        explanation = cast(us.FrontierCandidateExplanation, explanation)
         markdown = explanation.to_markdown()
         payload = explanation.as_dict()
         explicit = report.explain(["driver"])

@@ -1,0 +1,4 @@
+include CHANGELOG.md
+recursive-include docs *.md *.png
+recursive-include examples *.py
+global-exclude __pycache__ *.py[cod] .DS_Store
