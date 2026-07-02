@@ -99,6 +99,36 @@ The report also exposes two scalar conveniences:
 is useful for ranking, but the Pareto test itself compares each stress-test
 scenario.
 
+## Explaining The Selected Representation
+
+Use `explain_minimal_stable()` when an ambiguity limit is supplied:
+
+```python
+explanation = frontier.explain_minimal_stable()
+if explanation is not None:
+    print(explanation.to_markdown())
+```
+
+Use `explain(...)` for any evaluated representation:
+
+```python
+print(frontier.explain(["credit_score_band", "ltv_band"]).to_markdown())
+```
+
+The explanation separates:
+
+- baseline ambiguity versus selected ambiguity,
+- ambiguity reduction by scenario,
+- added public cells and added public columns,
+- scenarios where the selected representation still fails the ambiguity limit,
+- close dominated alternatives,
+- requested refinements screened out of the search,
+- whether the search result was exact or heuristic.
+
+The full `frontier.to_markdown()` report includes a selected-representation
+explanation. It uses the minimal stable representation when available, then the
+best candidate within `bucket_budget`, then the first Pareto-frontier candidate.
+
 ## Search Modes
 
 Use `search="exhaustive"` when the candidate set is small. This is the default

@@ -83,6 +83,20 @@ class FrontierSearchTrace:
 
 
 @dataclass(frozen=True)
+class FrontierScreenedRefinement:
+    """A requested refinement column that was not evaluated."""
+
+    column: str
+    reason: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "column": self.column,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
 class _ScenarioSpec:
     scenario: str
     hidden_columns: tuple[str, ...]
@@ -151,6 +165,135 @@ class PublicRepresentationCandidate:
 
 
 @dataclass(frozen=True)
+class FrontierScenarioComparison:
+    """Baseline-vs-selected ambiguity comparison for one scenario."""
+
+    scenario: str
+    q_name: str
+    min_cell_weight: float
+    hidden_columns: tuple[str, ...]
+    baseline_ambiguity: float | None
+    selected_ambiguity: float
+    reduction: float | None
+    reduction_percent: float | None
+    passes_ambiguity_limit: bool | None
+    public_adequate: bool
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "scenario": self.scenario,
+            "q_name": self.q_name,
+            "min_cell_weight": self.min_cell_weight,
+            "hidden_columns": self.hidden_columns,
+            "baseline_ambiguity": self.baseline_ambiguity,
+            "selected_ambiguity": self.selected_ambiguity,
+            "reduction": self.reduction,
+            "reduction_percent": self.reduction_percent,
+            "passes_ambiguity_limit": self.passes_ambiguity_limit,
+            "public_adequate": self.public_adequate,
+        }
+
+
+@dataclass(frozen=True)
+class FrontierCloseAlternative:
+    """Nearby dominated alternative shown in an explanation."""
+
+    added_columns: tuple[str, ...]
+    label: str
+    public_cells: int
+    max_ambiguity: float
+    delta_public_cells: int
+    delta_max_ambiguity: float
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "added_columns": self.added_columns,
+            "label": self.label,
+            "public_cells": self.public_cells,
+            "max_ambiguity": self.max_ambiguity,
+            "delta_public_cells": self.delta_public_cells,
+            "delta_max_ambiguity": self.delta_max_ambiguity,
+        }
+
+
+@dataclass(frozen=True)
+class FrontierCandidateExplanation:
+    """Review-oriented explanation for one frontier candidate."""
+
+    candidate: PublicRepresentationCandidate
+    baseline: PublicRepresentationCandidate | None
+    scenario_comparisons: tuple[FrontierScenarioComparison, ...]
+    close_dominated_alternatives: tuple[FrontierCloseAlternative, ...]
+    screened_refinements: tuple[FrontierScreenedRefinement, ...]
+    search_trace: FrontierSearchTrace | None
+    ambiguity_limit: float | None
+    bucket_budget: int | None
+
+    @property
+    def baseline_ambiguity(self) -> float | None:
+        return None if self.baseline is None else self.baseline.max_ambiguity
+
+    @property
+    def selected_ambiguity(self) -> float:
+        return self.candidate.max_ambiguity
+
+    @property
+    def ambiguity_reduction(self) -> float | None:
+        if self.baseline is None:
+            return None
+        return self.baseline.max_ambiguity - self.candidate.max_ambiguity
+
+    @property
+    def ambiguity_reduction_percent(self) -> float | None:
+        if self.baseline is None or self.baseline.max_ambiguity <= 0:
+            return None
+        return 100.0 * self.ambiguity_reduction / self.baseline.max_ambiguity
+
+    @property
+    def added_public_cells(self) -> int | None:
+        if self.baseline is None:
+            return None
+        return self.candidate.public_cells - self.baseline.public_cells
+
+    @property
+    def failing_scenarios(self) -> tuple[FrontierScenarioComparison, ...]:
+        return tuple(
+            row
+            for row in self.scenario_comparisons
+            if row.passes_ambiguity_limit is False
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "candidate": self.candidate.as_dict(),
+            "baseline": None if self.baseline is None else self.baseline.as_dict(),
+            "baseline_ambiguity": self.baseline_ambiguity,
+            "selected_ambiguity": self.selected_ambiguity,
+            "ambiguity_reduction": self.ambiguity_reduction,
+            "ambiguity_reduction_percent": self.ambiguity_reduction_percent,
+            "added_public_cells": self.added_public_cells,
+            "failing_scenarios": [row.as_dict() for row in self.failing_scenarios],
+            "scenario_comparisons": [
+                row.as_dict() for row in self.scenario_comparisons
+            ],
+            "close_dominated_alternatives": [
+                row.as_dict() for row in self.close_dominated_alternatives
+            ],
+            "screened_refinements": [
+                row.as_dict() for row in self.screened_refinements
+            ],
+            "search_trace": None
+            if self.search_trace is None
+            else self.search_trace.as_dict(),
+            "ambiguity_limit": self.ambiguity_limit,
+            "bucket_budget": self.bucket_budget,
+        }
+
+    def to_markdown(self, *, heading: str = "## Selected Representation Explanation") -> str:
+        return "\n".join(_candidate_explanation_markdown(self, heading=heading))
+
+
+@dataclass(frozen=True)
 class PublicRepresentationFrontier:
     """Pareto frontier over public-cell complexity and transport stability."""
 
@@ -162,6 +305,8 @@ class PublicRepresentationFrontier:
     hidden_sets: tuple[tuple[str, ...], ...]
     min_cell_weights: tuple[float, ...]
     candidate_refinements: tuple[str, ...]
+    requested_refinements: tuple[str, ...] = ()
+    screened_refinements: tuple[FrontierScreenedRefinement, ...] = ()
     ambiguity_limit: float | None = None
     bucket_budget: int | None = None
     title: str = "Public Representation Frontier"
@@ -213,6 +358,70 @@ class PublicRepresentationFrontier:
             ),
         )
 
+    @property
+    def baseline(self) -> PublicRepresentationCandidate | None:
+        for row in self.candidates:
+            if not row.added_columns:
+                return row
+        return None
+
+    def explain(
+        self,
+        candidate: PublicRepresentationCandidate | Sequence[str],
+        *,
+        top_close: int = 5,
+    ) -> FrontierCandidateExplanation:
+        """Explain why one representation is or is not attractive."""
+
+        if top_close < 0:
+            raise ValueError("top_close must be non-negative")
+        selected = self._resolve_candidate(candidate)
+        return FrontierCandidateExplanation(
+            candidate=selected,
+            baseline=self.baseline,
+            scenario_comparisons=_scenario_comparisons(
+                baseline=self.baseline,
+                selected=selected,
+                ambiguity_limit=self.ambiguity_limit,
+            ),
+            close_dominated_alternatives=_close_dominated_alternatives(
+                selected,
+                self.dominated,
+                top=top_close,
+            ),
+            screened_refinements=self.screened_refinements,
+            search_trace=self.search_trace,
+            ambiguity_limit=self.ambiguity_limit,
+            bucket_budget=self.bucket_budget,
+        )
+
+    def explain_minimal_stable(
+        self,
+        *,
+        top_close: int = 5,
+    ) -> FrontierCandidateExplanation | None:
+        """Explain the minimal stable representation, if one exists."""
+
+        if self.minimal_stable is None:
+            return None
+        return self.explain(self.minimal_stable, top_close=top_close)
+
+    def _resolve_candidate(
+        self,
+        candidate: PublicRepresentationCandidate | Sequence[str],
+    ) -> PublicRepresentationCandidate:
+        if isinstance(candidate, PublicRepresentationCandidate):
+            selected_columns = candidate.added_columns
+        else:
+            selected_columns = _ordered_subset(
+                self.candidate_refinements,
+                candidate,
+            )
+        for row in self.candidates:
+            if row.added_columns == selected_columns:
+                return row
+        raise ValueError(f"candidate was not evaluated: {tuple(selected_columns)!r}")
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "title": self.title,
@@ -222,6 +431,10 @@ class PublicRepresentationFrontier:
             "hidden_sets": self.hidden_sets,
             "min_cell_weights": self.min_cell_weights,
             "candidate_refinements": self.candidate_refinements,
+            "requested_refinements": self.requested_refinements,
+            "screened_refinements": [
+                row.as_dict() for row in self.screened_refinements
+            ],
             "ambiguity_limit": self.ambiguity_limit,
             "bucket_budget": self.bucket_budget,
             "search_trace": None
@@ -295,6 +508,14 @@ class PublicRepresentationFrontier:
 
         lines.extend(["", "## Interpretation", ""])
         lines.extend(_frontier_interpretation(self))
+        explanation = self.explain_minimal_stable()
+        if explanation is None and best_budget is not None:
+            explanation = self.explain(best_budget)
+        if explanation is None and self.frontier:
+            explanation = self.explain(self.frontier[0])
+        if explanation is not None:
+            lines.extend([""])
+            lines.extend(_candidate_explanation_markdown(explanation))
         lines.extend(["", "## Pareto Frontier", ""])
         lines.extend(_candidate_table(self.frontier))
         if self.dominated:
@@ -392,6 +613,14 @@ def public_representation_frontier(
     common_hidden = _common_hidden_columns(hidden_grid)
     must_include_tuple = _unique_tuple(must_include or ())
     must_exclude_tuple = _unique_tuple(must_exclude or ())
+    requested_refinements = _unique_tuple(candidate_refinements)
+    screened_refinements = _screened_refinements(
+        requested_refinements,
+        base_public=base_public_tuple,
+        hidden_sets=hidden_grid,
+        common_hidden=common_hidden,
+        must_exclude=must_exclude_tuple,
+    )
     candidate_tuple, required_columns = _valid_candidate_refinements(
         base_public_tuple,
         common_hidden,
@@ -451,6 +680,8 @@ def public_representation_frontier(
         hidden_sets=hidden_grid,
         min_cell_weights=min_cell_weight_grid,
         candidate_refinements=candidate_tuple,
+        requested_refinements=requested_refinements,
+        screened_refinements=screened_refinements,
         ambiguity_limit=ambiguity_limit,
         bucket_budget=bucket_budget,
         title=title,
@@ -934,6 +1165,114 @@ def _candidate_subsets(
     return tuple(subsets)
 
 
+def _scenario_comparisons(
+    *,
+    baseline: PublicRepresentationCandidate | None,
+    selected: PublicRepresentationCandidate,
+    ambiguity_limit: float | None,
+) -> tuple[FrontierScenarioComparison, ...]:
+    baseline_by_scenario = (
+        {} if baseline is None else {row.scenario: row for row in baseline.scenarios}
+    )
+    rows = []
+    for selected_row in selected.scenarios:
+        baseline_row = baseline_by_scenario.get(selected_row.scenario)
+        baseline_ambiguity = (
+            None if baseline_row is None else baseline_row.ambiguity
+        )
+        reduction = (
+            None
+            if baseline_ambiguity is None
+            else baseline_ambiguity - selected_row.ambiguity
+        )
+        reduction_percent = (
+            None
+            if baseline_ambiguity is None or baseline_ambiguity <= 0
+            else 100.0 * reduction / baseline_ambiguity
+        )
+        passes_ambiguity_limit = (
+            None
+            if ambiguity_limit is None
+            else selected_row.ambiguity <= ambiguity_limit
+        )
+        rows.append(
+            FrontierScenarioComparison(
+                scenario=selected_row.scenario,
+                q_name=selected_row.q_name,
+                min_cell_weight=selected_row.min_cell_weight,
+                hidden_columns=selected_row.hidden_columns,
+                baseline_ambiguity=baseline_ambiguity,
+                selected_ambiguity=selected_row.ambiguity,
+                reduction=reduction,
+                reduction_percent=reduction_percent,
+                passes_ambiguity_limit=passes_ambiguity_limit,
+                public_adequate=selected_row.public_adequate,
+            )
+        )
+    return tuple(rows)
+
+
+def _close_dominated_alternatives(
+    selected: PublicRepresentationCandidate,
+    dominated: Sequence[PublicRepresentationCandidate],
+    *,
+    top: int,
+) -> tuple[FrontierCloseAlternative, ...]:
+    if top == 0:
+        return ()
+    alternatives = []
+    for row in dominated:
+        if row.added_columns == selected.added_columns:
+            continue
+        alternatives.append(
+            FrontierCloseAlternative(
+                added_columns=row.added_columns,
+                label=row.label,
+                public_cells=row.public_cells,
+                max_ambiguity=row.max_ambiguity,
+                delta_public_cells=row.public_cells - selected.public_cells,
+                delta_max_ambiguity=row.max_ambiguity - selected.max_ambiguity,
+            )
+        )
+    alternatives.sort(
+        key=lambda row: (
+            abs(row.delta_max_ambiguity),
+            abs(row.delta_public_cells),
+            row.public_cells,
+            row.label,
+        )
+    )
+    return tuple(alternatives[:top])
+
+
+def _screened_refinements(
+    requested_refinements: tuple[str, ...],
+    *,
+    base_public: tuple[str, ...],
+    hidden_sets: tuple[tuple[str, ...], ...],
+    common_hidden: tuple[str, ...],
+    must_exclude: tuple[str, ...],
+) -> tuple[FrontierScreenedRefinement, ...]:
+    base_set = set(base_public)
+    excluded = set(must_exclude)
+    union_hidden = set().union(*(set(columns) for columns in hidden_sets))
+    common = set(common_hidden)
+    screened = []
+    for column in requested_refinements:
+        if column in base_set:
+            reason = "already public"
+        elif column in excluded:
+            reason = "excluded by must_exclude"
+        elif column not in union_hidden:
+            reason = "not present in any hidden set"
+        elif column not in common:
+            reason = "unavailable across hidden sets"
+        else:
+            continue
+        screened.append(FrontierScreenedRefinement(column=column, reason=reason))
+    return tuple(screened)
+
+
 def _resolve_min_cell_weights(
     min_cell_weight: float,
     min_cell_weights: Sequence[float] | None,
@@ -1259,6 +1598,139 @@ def _scenario_table(candidates: Sequence[PublicRepresentationCandidate]) -> list
     return lines
 
 
+def _candidate_explanation_markdown(
+    explanation: FrontierCandidateExplanation,
+    *,
+    heading: str = "## Selected Representation Explanation",
+) -> list[str]:
+    candidate = explanation.candidate
+    lines = [
+        heading,
+        "",
+        f"- Selected representation: `{candidate.label}`",
+        f"- Added columns: {_format_columns(candidate.added_columns)}",
+        f"- Public cells: {_format_range(candidate.min_public_cells, candidate.max_public_cells)}",
+        f"- Max ambiguity: {candidate.max_ambiguity:.4f}",
+        f"- Mean ambiguity: {candidate.mean_ambiguity:.4f}",
+        f"- Public adequate in all scenarios: {'yes' if candidate.public_adequate else 'no'}",
+    ]
+    if explanation.baseline is not None:
+        reduction = explanation.ambiguity_reduction
+        reduction_percent = explanation.ambiguity_reduction_percent
+        lines.extend(
+            [
+                "- Baseline max ambiguity: "
+                f"{explanation.baseline.max_ambiguity:.4f}",
+                "- Selected vs baseline max ambiguity: "
+                f"{explanation.baseline.max_ambiguity:.4f} -> "
+                f"{candidate.max_ambiguity:.4f}",
+                "- Max-ambiguity reduction: "
+                f"{_format_optional_float(reduction)} "
+                f"({_format_optional_percent(reduction_percent)})",
+                "- Added public cells vs baseline: "
+                f"{_format_optional_int(explanation.added_public_cells)}",
+            ]
+        )
+    if explanation.ambiguity_limit is not None:
+        lines.append(
+            "- Ambiguity limit result: "
+            f"{'pass' if candidate.passes_ambiguity_limit else 'fail'} "
+            f"(limit {explanation.ambiguity_limit:.4f})"
+        )
+    if explanation.search_trace is not None:
+        exact = "exact" if explanation.search_trace.exact else "heuristic"
+        lines.append(
+            "- Search provenance: "
+            f"{explanation.search_trace.search} ({exact}), "
+            f"{explanation.search_trace.evaluated_candidates}/"
+            f"{explanation.search_trace.candidate_space_size} candidates evaluated, "
+            f"stopping reason `{explanation.search_trace.stopping_reason}`."
+        )
+
+    lines.extend(["", "### Ambiguity Reduction by Scenario", ""])
+    lines.extend(_scenario_comparison_table(explanation.scenario_comparisons))
+
+    lines.extend(["", "### Failing Scenarios", ""])
+    if explanation.failing_scenarios:
+        lines.extend(_scenario_comparison_table(explanation.failing_scenarios))
+    elif explanation.ambiguity_limit is None:
+        lines.append("- No ambiguity limit was supplied, so no pass/fail scenario test was applied.")
+    else:
+        lines.append("- No selected-representation scenario exceeds the ambiguity limit.")
+
+    lines.extend(["", "### Close Dominated Alternatives", ""])
+    if explanation.close_dominated_alternatives:
+        lines.extend(_close_alternative_table(explanation.close_dominated_alternatives))
+    else:
+        lines.append("- No dominated alternatives were close enough to list.")
+
+    lines.extend(["", "### Screened-Out Refinements", ""])
+    if explanation.screened_refinements:
+        for row in explanation.screened_refinements:
+            lines.append(f"- `{row.column}`: {row.reason}.")
+    else:
+        lines.append("- No requested refinement columns were screened out.")
+    return lines
+
+
+def _scenario_comparison_table(
+    rows: Sequence[FrontierScenarioComparison],
+) -> list[str]:
+    lines = [
+        "| scenario | Q | min_cell_weight | hidden columns | baseline ambiguity | selected ambiguity | reduction | reduction pct | public adequate | stable |",
+        "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |",
+    ]
+    for row in rows:
+        stable = (
+            ""
+            if row.passes_ambiguity_limit is None
+            else ("yes" if row.passes_ambiguity_limit else "no")
+        )
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    row.scenario,
+                    _escape_table(row.q_name),
+                    f"{row.min_cell_weight:g}",
+                    _escape_table(", ".join(row.hidden_columns)),
+                    _format_optional_float(row.baseline_ambiguity),
+                    f"{row.selected_ambiguity:.4f}",
+                    _format_optional_float(row.reduction),
+                    _format_optional_percent(row.reduction_percent),
+                    "yes" if row.public_adequate else "no",
+                    stable,
+                ]
+            )
+            + " |"
+        )
+    return lines
+
+
+def _close_alternative_table(
+    rows: Sequence[FrontierCloseAlternative],
+) -> list[str]:
+    lines = [
+        "| representation | public cells | max ambiguity | delta public cells | delta max ambiguity |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _escape_table(row.label),
+                    str(row.public_cells),
+                    f"{row.max_ambiguity:.4f}",
+                    f"{row.delta_public_cells:+d}",
+                    f"{row.delta_max_ambiguity:+.4f}",
+                ]
+            )
+            + " |"
+        )
+    return lines
+
+
 def _escape_table(value: str) -> str:
     return value.replace("|", "\\|")
 
@@ -1267,3 +1739,27 @@ def _format_range(lower: int, upper: int) -> str:
     if lower == upper:
         return str(upper)
     return f"{lower}-{upper}"
+
+
+def _format_columns(columns: Sequence[str]) -> str:
+    if not columns:
+        return "none"
+    return ", ".join(f"`{column}`" for column in columns)
+
+
+def _format_optional_float(value: float | None) -> str:
+    if value is None:
+        return ""
+    return f"{value:.4f}"
+
+
+def _format_optional_int(value: int | None) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _format_optional_percent(value: float | None) -> str:
+    if value is None:
+        return ""
+    return f"{value:.1f}%"

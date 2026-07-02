@@ -304,6 +304,85 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
         self.assertIn("sensitivity-aware", markdown)
         self.assertIn("min_cell_weight", markdown)
 
+    def test_public_representation_frontier_explains_selected_candidate(self):
+        rows = [
+            {
+                "segment": "A",
+                "driver": "low",
+                "noise": "n",
+                "extra": "e1",
+                "target": 0.0,
+                "weight": 30,
+            },
+            {
+                "segment": "A",
+                "driver": "high",
+                "noise": "n",
+                "extra": "e2",
+                "target": 1.0,
+                "weight": 30,
+            },
+            {
+                "segment": "B",
+                "driver": "flat",
+                "noise": "n",
+                "extra": "e1",
+                "target": 0.5,
+                "weight": 40,
+            },
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver", "noise", "extra"],
+            hidden_sets=[
+                ["segment", "driver", "noise", "extra"],
+                ["segment", "driver", "noise"],
+            ],
+            target="target",
+            weight="weight",
+            candidate_refinements=["segment", "driver", "extra", "missing", "noise"],
+            q_presets=["saturated", us.q_bounded_shift(0.5)],
+            min_cell_weights=[1, 35],
+            ambiguity_limit=0.05,
+        )
+
+        explanation = report.explain_minimal_stable()
+        self.assertIsInstance(explanation, us.FrontierCandidateExplanation)
+        assert explanation is not None
+        markdown = explanation.to_markdown()
+        payload = explanation.as_dict()
+        explicit = report.explain(["driver"])
+
+        self.assertEqual(explanation.candidate.added_columns, ("driver",))
+        self.assertEqual(explicit.candidate.added_columns, ("driver",))
+        self.assertAlmostEqual(explanation.baseline_ambiguity, 0.6)
+        self.assertAlmostEqual(explanation.selected_ambiguity, 0.0)
+        self.assertAlmostEqual(explanation.ambiguity_reduction, 0.6)
+        self.assertAlmostEqual(explanation.ambiguity_reduction_percent, 100.0)
+        self.assertEqual(explanation.added_public_cells, 1)
+        self.assertEqual(len(explanation.scenario_comparisons), 8)
+        self.assertEqual(len(explanation.failing_scenarios), 0)
+        self.assertTrue(explanation.close_dominated_alternatives)
+        self.assertEqual(
+            [row.reason for row in explanation.screened_refinements],
+            [
+                "already public",
+                "unavailable across hidden sets",
+                "not present in any hidden set",
+            ],
+        )
+        self.assertEqual(payload["candidate"]["added_columns"], ("driver",))
+        self.assertIn("## Selected Representation Explanation", markdown)
+        self.assertIn("Selected vs baseline max ambiguity: 0.6000 -> 0.0000", markdown)
+        self.assertIn("### Ambiguity Reduction by Scenario", markdown)
+        self.assertIn("### Close Dominated Alternatives", markdown)
+        self.assertIn("### Screened-Out Refinements", markdown)
+        self.assertIn("unavailable across hidden sets", markdown)
+        self.assertIn("Search provenance: exhaustive (exact)", markdown)
+        self.assertIn("## Selected Representation Explanation", report.to_markdown())
+
     def test_public_representation_frontier_rejects_hidden_sets_missing_public(self):
         with self.assertRaisesRegex(ValueError, "base_public columns"):
             us.public_representation_frontier(

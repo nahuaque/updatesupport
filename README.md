@@ -351,6 +351,9 @@ frontier = us.public_representation_frontier(
 
 print(frontier.minimal_stable)
 print(frontier.search_trace)
+explanation = frontier.explain_minimal_stable()
+if explanation is not None:
+    print(explanation.to_markdown())
 print(frontier.to_markdown())
 ```
 
@@ -359,7 +362,9 @@ every supplied stress test. Use `search="exhaustive"` for small candidate sets,
 `search="greedy"` for a fast first pass, and `search="beam"` for larger
 candidate lists with an explicit evaluation budget. Add `min_cell_weights` and
 `hidden_sets` when the frontier should be robust to sparse-cell thresholds or
-alternate hidden-state definitions. See
+alternate hidden-state definitions. The selected-representation explanation
+compares baseline versus selected ambiguity, scenario-level reductions, close
+dominated alternatives, and screened-out refinements. See
 [docs/public-representation-frontier.md](docs/public-representation-frontier.md)
 for interpretation guidance.
 
