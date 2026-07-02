@@ -50,5 +50,18 @@ report = usf.model_risk_report(
 print(report.to_markdown())
 ```
 
-A small synthetic portfolio example is available in
-`examples/model_risk_portfolio.py` in the source repository.
+A synthetic portfolio example is available in `examples/model_risk_portfolio.py`
+in the source repository:
+
+```bash
+uv run --package updatesupport-finance python \
+  packages/updatesupport-finance/examples/model_risk_portfolio.py
+```
+
+To write the Markdown report:
+
+```bash
+uv run --package updatesupport-finance python \
+  packages/updatesupport-finance/examples/model_risk_portfolio.py \
+  --output data/finance_model_risk_report.md
+```

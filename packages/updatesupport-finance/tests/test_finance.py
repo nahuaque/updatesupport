@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import runpy
 import unittest
+from pathlib import Path
 
 import updatesupport as us
 import updatesupport_finance as usf
@@ -155,6 +157,24 @@ class FinancePluginTests(unittest.TestCase):
 
         self.assertIn("finance", {plugin.name for plugin in discovered})
         self.assertIs(us.plugin_metric("finance", "expected_loss"), usf.expected_loss)
+
+    def test_synthetic_portfolio_example_builds_model_risk_report(self):
+        example_path = (
+            Path(__file__).resolve().parents[1]
+            / "examples"
+            / "model_risk_portfolio.py"
+        )
+        namespace = runpy.run_path(str(example_path), run_name="updatesupport_example")
+
+        rows = namespace["synthetic_portfolio_rows"]()
+        report = namespace["build_report"]()
+        markdown = report.to_markdown()
+
+        self.assertEqual(len(rows), 10)
+        self.assertIsInstance(report, usf.ModelRiskReport)
+        self.assertIn("EL_SYNTHETIC_RETAIL_001", markdown)
+        self.assertIn("hardship_history", markdown)
+        self.assertIn("local_housing_market", markdown)
 
 
 if __name__ == "__main__":
