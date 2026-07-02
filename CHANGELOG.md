@@ -11,6 +11,9 @@ All notable changes to `updatesupport` are documented here.
   frontier audit configurations.
 - Added `as_dict()` methods for public-descent and sensitivity reports so
   executed audit specs can emit structured report payloads.
+- Added structured export helpers and report methods: `to_json()`,
+  `to_tables()`, `to_dataframes()`, `report_to_json(...)`,
+  `report_tables(...)`, and `report_dataframes(...)`.
 
 ## 0.1.1 - 2026-07-02
 

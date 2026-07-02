@@ -237,6 +237,30 @@ class RefinementSensitivityReport:
     def failed_scenarios(self) -> tuple[RefinementSensitivityScenario, ...]:
         return tuple(row for row in self.scenarios if row.status != "ok")
 
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "row_count": self.row_count,
+            "candidates": [row.as_dict() for row in self.candidates],
+            "scenarios": [row.as_dict() for row in self.scenarios],
+            "rows": [row.as_dict() for row in self.rows],
+        }
+
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        from .exports import report_tables
+
+        return report_tables(self)
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import report_dataframes
+
+        return report_dataframes(self)
+
     def to_markdown(self) -> str:
         lines = [f"# {self.title}", ""]
         if self.row_count is not None:
@@ -388,6 +412,21 @@ class CausalReportingStabilitySuite:
                 "rows": [row.as_dict() for row in self.refinement_sensitivity.rows],
             },
         }
+
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        from .exports import report_tables
+
+        return report_tables(self)
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import report_dataframes
+
+        return report_dataframes(self)
 
     def to_markdown(self) -> str:
         lines = [
@@ -542,6 +581,21 @@ class PublicDescentReport:
 
     def as_dict(self) -> dict[str, Any]:
         return _public_descent_summary_dict(self)
+
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        from .exports import report_tables
+
+        return report_tables(self)
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import report_dataframes
+
+        return report_dataframes(self)
 
     def to_markdown(self) -> str:
         grouped = self.grouped
@@ -1519,6 +1573,21 @@ class SensitivityReport:
             "summary": self.summary.as_dict(),
             "rows": [row.as_dict() for row in self.rows],
         }
+
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        from .exports import report_tables
+
+        return report_tables(self)
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import report_dataframes
+
+        return report_dataframes(self)
 
     def to_markdown(self) -> str:
         lines = [f"# {self.title}", ""]

@@ -139,6 +139,16 @@ print(run.to_markdown())
 
 See [docs/audit-specs.md](docs/audit-specs.md).
 
+Reports also expose structured JSON and tables:
+
+```python
+run.to_json()
+run.to_tables()
+run.to_dataframes()  # requires pandas
+```
+
+See [docs/structured-exports.md](docs/structured-exports.md).
+
 ### 2. Run Robustness Checks
 
 Use `sensitivity_report(...)` when the conclusion should be checked across Q
@@ -311,6 +321,7 @@ uv run pytest
 
 - [Representation adequacy guide](docs/representation-adequacy.md)
 - [Audit specs](docs/audit-specs.md)
+- [Structured exports](docs/structured-exports.md)
 - [Public representation frontier](docs/public-representation-frontier.md)
 - [Transport preset guide](docs/transport-presets.md)
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)

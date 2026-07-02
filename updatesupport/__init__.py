@@ -32,6 +32,7 @@ from .environments import (
     leq,
     linear_constraint,
 )
+from .exports import report_dataframes, report_tables, report_to_json, tables_to_dataframes
 from .frontier import (
     FrontierCandidateExplanation,
     FrontierCloseAlternative,
@@ -170,6 +171,10 @@ __all__ = [
     "RowMetric",
     "row_metric",
     "run_audit",
+    "report_dataframes",
+    "report_tables",
+    "report_to_json",
+    "tables_to_dataframes",
     "discover_plugins",
     "get_plugin",
     "list_plugins",

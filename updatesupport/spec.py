@@ -297,9 +297,23 @@ class AuditRun:
     def to_json(self, **kwargs: Any) -> str:
         """Serialize the executed spec and structured report output to JSON."""
 
-        options = {"indent": 2, "sort_keys": True}
-        options.update(kwargs)
-        return json.dumps(self.as_dict(), **options)
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        """Return named list-of-dict tables for the executed audit."""
+
+        from .exports import report_tables
+
+        return report_tables(self)
+
+    def to_dataframes(self) -> dict[str, Any]:
+        """Return named pandas DataFrames for the executed audit."""
+
+        from .exports import report_dataframes
+
+        return report_dataframes(self)
 
 
 def run_audit(spec: AuditSpec | Mapping[str, Any], data: Any) -> AuditRun:

@@ -292,6 +292,21 @@ class FrontierCandidateExplanation:
     def to_markdown(self, *, heading: str = "## Selected Representation Explanation") -> str:
         return "\n".join(_candidate_explanation_markdown(self, heading=heading))
 
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        from .exports import report_tables
+
+        return report_tables(self)
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import report_dataframes
+
+        return report_dataframes(self)
+
 
 @dataclass(frozen=True)
 class PublicRepresentationFrontier:
@@ -524,6 +539,21 @@ class PublicRepresentationFrontier:
         lines.extend(["", "## Scenario Details", ""])
         lines.extend(_scenario_table(self.frontier))
         return "\n".join(lines)
+
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        from .exports import report_tables
+
+        return report_tables(self)
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import report_dataframes
+
+        return report_dataframes(self)
 
 
 def public_representation_frontier(

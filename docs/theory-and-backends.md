@@ -43,6 +43,9 @@ Tabular and reporting helpers:
 - `AuditRun`
 - `QSpec`
 - `run_audit(...)`
+- `report_to_json(...)`
+- `report_tables(...)`
+- `report_dataframes(...)`
 - `public_descent_report(...)`
 - `sensitivity_report(...)`
 - `recommend_refinements(...)`

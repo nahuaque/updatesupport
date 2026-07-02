@@ -54,6 +54,39 @@ class DoWhyRepresentationAudit:
 
         return self.report.to_markdown()
 
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "refutation_type": self.refutation_type,
+            "estimated_effect": self.estimated_effect,
+            "new_effect": self.new_effect,
+            "ambiguity": self.ambiguity,
+            "report": self.report.as_dict(),
+        }
+
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        from .exports import report_tables
+
+        tables = report_tables(self.report)
+        tables["dowhy_refutation"] = (
+            {
+                "refutation_type": self.refutation_type,
+                "estimated_effect": self.estimated_effect,
+                "new_effect": self.new_effect,
+                "ambiguity": self.ambiguity,
+            },
+        )
+        return tables
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import tables_to_dataframes
+
+        return tables_to_dataframes(self.to_tables())
+
 
 def audit_dowhy_effects(
     data: Any | GroupedProblem,

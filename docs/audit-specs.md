@@ -23,6 +23,7 @@ run = spec.run(rows_or_frame)
 
 print(run.to_markdown())
 print(run.to_json())
+print(run.to_tables().keys())
 ```
 
 The executed `AuditRun` keeps both the spec and report:
