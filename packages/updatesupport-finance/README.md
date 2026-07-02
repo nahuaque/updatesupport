@@ -39,7 +39,16 @@ report = usf.model_risk_report(
     metric=usf.expected_loss(pd="pd", lgd="lgd"),
     exposure="ead",
     q=usf.q_portfolio_mix_shift(radius=0.25),
+    model_id="EL_RETAIL_2026Q2",
+    portfolio_name="Retail credit portfolio",
+    as_of_date="2026-06-30",
+    intended_use="Expected-loss segmentation model review",
+    ambiguity_limit=0.0025,
+    public_adequacy_required=False,
 )
 
 print(report.to_markdown())
 ```
+
+A small synthetic portfolio example is available in
+`examples/model_risk_portfolio.py` in the source repository.

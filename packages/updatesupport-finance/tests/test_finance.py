@@ -93,12 +93,52 @@ class FinancePluginTests(unittest.TestCase):
             exposure="ead",
             q=usf.q_portfolio_mix_shift(radius=0.25),
             top=2,
+            model_id="PD_MORTGAGE_2026Q2",
+            portfolio_name="Retail portfolio",
+            as_of_date="2026-06-30",
+            intended_use="Expected loss validation",
+            ambiguity_limit=0.001,
+            public_adequacy_required=True,
         )
         markdown = report.to_markdown()
 
+        self.assertIsInstance(report, usf.ModelRiskReport)
+        self.assertIsInstance(report.core, us.PublicDescentReport)
+        self.assertEqual(report.review_status, "attention required")
+        self.assertIn("transport ambiguity", report.review_reasons[0])
         self.assertIn("Financial Model-Risk Representation Stability Report", markdown)
+        self.assertIn("## Model-Risk Context", markdown)
+        self.assertIn("Model ID: PD_MORTGAGE_2026Q2", markdown)
+        self.assertIn("## Review Status", markdown)
+        self.assertIn("Status: attention required", markdown)
+        self.assertIn("## Financial Model-Risk Interpretation", markdown)
         self.assertIn("Reported portfolio risk estimate", markdown)
         self.assertIn("bounded_shift(radius=0.25)", markdown)
+
+    def test_review_thresholds_can_pass(self):
+        report = usf.model_risk_report(
+            _portfolio_rows(),
+            public=["product", "region", "fico_band", "ltv_band"],
+            hidden=[
+                "product",
+                "region",
+                "fico_band",
+                "ltv_band",
+                "channel",
+                "employment",
+            ],
+            metric=usf.default_rate(default="defaulted"),
+            exposure="ead",
+            q="observed",
+            thresholds=usf.ReviewThresholds(ambiguity_limit=0.0),
+        )
+
+        self.assertEqual(report.review_status, "pass")
+        self.assertEqual(report.review_reasons, ())
+
+    def test_review_threshold_rejects_negative_ambiguity_limit(self):
+        with self.assertRaisesRegex(ValueError, "ambiguity_limit must be non-negative"):
+            usf.ReviewThresholds(ambiguity_limit=-0.01)
 
     def test_plugin_descriptor_can_be_registered(self):
         us.register_plugin(usf.plugin)
