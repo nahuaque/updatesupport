@@ -8,6 +8,8 @@ from typing import Any
 
 import updatesupport as us
 
+from .presets import finance_sensitivity_grid
+
 
 @dataclass(frozen=True)
 class ModelRiskMetadata:
@@ -149,6 +151,138 @@ class ModelRiskReport:
         ]
 
 
+@dataclass(frozen=True)
+class FinanceStabilityCertificate:
+    """Finance-specific wrapper around a core representation certificate."""
+
+    core: us.RepresentationStabilityCertificate
+    metadata: ModelRiskMetadata = ModelRiskMetadata()
+    q_profile: str = "credit_expected_loss"
+    title: str = "Financial Model-Risk Segmentation Stability Certificate"
+
+    @property
+    def status(self) -> str:
+        return self.core.status
+
+    @property
+    def passed(self) -> bool:
+        return self.core.passed
+
+    @property
+    def failed(self) -> bool:
+        return self.core.failed
+
+    @property
+    def inconclusive(self) -> bool:
+        return self.core.inconclusive
+
+    @property
+    def certified_candidate(self):
+        return self.core.certified_candidate
+
+    @property
+    def selected_candidate(self):
+        return self.core.selected_candidate
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "status": self.status,
+            "passed": self.passed,
+            "failed": self.failed,
+            "inconclusive": self.inconclusive,
+            "q_profile": self.q_profile,
+            "metadata": self.metadata.as_dict(),
+            "core": self.core.as_dict(),
+        }
+
+    def to_markdown(self) -> str:
+        lines = [
+            f"# {self.title}",
+            "",
+            f"- Certification status: **{self.status.upper()}**",
+            f"- Finance Q profile: `{self.q_profile}`",
+        ]
+        selected = self.core.selected_candidate
+        if selected is not None:
+            lines.extend(
+                [
+                    "- Selected public segmentation: "
+                    f"`{_column_label(selected.public_columns)}`",
+                    f"- Worst ambiguity: {selected.max_ambiguity:.4f}",
+                ]
+            )
+        else:
+            lines.append("- Selected public segmentation: none")
+        lines.extend([""])
+        lines.extend(self._metadata_markdown())
+        lines.extend(self._finance_interpretation_markdown())
+        core_markdown = self.core.to_markdown().splitlines()
+        if core_markdown and core_markdown[0].startswith("# "):
+            core_markdown = core_markdown[2:]
+        lines.extend(["", "## Core Certificate Evidence", ""])
+        lines.extend(core_markdown)
+        return "\n".join(lines)
+
+    def _metadata_markdown(self) -> list[str]:
+        rows = [
+            ("Model ID", self.metadata.model_id),
+            ("Portfolio", self.metadata.portfolio_name),
+            ("As-of date", self.metadata.as_of_date),
+            ("Intended use", self.metadata.intended_use),
+            ("Owner", self.metadata.owner),
+            ("Reviewer", self.metadata.reviewer),
+        ]
+        present = [(label, value) for label, value in rows if value]
+        if not present:
+            return []
+        lines = ["## Model-Risk Context", ""]
+        lines.extend(f"- {label}: {value}" for label, value in present)
+        lines.append("")
+        return lines
+
+    def _finance_interpretation_markdown(self) -> list[str]:
+        return [
+            "## Financial Certification Interpretation",
+            "",
+            "This certificate asks whether a reported public portfolio "
+            "segmentation can support the selected risk metric under the "
+            "declared hidden-composition and portfolio-concentration stress "
+            "grid.",
+            "",
+            "A pass is a representation-stability statement. It is not a "
+            "statistical confidence interval, model calibration result, "
+            "backtest, or governance approval.",
+        ]
+
+    def to_json(self, **kwargs: Any) -> str:
+        return us.report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        tables = {
+            "finance_certificate": (
+                {
+                    "title": self.title,
+                    "status": self.status,
+                    "q_profile": self.q_profile,
+                    "model_id": self.metadata.model_id,
+                    "portfolio_name": self.metadata.portfolio_name,
+                    "as_of_date": self.metadata.as_of_date,
+                    "intended_use": self.metadata.intended_use,
+                    "owner": self.metadata.owner,
+                    "reviewer": self.metadata.reviewer,
+                },
+            )
+        }
+        tables.update(
+            {f"core_{name}": rows for name, rows in self.core.to_tables().items()}
+        )
+        return tables
+
+    def to_dataframes(self) -> dict[str, Any]:
+        return us.tables_to_dataframes(self.to_tables())
+
+
 def from_portfolio(
     data: Any,
     *,
@@ -256,3 +390,134 @@ def model_risk_report(
         metadata=report_metadata,
         thresholds=report_thresholds,
     )
+
+
+def certify_portfolio_segmentation(
+    data: Any,
+    *,
+    public: Sequence[str] | None = None,
+    base_public: Sequence[str] | None = None,
+    hidden: Sequence[str],
+    metric: str | us.RowMetric,
+    exposure: str | None = None,
+    weight: str | None = None,
+    candidate_refinements: Sequence[str] | None = None,
+    q_profile: str = "credit_expected_loss",
+    q_presets: Sequence[Any] | None = None,
+    ambiguity_limit: float,
+    bucket_budget: int | None = None,
+    min_cell_weight: float = 1.0,
+    min_cell_weights: Sequence[float] | None = None,
+    hidden_sets: Sequence[Sequence[str]] | None = None,
+    search: str = "exhaustive",
+    exact_required: bool = True,
+    max_added_columns: int | None = None,
+    max_evaluations: int | None = None,
+    beam_width: int = 12,
+    factors: str | Sequence[str] | dict[str, str] | None = None,
+    portfolio_mix_radius: float | None = 0.35,
+    tv_radius: float | None = 0.10,
+    factor_radius: float | None = 0.20,
+    region: str | None = "region",
+    regional_radius: float | None = 0.10,
+    include_tv: bool = True,
+    include_regional: bool = True,
+    backend: str = "cvxpy",
+    solver: str | None = None,
+    solver_options: dict[str, Any] | None = None,
+    title: str = "Financial Model-Risk Segmentation Stability Certificate",
+    core_title: str = "Representation Stability Certificate",
+    frontier_title: str = "Finance Portfolio Segmentation Frontier Evidence",
+    metadata: ModelRiskMetadata | None = None,
+    model_id: str | None = None,
+    portfolio_name: str | None = None,
+    as_of_date: str | None = None,
+    intended_use: str | None = None,
+    owner: str | None = None,
+    reviewer: str | None = None,
+    **frontier_kwargs: Any,
+) -> FinanceStabilityCertificate:
+    """Certify a public portfolio segmentation against a finance stress grid."""
+
+    if exposure is not None and weight is not None and exposure != weight:
+        raise ValueError("use either exposure or weight, not both")
+    selected_public = _resolve_public(public=public, base_public=base_public)
+    if q_presets is None:
+        q_presets = finance_sensitivity_grid(
+            data,
+            hidden=hidden,
+            exposure=exposure,
+            weight=weight,
+            profile=q_profile,
+            portfolio_mix_radius=portfolio_mix_radius,
+            tv_radius=tv_radius,
+            factors=factors,
+            factor_radius=factor_radius,
+            region=region,
+            regional_radius=regional_radius,
+            include_tv=include_tv,
+            include_regional=include_regional,
+            backend=backend,
+            solver=solver,
+            solver_options=solver_options,
+        )
+    core = us.certify_public_representation(
+        data,
+        base_public=selected_public,
+        hidden=hidden,
+        target=metric,
+        weight=weight if weight is not None else exposure,
+        candidate_refinements=candidate_refinements,
+        q_presets=q_presets,
+        ambiguity_limit=ambiguity_limit,
+        bucket_budget=bucket_budget,
+        min_cell_weight=min_cell_weight,
+        min_cell_weights=min_cell_weights,
+        hidden_sets=hidden_sets,
+        search=search,
+        exact_required=exact_required,
+        max_added_columns=max_added_columns,
+        max_evaluations=max_evaluations,
+        beam_width=beam_width,
+        title=core_title,
+        frontier_title=frontier_title,
+        **frontier_kwargs,
+    )
+    certificate_metadata = metadata or ModelRiskMetadata(
+        model_id=model_id,
+        portfolio_name=portfolio_name,
+        as_of_date=as_of_date,
+        intended_use=intended_use,
+        owner=owner,
+        reviewer=reviewer,
+    )
+    return FinanceStabilityCertificate(
+        core=core,
+        metadata=certificate_metadata,
+        q_profile=q_profile,
+        title=title,
+    )
+
+
+def _resolve_public(
+    *,
+    public: Sequence[str] | None,
+    base_public: Sequence[str] | None,
+) -> Sequence[str]:
+    if (
+        public is not None
+        and base_public is not None
+        and tuple(public) != tuple(base_public)
+    ):
+        raise TypeError("use either 'public' or 'base_public', not both")
+    selected = public if public is not None else base_public
+    if selected is None:
+        raise TypeError(
+            "certify_portfolio_segmentation() missing required keyword argument: "
+            "'public'"
+        )
+    return selected
+
+
+def _column_label(columns: Sequence[str]) -> str:
+    return " x ".join(columns) if columns else "(none)"

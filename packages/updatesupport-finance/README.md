@@ -160,6 +160,40 @@ The example prints both the finance model-risk report and a core
 The frontier section compares baseline versus selected ambiguity, close
 dominated alternatives, and any screened-out refinement fields.
 
+## Finance Sensitivity Profiles
+
+`finance_sensitivity_grid(...)` builds an opinionated Q grid for portfolio
+model-risk review:
+
+```python
+q_presets = usf.finance_sensitivity_grid(
+    portfolio,
+    hidden=[
+        "product",
+        "region",
+        "fico_band",
+        "ltv_band",
+        "broker_channel",
+        "employment_type",
+        "vintage",
+    ],
+    exposure="ead",
+    factors={
+        "macro_beta": "macro_beta",
+        "rate_sensitivity": "rate_sensitivity",
+    },
+)
+```
+
+The default `credit_expected_loss` profile includes:
+
+- saturated hidden-composition stress
+- bounded portfolio-mix shift
+- exposure-weighted total-variation shift
+- factor-exposure shift, when `factors=...` is supplied
+- regional concentration shift
+- observed no-shift baseline
+
 ## Portfolio Concentration Stress Presets
 
 Use concentration presets when independent hidden-bucket movement is too
@@ -224,6 +258,43 @@ In model-review language, this asks:
 This maps naturally to expected loss, default rate, LGD, delinquency, approval
 benefit, and capital review where shifts are governed by portfolio exposure
 profiles rather than arbitrary independent hidden-cell movement.
+
+## Portfolio Segmentation Certificate
+
+Use `certify_portfolio_segmentation(...)` when the output should be a
+pass/fail/inconclusive artifact for a model-review pack:
+
+```python
+certificate = usf.certify_portfolio_segmentation(
+    portfolio,
+    public=["product", "region", "fico_band", "ltv_band"],
+    hidden=[
+        "product",
+        "region",
+        "fico_band",
+        "ltv_band",
+        "broker_channel",
+        "employment_type",
+        "vintage",
+    ],
+    metric=usf.expected_loss(pd="pd", lgd="lgd"),
+    exposure="ead",
+    candidate_refinements=["broker_channel", "employment_type", "vintage"],
+    factors={"macro_beta": "macro_beta"},
+    ambiguity_limit=0.0025,
+    bucket_budget=80,
+    search="exhaustive",
+    model_id="EL_RETAIL_2026Q2",
+    portfolio_name="Retail credit portfolio",
+    intended_use="Expected-loss segmentation review",
+)
+
+print(certificate.to_markdown())
+```
+
+The returned `FinanceStabilityCertificate` keeps the underlying core
+`RepresentationStabilityCertificate` at `certificate.core`, while adding
+finance metadata and model-risk interpretation language.
 
 To write the Markdown report:
 

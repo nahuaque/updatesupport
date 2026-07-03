@@ -156,8 +156,10 @@ The plugin only controls how the row-level target value is computed.
 - `expected_loss_amount(...)`
 - `default_rate(...)`
 - `loss_given_default(...)`
+- `finance_sensitivity_grid(...)`
 - `from_portfolio(...)`
 - `model_risk_report(...)`
+- `certify_portfolio_segmentation(...)`
 - `q_portfolio_mix_shift(...)`
 - `q_exposure_weighted_tv(...)`
 - `q_factor_exposure_shift(...)`

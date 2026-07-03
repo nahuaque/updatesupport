@@ -10,7 +10,11 @@ from .metrics import (
     expected_loss_amount,
     loss_given_default,
 )
-from .portfolio import from_portfolio, model_risk_report
+from .portfolio import (
+    certify_portfolio_segmentation,
+    from_portfolio,
+    model_risk_report,
+)
 from .presets import (
     q_exposure_weighted_tv,
     q_factor_exposure_shift,
@@ -37,6 +41,7 @@ plugin = us.UpdateSupportPlugin(
     },
     report_profiles={
         "model_risk": model_risk_report,
+        "segmentation_certificate": certify_portfolio_segmentation,
     },
     compilers={
         "portfolio": from_portfolio,

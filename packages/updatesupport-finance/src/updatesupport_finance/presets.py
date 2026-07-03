@@ -21,10 +21,97 @@ def q_exposure_weighted_tv(
     radius: float,
     *,
     backend: str = "cvxpy",
+    solver: str | None = None,
+    solver_options: Mapping[str, Any] | None = None,
 ) -> us.QPreset:
     """Constrain total hidden portfolio mass shift under the observed weights."""
 
-    return us.q_tv_budget(radius, backend=backend)
+    return us.q_tv_budget(
+        radius,
+        backend=backend,
+        solver=solver,
+        solver_options=solver_options,
+    )
+
+
+def finance_sensitivity_grid(
+    data: Any,
+    *,
+    hidden: Sequence[str],
+    exposure: str | None = None,
+    weight: str | None = None,
+    profile: str = "credit_expected_loss",
+    base: str | None = None,
+    portfolio_mix_radius: float | None = 0.35,
+    tv_radius: float | None = 0.10,
+    factors: str | Sequence[str] | Mapping[str, str] | None = None,
+    factor_radius: float | None = 0.20,
+    region: str | None = "region",
+    regional_radius: float | None = 0.10,
+    include_saturated: bool = True,
+    include_observed: bool = True,
+    include_tv: bool = True,
+    include_regional: bool = True,
+    backend: str = "cvxpy",
+    solver: str | None = None,
+    solver_options: Mapping[str, Any] | None = None,
+) -> tuple[Any, ...]:
+    """Return an opinionated finance model-risk Q stress grid.
+
+    The default profile combines conservative saturated support, a practical
+    bounded portfolio-mix shift, exposure-weighted TV, optional factor-exposure
+    balance, regional concentration balance, and the observed no-shift baseline.
+    """
+
+    profile_name = _profile_name(profile if base is None else base)
+    repeatable_data = _repeatable_data(data)
+    q_presets: list[Any] = []
+    if include_saturated:
+        q_presets.append("saturated")
+    if portfolio_mix_radius is not None:
+        q_presets.append(q_portfolio_mix_shift(portfolio_mix_radius))
+    if include_tv and tv_radius is not None:
+        q_presets.append(
+            q_exposure_weighted_tv(
+                tv_radius,
+                backend=backend,
+                solver=solver,
+                solver_options=solver_options,
+            )
+        )
+    if factors is not None and factor_radius is not None:
+        q_presets.append(
+            q_factor_exposure_shift(
+                factor_radius,
+                repeatable_data,
+                hidden=hidden,
+                factors=factors,
+                exposure=exposure,
+                weight=weight,
+                backend=backend,
+                solver=solver,
+                solver_options=solver_options,
+            )
+        )
+    if include_regional and region is not None and regional_radius is not None:
+        q_presets.append(
+            q_regional_concentration_shift(
+                regional_radius,
+                repeatable_data,
+                hidden=hidden,
+                region=region,
+                exposure=exposure,
+                weight=weight,
+                backend=backend,
+                solver=solver,
+                solver_options=solver_options,
+            )
+        )
+    if include_observed:
+        q_presets.append("observed")
+    if not q_presets:
+        raise ValueError(f"finance sensitivity profile {profile_name!r} is empty")
+    return tuple(q_presets)
 
 
 def portfolio_factor_moments(
@@ -236,6 +323,31 @@ def _resolve_weight_column(
     if exposure is not None and weight is not None and exposure != weight:
         raise ValueError("use either exposure or weight, not both")
     return weight if weight is not None else exposure
+
+
+def _profile_name(profile: str) -> str:
+    aliases = {
+        "credit": "credit_expected_loss",
+        "credit_expected_loss": "credit_expected_loss",
+        "expected_loss": "credit_expected_loss",
+        "model-risk": "credit_expected_loss",
+        "model_risk": "credit_expected_loss",
+        "portfolio": "credit_expected_loss",
+        "portfolio_model_risk": "credit_expected_loss",
+    }
+    key = profile.strip().lower().replace("-", "_")
+    try:
+        return aliases[key]
+    except KeyError as exc:
+        raise ValueError(
+            f"unsupported finance sensitivity profile: {profile!r}"
+        ) from exc
+
+
+def _repeatable_data(data: Any) -> Any:
+    if hasattr(data, "to_dict") or isinstance(data, list | tuple):
+        return data
+    return tuple(data)
 
 
 def _iter_records(data: Any):

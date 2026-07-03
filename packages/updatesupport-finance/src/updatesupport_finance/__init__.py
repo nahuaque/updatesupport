@@ -11,13 +11,16 @@ from .metrics import (
     loss_given_default,
 )
 from .portfolio import (
+    FinanceStabilityCertificate,
     ModelRiskMetadata,
     ModelRiskReport,
     ReviewThresholds,
+    certify_portfolio_segmentation,
     from_portfolio,
     model_risk_report,
 )
 from .presets import (
+    finance_sensitivity_grid,
     portfolio_concentration_moments,
     portfolio_factor_moments,
     q_exposure_weighted_tv,
@@ -37,6 +40,9 @@ __all__ = [
     "default_rate",
     "expected_loss",
     "expected_loss_amount",
+    "FinanceStabilityCertificate",
+    "finance_sensitivity_grid",
+    "certify_portfolio_segmentation",
     "from_portfolio",
     "loss_given_default",
     "ModelRiskMetadata",

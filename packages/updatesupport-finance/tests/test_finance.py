@@ -262,6 +262,58 @@ class FinancePluginTests(unittest.TestCase):
         self.assertAlmostEqual(interval.upper, 0.5, places=5)
         self.assertAlmostEqual(interval.diameter, 0.0, places=5)
 
+    def test_finance_sensitivity_grid_builds_named_profile(self):
+        _require_cvxpy()
+
+        grid = usf.finance_sensitivity_grid(
+            _factor_rows(),
+            hidden=["product", "channel"],
+            exposure="ead",
+            factors={"macro": "macro_factor"},
+        )
+
+        self.assertEqual(grid[0], "saturated")
+        self.assertEqual((grid[1].name, grid[1].radius), ("bounded_shift", 0.35))
+        self.assertEqual((grid[2].name, grid[2].radius), ("tv_budget", 0.10))
+        self.assertEqual((grid[3].name, grid[3].radius), ("covariate_balance", 0.20))
+        self.assertEqual((grid[4].name, grid[4].radius), ("covariate_balance", 0.10))
+        self.assertEqual(grid[5], "observed")
+
+    def test_certify_portfolio_segmentation_returns_finance_certificate(self):
+        _require_cvxpy()
+
+        certificate = usf.certify_portfolio_segmentation(
+            _factor_rows(),
+            public=["product"],
+            hidden=["product", "channel"],
+            metric=usf.expected_loss(pd="pd", lgd="lgd"),
+            exposure="ead",
+            candidate_refinements=["channel"],
+            factors={"macro": "macro_factor"},
+            ambiguity_limit=0.16,
+            bucket_budget=3,
+            search="exhaustive",
+            model_id="EL_TEST_001",
+            portfolio_name="Test portfolio",
+            intended_use="Expected-loss segmentation review",
+        )
+        markdown = certificate.to_markdown()
+        payload = certificate.as_dict()
+        tables = certificate.to_tables()
+
+        self.assertIsInstance(certificate, usf.FinanceStabilityCertificate)
+        self.assertIsInstance(certificate.core, us.RepresentationStabilityCertificate)
+        self.assertTrue(certificate.passed)
+        self.assertEqual(certificate.status, "pass")
+        self.assertEqual(certificate.certified_candidate.added_columns, ("channel",))
+        self.assertEqual(payload["metadata"]["model_id"], "EL_TEST_001")
+        self.assertEqual(payload["core"]["status"], "pass")
+        self.assertIn("Financial Model-Risk Segmentation", markdown)
+        self.assertIn("Financial Certification Interpretation", markdown)
+        self.assertIn("Core Certificate Evidence", markdown)
+        self.assertIn("finance_certificate", tables)
+        self.assertIn("core_summary", tables)
+
     def test_plugin_descriptor_can_be_registered(self):
         us.register_plugin(usf.plugin)
 
@@ -281,6 +333,10 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIs(
             us.plugin_q_preset("finance", "regional_concentration_shift"),
             usf.q_regional_concentration_shift,
+        )
+        self.assertIs(
+            us.plugin_report_profile("finance", "segmentation_certificate"),
+            usf.certify_portfolio_segmentation,
         )
         self.assertIs(us.plugin_compiler("finance", "portfolio"), usf.from_portfolio)
 
