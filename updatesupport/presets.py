@@ -18,6 +18,7 @@ from .environments import (
     PolytopeEnvironments,
     PublicFiberSaturated,
     SupportFunctionBackend,
+    SupportFunctionIntervalResult,
     cvxpy_constraint,
     eq,
 )
@@ -132,6 +133,24 @@ class CvxpyAdmissibleSetSpec:
         env = self.environment("support_function")
         return env.convex_admissible_set(
             problem,
+            public_law=self.fixed_public_law,
+        )
+
+    def support_interval(
+        self,
+        problem,
+        direction: Sequence[float] | None = None,
+    ) -> SupportFunctionIntervalResult:
+        """Evaluate ``[-sigma_Q(-h), sigma_Q(h)]`` for this preset spec."""
+
+        env = self.environment("support_function")
+        if not isinstance(env, SupportFunctionBackend):
+            raise TypeError(
+                "support interval evaluation requires SupportFunctionBackend"
+            )
+        return env.support_interval(
+            problem,
+            direction,
             public_law=self.fixed_public_law,
         )
 

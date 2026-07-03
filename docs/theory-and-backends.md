@@ -53,6 +53,7 @@ Core finite objects:
 - `ConvexAdmissibleSet`
 - `CvxpyAdmissibleSetSpec`
 - `SupportFunctionBackend`
+- `SupportFunctionIntervalResult`
 - `SupportFunctionResult`
 - `ParameterizedCvxpyEnvironments`
 
@@ -348,6 +349,7 @@ You can also inspect the set directly:
 ```python
 q_set = env.convex_admissible_set(problem, public_law={"North": 1.0})
 result = q_set.support_value([0.0, 1.0])
+interval = q_set.support_interval([0.0, 1.0])
 ```
 
 Compatible built-in convex presets can opt into this backend:
@@ -371,12 +373,17 @@ q_set = spec.convex_admissible_set(grouped.problem)
 upper = q_set.support_value(
     [grouped.problem.estimand_map[state] for state in grouped.problem.states]
 )
+interval = spec.support_interval(grouped.problem)
 ```
 
 `CvxpyAdmissibleSetSpec` can materialize the same constraints as a standard
 CVXPY environment, parameterized CVXPY environment, batched CVXPY environment,
 or support-function backend. This keeps the mathematical admissible set shared
 across solver modes.
+
+`support_interval(...)` returns a `SupportFunctionIntervalResult` with the
+lower value, upper value, diameter, and the lower/upper optimizer vectors. For a
+linear target direction `h`, it evaluates `sigma_Q(h)` and `sigma_Q(-h)`.
 
 This first support-function slice is for continuous convex Q sets and fixed
 linear targets. Mixed-integer presets such as `q_fiber_support_floor(...)` and

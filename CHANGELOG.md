@@ -65,6 +65,9 @@ All notable changes to `updatesupport` are documented here.
 - Added `CvxpyAdmissibleSetSpec` and `cvxpy_admissible_set_spec(...)` so
   compatible CVXPY Q presets expose reusable admissible-set constraint builders
   for standard, parameterized, batched, and support-function backends.
+- Added `SupportFunctionIntervalResult` and `support_interval(...)` methods for
+  direct support-function interval evaluation from a convex admissible set,
+  support-function backend, or CVXPY admissible-set spec.
 
 ### Fixed
 

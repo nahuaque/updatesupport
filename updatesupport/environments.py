@@ -135,6 +135,36 @@ class SupportFunctionResult:
 
 
 @dataclass(frozen=True)
+class SupportFunctionIntervalResult:
+    """Lower/upper interval from support-function evaluations."""
+
+    direction: tuple[float, ...]
+    lower: float
+    upper: float
+    diameter: float
+    lower_vector: tuple[float, ...]
+    upper_vector: tuple[float, ...]
+    lower_support_value: float
+    upper_support_value: float
+    lower_support_result: SupportFunctionResult
+    upper_support_result: SupportFunctionResult
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "direction": self.direction,
+            "lower": self.lower,
+            "upper": self.upper,
+            "diameter": self.diameter,
+            "lower_vector": self.lower_vector,
+            "upper_vector": self.upper_vector,
+            "lower_support_value": self.lower_support_value,
+            "upper_support_value": self.upper_support_value,
+            "lower_support_result": self.lower_support_result.as_dict(),
+            "upper_support_result": self.upper_support_result.as_dict(),
+        }
+
+
+@dataclass(frozen=True)
 class ConvexAdmissibleSet:
     """A CVXPY-defined convex admissible set over hidden distributions."""
 
@@ -198,6 +228,45 @@ class ConvexAdmissibleSet:
             direction=direction_vector,
             value=float(expression.value),
             vector=tuple(float(value) for value in self.variable.value),
+        )
+
+    def support_interval(
+        self,
+        direction: Sequence[float],
+        *,
+        solver: str | None = None,
+        solver_options: Mapping[str, Any] | None = None,
+        tol: float = 1e-9,
+    ) -> SupportFunctionIntervalResult:
+        """Evaluate ``[-sigma_Q(-h), sigma_Q(h)]`` for ``direction`` h."""
+
+        direction_vector = tuple(float(value) for value in direction)
+        lower_direction = tuple(-value for value in direction_vector)
+        lower_support = self.support_value(
+            lower_direction,
+            solver=solver,
+            solver_options=solver_options,
+        )
+        upper_support = self.support_value(
+            direction_vector,
+            solver=solver,
+            solver_options=solver_options,
+        )
+        lower = -lower_support.value
+        upper = upper_support.value
+        if lower > upper and abs(lower - upper) <= tol:
+            lower = upper = 0.5 * (lower + upper)
+        return SupportFunctionIntervalResult(
+            direction=direction_vector,
+            lower=lower,
+            upper=upper,
+            diameter=max(0.0, upper - lower),
+            lower_vector=lower_support.vector,
+            upper_vector=upper_support.vector,
+            lower_support_value=lower_support.value,
+            upper_support_value=upper_support.value,
+            lower_support_result=lower_support,
+            upper_support_result=upper_support,
         )
 
 
@@ -2051,6 +2120,29 @@ class SupportFunctionBackend(CvxpyEnvironments):
             direction=tuple(float(value) for value in direction),
             value=result.value,
             vector=result.vector,
+        )
+
+    def support_interval(
+        self,
+        problem,
+        direction: Sequence[float] | None = None,
+        *,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> SupportFunctionIntervalResult:
+        """Evaluate a support-function interval for a direction or target."""
+
+        if direction is None:
+            problem._require_linear_target("SupportFunctionBackend.support_interval")
+            direction = self._estimand_vector(problem)
+        direction_vector = tuple(float(value) for value in direction)
+        if len(direction_vector) != len(problem.states):
+            raise ValueError("support direction must have one value per state")
+        admissible_set = self.convex_admissible_set(problem, public_law=public_law)
+        return admissible_set.support_interval(
+            direction_vector,
+            solver=self._normalized_solver_name(),
+            solver_options=self.solver_options,
+            tol=problem.tol,
         )
 
     def _support_function_result(

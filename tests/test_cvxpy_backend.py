@@ -171,17 +171,27 @@ class CvxpyBackendTests(unittest.TestCase):
         )
 
         result = admissible_set.support_value([0.0, 1.0])
+        interval = admissible_set.support_interval([0.0, 1.0])
         backend_result = env.support_value(
             problem,
             [0.0, 1.0],
             public_law={"o": 1.0},
         )
+        backend_interval = env.support_interval(problem, public_law={"o": 1.0})
 
         self.assertIsInstance(admissible_set, us.ConvexAdmissibleSet)
         self.assertIsInstance(result, us.SupportFunctionResult)
+        self.assertIsInstance(interval, us.SupportFunctionIntervalResult)
         self.assertAlmostEqual(result.value, 0.75, places=5)
         self.assertAlmostEqual(result.vector[1], 0.75, places=5)
+        self.assertAlmostEqual(interval.lower, 0.0, places=5)
+        self.assertAlmostEqual(interval.upper, 0.75, places=5)
+        self.assertAlmostEqual(interval.diameter, 0.75, places=5)
+        self.assertAlmostEqual(interval.lower_vector[0], 1.0, places=5)
+        self.assertAlmostEqual(interval.upper_vector[1], 0.75, places=5)
+        self.assertEqual(interval.as_dict()["upper"], interval.upper)
         self.assertAlmostEqual(backend_result.value, 0.75, places=5)
+        self.assertAlmostEqual(backend_interval.upper, 0.75, places=5)
 
     def test_support_function_backend_can_be_selected_from_q_preset(self):
         _require_cvxpy()
@@ -226,6 +236,7 @@ class CvxpyBackendTests(unittest.TestCase):
             grouped.problem.estimand_map[state] for state in grouped.problem.states
         ]
         result = admissible_set.support_value(target_direction)
+        support_interval = spec.support_interval(grouped.problem)
 
         self.assertIsInstance(spec, us.CvxpyAdmissibleSetSpec)
         self.assertEqual(spec.name, "tv_budget(radius=0.15)")
@@ -248,6 +259,10 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertIn("tv_budget", {row.kind for row in admissible_set.records})
         self.assertIn("public_law", {row.kind for row in admissible_set.records})
         self.assertAlmostEqual(result.value, 0.65, places=5)
+        self.assertIsInstance(support_interval, us.SupportFunctionIntervalResult)
+        self.assertAlmostEqual(support_interval.lower, 0.35, places=5)
+        self.assertAlmostEqual(support_interval.upper, 0.65, places=5)
+        self.assertAlmostEqual(support_interval.diameter, 0.30, places=5)
 
     def test_non_cvxpy_q_preset_does_not_expose_admissible_set_spec(self):
         with self.assertRaisesRegex(ValueError, "does not expose"):
