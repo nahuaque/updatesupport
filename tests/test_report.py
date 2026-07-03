@@ -5,6 +5,17 @@ import unittest
 import updatesupport as us
 
 
+def _require_cvxpy_solver(name: str) -> None:
+    try:
+        import cvxpy as cp
+    except ImportError as exc:
+        raise unittest.SkipTest("cvxpy extra is not installed") from exc
+
+    installed = {solver.upper() for solver in cp.installed_solvers()}
+    if name.upper() not in installed:
+        raise unittest.SkipTest(f"CVXPY solver {name!r} is not installed")
+
+
 def _ratio_grouped_problem() -> us.GroupedProblem:
     states = (("A", "low"), ("A", "high"), ("B", "anchor"))
     public_map = {state: (state[0],) for state in states}
@@ -160,6 +171,31 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertIn("reduction_pct=100.0%", markdown)
         self.assertIn("## Analyst Notes", markdown)
 
+    def test_public_descent_report_explains_scip_mip_dual_absence(self):
+        _require_cvxpy_solver("SCIP")
+        rows = [
+            {"public": "A", "hidden": "low", "target": 0.0, "weight": 25},
+            {"public": "A", "hidden": "high", "target": 1.0, "weight": 25},
+            {"public": "B", "hidden": "low", "target": 0.0, "weight": 25},
+            {"public": "B", "hidden": "high", "target": 1.0, "weight": 25},
+        ]
+
+        report = us.public_descent_report(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            q=us.q_fiber_support_floor(2, min_share=0.25),
+        )
+        markdown = report.to_markdown()
+
+        self.assertAlmostEqual(report.interval.lower, 0.25, places=5)
+        self.assertAlmostEqual(report.interval.upper, 0.75, places=5)
+        self.assertIn("mixed-integer `fiber_support_floor`", markdown)
+        self.assertIn("solver `SCIP`", markdown)
+        self.assertIn("primal interval and witness distributions", markdown)
+
     def test_public_descent_report_includes_procedure_target_metadata(self):
         rows = [
             {"public": "A", "hidden": "x", "base": 0.0, "weight": 30},
@@ -291,6 +327,37 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertIn("No CVXPY dual diagnostics are available", markdown)
         self.assertIn("## Robustness Grid", markdown)
         self.assertIn("## Sensitivity-Aware Refinements", markdown)
+
+    def test_sensitivity_report_compares_saturated_and_scip_support_floor(self):
+        _require_cvxpy_solver("SCIP")
+        rows = [
+            {"public": "A", "hidden": "low", "target": 0.0, "weight": 25},
+            {"public": "A", "hidden": "high", "target": 1.0, "weight": 25},
+            {"public": "B", "hidden": "low", "target": 0.0, "weight": 25},
+            {"public": "B", "hidden": "high", "target": 1.0, "weight": 25},
+        ]
+
+        report = us.sensitivity_report(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            q_presets=[
+                "saturated",
+                us.q_fiber_support_floor(2, min_share=0.25),
+            ],
+        )
+        markdown = report.to_markdown()
+
+        self.assertEqual(len(report.rows), 2)
+        self.assertAlmostEqual(report.rows[0].ambiguity, 1.0, places=5)
+        self.assertAlmostEqual(report.rows[1].ambiguity, 0.5, places=5)
+        self.assertEqual(
+            report.rows[1].q_name,
+            "fiber_support_floor(min_active=2, min_share=0.25)",
+        )
+        self.assertIn("fiber_support_floor(min_active=2, min_share=0.25)", markdown)
 
     def test_recommend_refinements_returns_before_after_and_percent_reduction(self):
         rows = [

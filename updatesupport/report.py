@@ -531,7 +531,12 @@ class CausalReportingStabilitySuite:
             )
         )
 
-        lines.extend(_dual_diagnostics_markdown(self.primary.interval))
+        lines.extend(
+            _dual_diagnostics_markdown(
+                self.primary.interval,
+                grouped=self.primary.grouped,
+            )
+        )
 
         lines.extend(["", "## Limitations", ""])
         lines.extend(_model_review_limitations())
@@ -757,7 +762,7 @@ class PublicDescentReport:
 
         lines.extend(_data_diagnostics_markdown(self.diagnostics))
 
-        lines.extend(_dual_diagnostics_markdown(self.interval))
+        lines.extend(_dual_diagnostics_markdown(self.interval, grouped=grouped))
 
         if self.fiber_decomposition_available:
             lines.extend(["", "## Worst Public Fibers"])
@@ -2698,13 +2703,23 @@ def _target_label(target: Any) -> str:
     return str(getattr(target, "name", type(target).__name__))
 
 
-def _dual_diagnostics_markdown(interval: TransportResult) -> list[str]:
+def _dual_diagnostics_markdown(
+    interval: TransportResult,
+    *,
+    grouped: GroupedProblem | None = None,
+) -> list[str]:
     lines = [
         "",
         "## CVXPY Dual Diagnostics",
         "",
     ]
     if not interval.duals:
+        solver = (
+            None
+            if grouped is None
+            else getattr(grouped.problem.environments, "solver", None)
+        )
+        q_name_value = None if grouped is None else getattr(grouped.q, "name", None)
         lines.extend(
             [
                 "- No CVXPY dual diagnostics are available for this interval.",
@@ -2713,6 +2728,15 @@ def _dual_diagnostics_markdown(interval: TransportResult) -> list[str]:
                 "primal ambiguity interval and witnesses, but not solver duals.",
             ]
         )
+        if q_name_value == "fiber_support_floor":
+            solver_text = "" if solver is None else f" with solver `{solver}`"
+            lines.append(
+                "- This run used the mixed-integer `fiber_support_floor` preset"
+                f"{solver_text}. Mixed-integer solves generally do not expose "
+                "KKT-style dual multipliers for the solved integer model; use "
+                "the primal interval and witness distributions as the diagnostic "
+                "evidence."
+            )
         return lines
 
     lines.append(
