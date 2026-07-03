@@ -441,6 +441,12 @@ Run the no-download Folktables smoke demo from a source checkout:
 uv run python examples/folktables_acs.py --synthetic
 ```
 
+Run the no-download AI / ML evaluation stability demo:
+
+```bash
+uv run python examples/ml_eval_stability.py
+```
+
 Run the real Folktables ACSIncome example:
 
 ```bash

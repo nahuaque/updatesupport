@@ -27,6 +27,10 @@ The generated `data/benchmark_gallery/index.md` links to each saved case study.
 
 ## Included Case Studies
 
+- **AI / ML evaluation stability synthetic audit**: a no-download
+  model-comparison benchmark example. It reports a positive challenger-minus-
+  baseline margin, then shows that the ranking is not invariant when hidden
+  task composition shifts inside fixed public task buckets.
 - **Folktables ACSIncome synthetic label-rate audit**: a no-download
   ACS-shaped label-rate example for testing the public/hidden reporting
   workflow. The report includes a public-representation frontier that asks

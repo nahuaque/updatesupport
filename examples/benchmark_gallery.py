@@ -34,6 +34,8 @@ from examples.folktables_acs_causal import (
     render_causal_report,
     synthetic_causal_source_rows,
 )
+from examples.ml_eval_stability import render_report as render_ml_eval_report
+from examples.ml_eval_stability import synthetic_eval_rows
 
 
 DEFAULT_OUTPUT_DIR = Path("data/benchmark_gallery")
@@ -89,6 +91,7 @@ def generate_benchmark_gallery(
     output_dir.mkdir(parents=True, exist_ok=True)
     reports: list[GalleryReport] = []
 
+    reports.append(_generate_ml_eval_report(output_dir))
     reports.append(_generate_folktables_label_report(output_dir))
     if include_real_folktables:
         reports.append(
@@ -115,6 +118,24 @@ def generate_benchmark_gallery(
     )
     _write_index(output_dir, reports)
     return tuple(reports)
+
+
+def _generate_ml_eval_report(output_dir: Path) -> GalleryReport:
+    markdown = render_ml_eval_report()
+    path = output_dir / "ml_eval_stability_synthetic.md"
+    _write_markdown(path, markdown)
+    return GalleryReport(
+        slug="ml_eval_stability_synthetic",
+        title="AI / ML Evaluation Stability Synthetic Audit",
+        description=(
+            "No-download model-comparison benchmark example that audits whether "
+            "a headline leaderboard margin survives hidden task-composition "
+            "shifts inside public benchmark buckets."
+        ),
+        status="generated",
+        path=path,
+        row_count=len(synthetic_eval_rows()),
+    )
 
 
 def _generate_folktables_label_report(output_dir: Path) -> GalleryReport:
