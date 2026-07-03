@@ -181,6 +181,39 @@ class AuditSpecTests(unittest.TestCase):
         self.assertEqual(preset.solver, "SCIP")
         self.assertEqual(preset.solver_options, {"limits/time": 5})
 
+    def test_q_spec_round_trips_fiber_support_floor_settings(self):
+        spec = us.QSpec.from_value(
+            {
+                "name": "fiber_support_floor",
+                "backend": "cvxpy",
+                "solver": "SCIP",
+                "settings": {
+                    "min_active": 2,
+                    "min_share": 0.25,
+                    "max_active": 3,
+                },
+            }
+        )
+
+        preset = spec.to_preset()
+
+        self.assertEqual(
+            spec.as_dict(),
+            {
+                "name": "fiber_support_floor",
+                "backend": "cvxpy",
+                "solver": "SCIP",
+                "settings": {
+                    "min_active": 2,
+                    "min_share": 0.25,
+                    "max_active": 3,
+                },
+            },
+        )
+        self.assertEqual(preset.settings["min_active"], 2)
+        self.assertEqual(preset.settings["min_share"], 0.25)
+        self.assertEqual(preset.settings["max_active"], 3)
+
     def test_audit_spec_rejects_string_column_sequence(self):
         with self.assertRaises(TypeError):
             us.AuditSpec(public="segment", hidden=["segment"], target="target")

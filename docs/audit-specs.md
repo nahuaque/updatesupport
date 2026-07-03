@@ -119,11 +119,13 @@ Specs use serializable Q descriptions:
 {"name": "bounded_shift", "radius": 0.5}
 {"name": "tv_budget", "radius": 0.1, "backend": "cvxpy"}
 {"name": "tv_budget", "radius": 0.1, "backend": "cvxpy", "solver": "SCIP"}
+{"name": "fiber_support_floor", "solver": "SCIP", "settings": {"min_active": 2, "min_share": 0.1}}
 {"name": "observed"}
 ```
 
 `solver_options` may also be supplied as a JSON object and are forwarded to
-`cvxpy.Problem.solve(...)` for CVXPY-backed presets.
+`cvxpy.Problem.solve(...)` for CVXPY-backed presets. Preset-specific values
+that do not fit the standard `radius` or `cost` fields live under `settings`.
 
 For non-serializable custom environments, custom constraint builders, or
 plugin-specific runtime objects, call the lower-level Python APIs directly.

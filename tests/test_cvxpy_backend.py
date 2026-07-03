@@ -68,6 +68,32 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.upper, 1.0, places=5)
         self.assertAlmostEqual(interval.diameter, 1.0, places=5)
 
+    def test_fiber_support_floor_uses_scip_mip_when_installed(self):
+        _require_cvxpy_solver("SCIP")
+
+        rows = [
+            {"PUBLIC": "A", "HIDDEN": "low", "Y": 0.0, "W": 25.0},
+            {"PUBLIC": "A", "HIDDEN": "high", "Y": 1.0, "W": 25.0},
+            {"PUBLIC": "B", "HIDDEN": "low", "Y": 0.0, "W": 25.0},
+            {"PUBLIC": "B", "HIDDEN": "high", "Y": 1.0, "W": 25.0},
+        ]
+
+        grouped = us.from_dataframe(
+            rows,
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_fiber_support_floor(2, min_share=0.25),
+        )
+
+        interval = grouped.problem.global_transport_modulus()
+
+        self.assertEqual(grouped.problem.environments.solver, "SCIP")
+        self.assertAlmostEqual(interval.lower, 0.25, places=5)
+        self.assertAlmostEqual(interval.upper, 0.75, places=5)
+        self.assertAlmostEqual(interval.diameter, 0.5, places=5)
+
     def test_custom_convex_constraint_backend_solves_interval(self):
         _require_cvxpy()
 

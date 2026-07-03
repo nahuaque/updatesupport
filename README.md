@@ -281,7 +281,7 @@ See [packages/updatesupport-finance/README.md](packages/updatesupport-finance/RE
 
 ```bash
 pip install "updatesupport[cvxpy]"      # TV, chi-square, KL, Wasserstein, custom CVXPY Q
-pip install "updatesupport[scip]"       # CVXPY plus PySCIPOpt for solver="SCIP"
+pip install "updatesupport[scip]"       # CVXPY plus PySCIPOpt for solver="SCIP" and MIP presets
 pip install "updatesupport[examples]"   # Folktables, pandas, plotting examples
 pip install "updatesupport[causal]"     # causal-effect examples
 pip install "updatesupport[dowhy]"      # CausalRefutation conversion
@@ -313,7 +313,8 @@ uv add "updatesupport[examples,causal,dowhy,cvxpy,finance]"
 ```
 
 `updatesupport[scip]` is intentionally separate because solver wheels and
-platform requirements are heavier than the default CVXPY workflow.
+platform requirements are heavier than the default CVXPY workflow. It enables
+SCIP-backed mixed-integer presets such as `q_fiber_support_floor(...)`.
 
 ## Examples
 

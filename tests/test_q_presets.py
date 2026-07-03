@@ -76,6 +76,42 @@ class QPresetTests(unittest.TestCase):
         self.assertEqual(grouped.q_name, "bounded_shift(radius=0)")
         self.assertAlmostEqual(grouped.problem.global_transport_modulus().diameter, 0.0)
 
+    def test_fiber_support_floor_preset_builds_scip_environment(self):
+        rows = [
+            {"public": "A", "hidden": "low", "target": 0.0, "weight": 25},
+            {"public": "A", "hidden": "high", "target": 1.0, "weight": 25},
+            {"public": "B", "hidden": "low", "target": 0.0, "weight": 25},
+            {"public": "B", "hidden": "high", "target": 1.0, "weight": 25},
+        ]
+
+        grouped = us.from_dataframe(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            q=us.q_fiber_support_floor(2, min_share=0.25),
+        )
+
+        self.assertEqual(
+            grouped.q_name,
+            "fiber_support_floor(min_active=2, min_share=0.25)",
+        )
+        self.assertIn("at least 2 active hidden cells", grouped.q_description)
+        self.assertIsInstance(grouped.problem.environments, us.CvxpyEnvironments)
+        self.assertEqual(grouped.problem.environments.solver, "SCIP")
+
+    def test_fiber_support_floor_rejects_sparse_public_fibers(self):
+        with self.assertRaisesRegex(ValueError, "retained hidden cells"):
+            us.from_dataframe(
+                _rows(),
+                public=["public"],
+                hidden=["public", "hidden"],
+                target="target",
+                weight="weight",
+                q=us.q_fiber_support_floor(2, min_share=0.25),
+            )
+
     def test_cvxpy_q_preset_carries_solver_metadata(self):
         grouped = us.from_dataframe(
             _rows(),

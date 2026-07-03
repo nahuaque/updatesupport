@@ -29,6 +29,7 @@ class QPreset:
     backend: str | None = None
     solver: str | None = None
     solver_options: Mapping[str, Any] | None = None
+    settings: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,39 @@ def q_bounded_shift(radius: float = 0.5) -> QPreset:
     """Limit each hidden-cell mass to a relative band around its observed mass."""
 
     return QPreset("bounded_shift", radius=float(radius))
+
+
+def q_fiber_support_floor(
+    min_active: int,
+    *,
+    min_share: float,
+    max_active: int | None = None,
+    backend: str = "cvxpy",
+    solver: str | None = "SCIP",
+    solver_options: Mapping[str, Any] | None = None,
+) -> QPreset:
+    """Require each public fiber to keep several active hidden cells.
+
+    The preset is mixed-integer: inside every retained public fiber, at least
+    ``min_active`` hidden cells must carry at least ``min_share`` of that
+    public fiber's mass. ``max_active`` optionally caps the number of active
+    hidden cells in each public fiber. Use a MIP-capable CVXPY solver such as
+    SCIP.
+    """
+
+    settings = {
+        "min_active": int(min_active),
+        "min_share": float(min_share),
+    }
+    if max_active is not None:
+        settings["max_active"] = int(max_active)
+    return QPreset(
+        "fiber_support_floor",
+        backend=backend,
+        solver=solver,
+        solver_options=None if solver_options is None else dict(solver_options),
+        settings=settings,
+    )
 
 
 def q_tv_budget(
@@ -192,6 +226,51 @@ def resolve_q_environment(
                 "fixed observed public law with each hidden-cell mass constrained "
                 f"to +/- {100 * radius:.1f}% of its observed mass"
             ),
+        )
+
+    if preset.name == "fiber_support_floor":
+        min_active, min_share, max_active = _fiber_support_floor_settings(preset)
+        _validate_fiber_support_floor(
+            min_active=min_active,
+            max_active=max_active,
+            public_law=public_law,
+            public_map=public_map,
+            states=tuple(cell_weights),
+        )
+        backend = _backend_name(preset, default="cvxpy")
+        builder = _fiber_support_floor_constraint_builder(
+            public_law=public_law,
+            public_map=public_map,
+            min_active=min_active,
+            min_share=min_share,
+            max_active=max_active,
+        )
+        solver = preset.solver or "SCIP"
+        if backend == "batched_cvxpy":
+            return QEnvironment(
+                environment=BatchedCvxpyEnvironments(
+                    fixed_public_law=public_law,
+                    constraint_builders=(builder,),
+                    solver=solver,
+                    solver_options=preset.solver_options,
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=q_description(preset),
+            )
+        _require_backend(preset, "cvxpy")
+        return QEnvironment(
+            environment=CvxpyEnvironments(
+                fixed_public_law=public_law,
+                constraint_builders=(builder,),
+                solver=solver,
+                solver_options=preset.solver_options,
+                name=q_name(preset),
+            ),
+            preset=preset,
+            name=q_name(preset),
+            description=q_description(preset),
         )
 
     if preset.name == "tv_budget":
@@ -504,6 +583,8 @@ def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | No
     if preset.name == "bounded_shift":
         radius = _bounded_radius(preset)
         preset = replace(preset, radius=radius)
+    elif preset.name == "fiber_support_floor":
+        _fiber_support_floor_settings(preset)
     elif preset.name == "tv_budget":
         radius = _tv_radius(preset)
         preset = replace(preset, radius=radius)
@@ -526,6 +607,12 @@ def q_name(q: Any, *, q_radius: float | None = None) -> str:
         return str(getattr(q, "name", q.__class__.__name__))
     if preset.name == "bounded_shift":
         return f"bounded_shift(radius={_bounded_radius(preset):g})"
+    if preset.name == "fiber_support_floor":
+        min_active, min_share, max_active = _fiber_support_floor_settings(preset)
+        name = f"fiber_support_floor(min_active={min_active}, min_share={min_share:g}"
+        if max_active is not None:
+            name += f", max_active={max_active}"
+        return name + ")"
     if preset.name == "tv_budget":
         return f"tv_budget(radius={_tv_radius(preset):g})"
     if preset.name == "chi_square_budget":
@@ -554,6 +641,16 @@ def q_description(q: Any, *, q_radius: float | None = None) -> str:
             "fixed observed public law with each hidden-cell mass constrained "
             f"to +/- {100 * radius:.1f}% of its observed mass"
         )
+    if preset.name == "fiber_support_floor":
+        min_active, min_share, max_active = _fiber_support_floor_settings(preset)
+        description = (
+            "fixed observed public law with at least "
+            f"{min_active} active hidden cells per public fiber, each carrying "
+            f"at least {100 * min_share:g}% of that public fiber's mass"
+        )
+        if max_active is not None:
+            description += f", and at most {max_active} active hidden cells"
+        return description
     if preset.name == "tv_budget":
         radius = _tv_radius(preset)
         return (
@@ -592,6 +689,11 @@ def _canonical_preset(preset: QPreset) -> QPreset:
         "bounded": "bounded_shift",
         "bounded-shift": "bounded_shift",
         "bounded_shift": "bounded_shift",
+        "fiber-support-floor": "fiber_support_floor",
+        "fiber_support": "fiber_support_floor",
+        "fiber_support_floor": "fiber_support_floor",
+        "support-floor": "fiber_support_floor",
+        "support_floor": "fiber_support_floor",
         "total-variation": "tv_budget",
         "total_variation": "tv_budget",
         "tv": "tv_budget",
@@ -624,6 +726,66 @@ def _bounded_radius(preset: QPreset) -> float:
     if radius < 0:
         raise ValueError("bounded_shift radius must be non-negative")
     return radius
+
+
+def _fiber_support_floor_settings(
+    preset: QPreset,
+) -> tuple[int, float, int | None]:
+    settings = dict(preset.settings or {})
+    try:
+        min_active = int(settings["min_active"])
+        min_share = float(settings["min_share"])
+    except KeyError as exc:
+        raise ValueError(
+            "fiber_support_floor requires settings with 'min_active' and 'min_share'"
+        ) from exc
+
+    max_active_value = settings.get("max_active")
+    max_active = None if max_active_value is None else int(max_active_value)
+    if min_active <= 0:
+        raise ValueError("fiber_support_floor min_active must be positive")
+    if max_active is not None and max_active < min_active:
+        raise ValueError("fiber_support_floor max_active must be >= min_active")
+    if min_share <= 0.0:
+        raise ValueError("fiber_support_floor min_share must be positive")
+    if min_active * min_share > 1.0 + 1e-12:
+        raise ValueError("fiber_support_floor min_active * min_share must be <= 1")
+    return min_active, min_share, max_active
+
+
+def _validate_fiber_support_floor(
+    *,
+    min_active: int,
+    max_active: int | None,
+    public_law: Mapping[Hashable, float],
+    public_map: Mapping[Hashable, Hashable],
+    states: tuple[Hashable, ...],
+) -> None:
+    counts = {public_value: 0 for public_value in public_law}
+    for state in states:
+        counts[public_map[state]] = counts.get(public_map[state], 0) + 1
+
+    sparse = [
+        public_value
+        for public_value, mass in public_law.items()
+        if float(mass) > 0.0 and counts.get(public_value, 0) < min_active
+    ]
+    if sparse:
+        raise ValueError(
+            "fiber_support_floor requires at least min_active retained hidden "
+            f"cells in each positive-mass public fiber; failing fibers: {sparse!r}"
+        )
+    if max_active is not None:
+        empty_capacity = [
+            public_value
+            for public_value, mass in public_law.items()
+            if float(mass) > 0.0 and counts.get(public_value, 0) == 0
+        ]
+        if empty_capacity:
+            raise ValueError(
+                "fiber_support_floor found positive-mass public fibers without "
+                f"retained hidden cells: {empty_capacity!r}"
+            )
 
 
 def _tv_radius(preset: QPreset) -> float:
@@ -670,6 +832,77 @@ def _require_backend(preset: QPreset, expected: str) -> None:
 
 def _backend_name(preset: QPreset, *, default: str) -> str:
     return (preset.backend or default).strip().lower()
+
+
+def _fiber_support_floor_constraint_builder(
+    *,
+    public_law: Mapping[Hashable, float],
+    public_map: Mapping[Hashable, Hashable],
+    min_active: int,
+    min_share: float,
+    max_active: int | None,
+):
+    public_masses = {
+        public_value: float(mass) for public_value, mass in public_law.items()
+    }
+
+    def build(cp, q, states, state_index):
+        z = cp.Variable(len(states), boolean=True)
+        records = []
+        for state in states:
+            public_value = public_map[state]
+            public_mass = public_masses[public_value]
+            index = state_index[state]
+            records.append(
+                cvxpy_constraint(
+                    q[index] <= public_mass * z[index],
+                    name="fiber support inactive-cell upper bound",
+                    kind="support_activation",
+                    sense="<=",
+                    state=state,
+                    public_value=public_value,
+                )
+            )
+            records.append(
+                cvxpy_constraint(
+                    q[index] >= min_share * public_mass * z[index],
+                    name="fiber support active-cell mass floor",
+                    kind="support_activation",
+                    sense=">=",
+                    state=state,
+                    public_value=public_value,
+                )
+            )
+
+        fibers: dict[Hashable, list[int]] = {}
+        for state in states:
+            fibers.setdefault(public_map[state], []).append(state_index[state])
+
+        for public_value, indices in fibers.items():
+            if public_masses[public_value] <= 0.0:
+                continue
+            records.append(
+                cvxpy_constraint(
+                    cp.sum(z[indices]) >= min_active,
+                    name=f"fiber support active-cell floor {public_value!r}",
+                    kind="support_cardinality",
+                    sense=">=",
+                    public_value=public_value,
+                )
+            )
+            if max_active is not None:
+                records.append(
+                    cvxpy_constraint(
+                        cp.sum(z[indices]) <= max_active,
+                        name=f"fiber support active-cell cap {public_value!r}",
+                        kind="support_cardinality",
+                        sense="<=",
+                        public_value=public_value,
+                    )
+                )
+        return tuple(records)
+
+    return build
 
 
 def _tv_constraint_builder(cell_weights: Mapping[Hashable, float], radius: float):

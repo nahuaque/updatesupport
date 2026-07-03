@@ -52,6 +52,9 @@ All notable changes to `updatesupport` are documented here.
 - Added optional SCIP solver support for CVXPY-backed presets via
   `updatesupport[scip]`, `solver="SCIP"` on CVXPY environments, solver
   metadata on `QPreset`/`QSpec`, and clearer missing-solver diagnostics.
+- Added `q_fiber_support_floor(...)`, the first SCIP-backed mixed-integer Q
+  preset, to require each public fiber to keep a minimum number of hidden cells
+  active above a minimum share; `QSpec` now carries preset-specific `settings`.
 
 ### Fixed
 

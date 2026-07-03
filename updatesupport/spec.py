@@ -34,12 +34,15 @@ class QSpec:
     cost: Any | None = None
     solver: str | None = None
     solver_options: Mapping[str, Any] | None = None
+    settings: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.solver_options is not None and not isinstance(
             self.solver_options, Mapping
         ):
             raise TypeError("solver_options must be a mapping or None")
+        if self.settings is not None and not isinstance(self.settings, Mapping):
+            raise TypeError("settings must be a mapping or None")
         preset = normalize_q_preset(
             QPreset(
                 name=self.name,
@@ -48,6 +51,7 @@ class QSpec:
                 backend=self.backend,
                 solver=self.solver,
                 solver_options=self.solver_options,
+                settings=self.settings,
             )
         )
         if preset is None:
@@ -61,6 +65,11 @@ class QSpec:
             self,
             "solver_options",
             None if preset.solver_options is None else dict(preset.solver_options),
+        )
+        object.__setattr__(
+            self,
+            "settings",
+            None if preset.settings is None else dict(preset.settings),
         )
 
     @classmethod
@@ -77,6 +86,7 @@ class QSpec:
                 cost=value.cost,
                 solver=value.solver,
                 solver_options=value.solver_options,
+                settings=value.settings,
             )
         if isinstance(value, str):
             return cls(name=value)
@@ -88,6 +98,7 @@ class QSpec:
                 "cost",
                 "solver",
                 "solver_options",
+                "settings",
             }
             if unknown_keys:
                 raise ValueError(
@@ -99,6 +110,7 @@ class QSpec:
             backend = value.get("backend")
             solver = value.get("solver")
             solver_options = value.get("solver_options")
+            settings = value.get("settings")
             return cls(
                 name=str(value["name"]),
                 radius=None if value.get("radius") is None else float(value["radius"]),
@@ -106,6 +118,7 @@ class QSpec:
                 cost=value.get("cost"),
                 solver=None if solver is None else str(solver),
                 solver_options=solver_options,
+                settings=settings,
             )
         raise TypeError(
             "Q presets in AuditSpec must be strings, mappings, QPreset, or QSpec"
@@ -121,6 +134,7 @@ class QSpec:
             backend=self.backend,
             solver=self.solver,
             solver_options=self.solver_options,
+            settings=self.settings,
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -135,6 +149,8 @@ class QSpec:
             payload["solver"] = self.solver
         if self.solver_options is not None:
             payload["solver_options"] = dict(self.solver_options)
+        if self.settings is not None:
+            payload["settings"] = dict(self.settings)
         return payload
 
     def to_dict(self) -> dict[str, Any]:

@@ -1354,6 +1354,7 @@ def _parameterized_sensitivity_q(q: Any) -> QPreset | None:
         backend="parameterized_cvxpy",
         solver=preset.solver,
         solver_options=preset.solver_options,
+        settings=preset.settings,
     )
 
 
@@ -1425,6 +1426,7 @@ def _batched_sensitivity_rows(
             backend="cvxpy",
             solver=preset.solver,
             solver_options=preset.solver_options,
+            settings=preset.settings,
         )
         q_environment = resolve_q_environment(
             runtime_preset,

@@ -345,10 +345,22 @@ env = us.CvxpyEnvironments(
 ```
 
 `solver_options` are forwarded to `cvxpy.Problem.solve(...)`, so any
-CVXPY-supported SCIP options can be supplied there. This first slice only
-selects SCIP for problems already expressible through the existing CVXPY
-backend. Mixed-integer public-representation design APIs can build on the same
-solver path later.
+CVXPY-supported SCIP options can be supplied there.
+
+The first built-in mixed-integer preset is `q_fiber_support_floor(...)`:
+
+```python
+q = us.q_fiber_support_floor(2, min_share=0.10)
+```
+
+It keeps the observed public law fixed but adds binary active-cell indicators
+inside each public fiber. Each positive-mass public fiber must keep at least
+`min_active` hidden cells carrying at least `min_share` of that public fiber's
+mass. This is useful when the saturated stress test is too permissive because it
+allows a public bucket to collapse onto a single hidden subgroup. Mixed-integer
+solves generally do not produce the same dual diagnostics as continuous convex
+solves; use their primal intervals and witness distributions as the main
+diagnostic evidence.
 
 ## Parameterized CVXPY Sweeps
 

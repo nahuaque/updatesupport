@@ -19,6 +19,7 @@ different presets.
 | `q=us.q_chi_square_budget(radius)` | Variance-scaled divergence budget | Pearson chi-square divergence from the observed hidden distribution is bounded | Needs CVXPY and penalizes shifts out of small observed cells strongly |
 | `q=us.q_kl_budget(radius)` | Information-divergence budget | KL divergence from the observed hidden distribution is bounded | Needs CVXPY and the radius is less intuitive than direct mass movement |
 | `q=us.q_wasserstein(cost, radius)` | Similarity-aware shifts | Hidden mass can move cheaply between similar cells and expensively between dissimilar cells | Requires a defensible cost matrix and CVXPY |
+| `q=us.q_fiber_support_floor(min_active, min_share=...)` | MIP support-diversity floor | Each public bucket must keep several active hidden cells above a minimum share | Needs SCIP or another MIP-capable CVXPY solver |
 | `q="observed"` | Baseline or sanity check | No hidden-composition shift | Always reports zero hidden-composition ambiguity |
 
 Recommended reporting pattern:
@@ -84,9 +85,9 @@ uv add "updatesupport[scip]"
 ```
 
 Use this when you want the existing convex transport model to route through
-SCIP, or when you are preparing for later mixed-integer workflows that will
-need a MIP-capable CVXPY solver. The stress-test semantics do not change:
-`tv_budget(radius=0.15)` remains the reported Q preset.
+SCIP, or when you use mixed-integer presets such as `q_fiber_support_floor(...)`.
+The stress-test semantics do not change: `tv_budget(radius=0.15)` remains the
+reported Q preset.
 
 ## Saturated
 
@@ -202,6 +203,56 @@ Interpretation:
 > Holding public cell shares fixed, how much could the answer move if every
 > retained hidden subgroup were allowed to move by at most this relative amount
 > from its observed mass?
+
+## Fiber Support Floor
+
+Use:
+
+```python
+q = us.q_fiber_support_floor(2, min_share=0.10)
+```
+
+Install a MIP-capable CVXPY solver first. The default solver for this preset is
+SCIP:
+
+```bash
+pip install "updatesupport[scip]"
+# or
+uv add "updatesupport[scip]"
+```
+
+This fixes the observed public law and adds binary active-cell indicators
+inside each public fiber. At least `min_active` hidden cells in every retained
+public fiber must carry at least `min_share` of that public fiber's mass.
+`max_active` can also cap the number of active hidden cells:
+
+```python
+q = us.q_fiber_support_floor(2, min_share=0.10, max_active=5)
+```
+
+Use `fiber_support_floor` when:
+
+- A saturated stress test unrealistically moves all public-bucket mass into a
+  single hidden subgroup.
+- You need an operational support-diversity rule: hidden subgroups may shrink,
+  but retained public buckets cannot collapse below a minimum number of
+  credible active cells.
+- You are comfortable using a mixed-integer solver such as SCIP.
+
+Be cautious when:
+
+- Retained public fibers are sparse after `min_cell_weight` filtering; every
+  positive-mass public fiber needs at least `min_active` retained hidden cells.
+- `min_share * min_active` is close to one; the feasible set may become very
+  narrow.
+- You rely on dual diagnostics. Mixed-integer solves generally do not expose
+  the same useful dual variables as continuous convex solves.
+
+Interpretation:
+
+> Holding public cell shares fixed, how much could the answer move if each
+> public bucket had to keep at least this many hidden subgroups meaningfully
+> active?
 
 ## Total-Variation Budget
 
