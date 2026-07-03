@@ -16,6 +16,11 @@ This is a segmentation adequacy check for reported risk metrics. It is designed
 for model-review and portfolio-monitoring artifacts, not as a replacement for
 model validation, calibration, backtesting, or statistical uncertainty analysis.
 
+The strongest use case is retail-credit or insurance model review where the
+institution has richer internal cells but reports risk at a coarser governance
+segmentation. In that setting, "hidden" means internally retained but not shown
+in the public or validation-pack segmentation.
+
 Install directly:
 
 ```bash
@@ -73,6 +78,59 @@ segmentation may not fully support the reported aggregate. The report quantifies
 that hidden-composition ambiguity and identifies which hidden variables would
 most improve the public segmentation.
 
+That is narrower than a full model-risk-management workflow, but it maps to a
+real review artifact: a validation pack can state whether the reported
+segmentation pins down the expected-loss, default-rate, LGD, delinquency, or
+approval-benefit metric under a declared composition stress test.
+
+## Recommended Positioning
+
+Lead with the saturated fixed-public-law audit:
+
+```python
+q = "saturated"
+```
+
+Saturated stress keeps the reported public segment masses fixed and allows any
+retained hidden cell inside each public segment to receive that segment's mass.
+It is conservative, easy to explain, and does not require defending a
+hand-chosen radius. It answers the first control question:
+
+> Does this public segmentation pin down the metric at all on the retained
+> support?
+
+Radius-based presets are still useful, but they should be treated as secondary
+sensitivity scenarios:
+
+```python
+q = usf.q_portfolio_mix_shift(radius=0.25)
+q = usf.q_exposure_weighted_tv(radius=0.10)
+q = usf.q_factor_exposure_shift(...)
+q = usf.q_regional_concentration_shift(...)
+```
+
+Those scenarios require a governance rationale: historical drift, challenger
+monitoring, an approved sensitivity grid, or another documented benchmark. A
+validator can reasonably ask why a radius is acceptable, so the report should
+state that rationale in reviewer notes or model-review documentation.
+
+## Model-Risk Boundaries
+
+This plugin is evidence for one control: **reported-segmentation adequacy**. It
+does not validate the underlying PD, LGD, EAD, prepayment, delinquency, capital,
+or approval-benefit model. It also does not replace:
+
+- calibration and backtesting;
+- discrimination or ranking performance;
+- population stability / drift monitoring;
+- override, policy, or use-test review;
+- documentation of assumptions and limitations;
+- independent validation of model design, implementation, and governance.
+
+The report is meant to sit beside those controls. It says whether the
+segmentation used to communicate or govern a supplied metric is stable under
+declared hidden-composition stress.
+
 ## What The Report Separates
 
 The package is intentionally narrow. It separates:
@@ -103,9 +161,11 @@ representation is stable enough for the risk metric.
 2. Choose hidden refinements that are available internally but not shown in the
    public segmentation.
 3. Choose the target risk metric.
-4. Choose a plausible hidden-mix shift preset.
-5. Set a review threshold for hidden-composition ambiguity.
-6. Attach the generated Markdown report to a model-review or monitoring pack.
+4. Start with saturated fixed-public-law stress.
+5. Add radius-based mix, TV, factor, or concentration scenarios only when the
+   radius has a documented review rationale.
+6. Set a review threshold for hidden-composition ambiguity.
+7. Attach the generated Markdown report to a model-review or monitoring pack.
 
 The review status is deliberately simple:
 
@@ -138,7 +198,7 @@ report = usf.model_risk_report(
         pd_standard_error="pd_se",
         lgd_standard_error="lgd_se",
     ),
-    q=usf.q_portfolio_mix_shift(radius=0.25),
+    q="saturated",
     model_id="EL_RETAIL_2026Q2",
     portfolio_name="Retail credit portfolio",
     as_of_date="2026-06-30",
@@ -152,7 +212,7 @@ report = usf.model_risk_report(
     composition_uncertainty_seed=123,
     composition_uncertainty_confidence_level=0.90,
     reviewer_notes=[
-        "Review portfolio-mix stress with the portfolio monitoring owner.",
+        "Review saturated segmentation adequacy with the portfolio monitoring owner.",
     ],
 )
 
@@ -195,7 +255,7 @@ uncertainty = usf.model_assisted_portfolio_uncertainty(
     exposure="ead",
     draws=500,
     seed=123,
-    q=usf.q_portfolio_mix_shift(radius=0.25),
+    q="saturated",
     ambiguity_limit=0.0025,
 )
 ```
@@ -268,14 +328,16 @@ dominated alternatives, and any screened-out refinement fields.
 Interactive Colab demos are available under `examples/notebooks`:
 
 - [Portfolio model-risk walkthrough](https://colab.research.google.com/github/nahuaque/updatesupport/blob/main/packages/updatesupport-finance/examples/notebooks/model_risk_portfolio_colab.ipynb):
-  expected-loss segmentation audit, hidden-cell risk plots, refinement
-  recommendations, and public-representation frontier search.
+  expected-loss segmentation audit, saturated and radius-based stress
+  scenarios, hidden-cell risk plots, refinement recommendations, and
+  public-representation frontier search.
 - [Model-assisted portfolio uncertainty](https://colab.research.google.com/github/nahuaque/updatesupport/blob/main/packages/updatesupport-finance/examples/notebooks/model_assisted_portfolio_uncertainty_colab.ipynb):
   PD/LGD estimator uncertainty, posterior/bootstrap hidden-composition draws,
   and decision-threshold invariance.
 
-Both notebooks use seaborn plus `ipywidgets` controls so analysts can adjust
-Q radii, ambiguity limits, draw counts, and decision thresholds in the browser.
+Both notebooks use seaborn plus `ipywidgets` controls so analysts can inspect
+the flagship saturated audit and adjust sensitivity radii, ambiguity limits,
+draw counts, and decision thresholds in the browser.
 
 ## Finance Sensitivity Profiles
 
@@ -304,12 +366,16 @@ q_presets = usf.finance_sensitivity_grid(
 
 The default `credit_expected_loss` profile includes:
 
-- saturated hidden-composition stress
-- bounded portfolio-mix shift
+- saturated hidden-composition stress as the conservative benchmark
+- bounded portfolio-mix shift as a documented sensitivity scenario
 - exposure-weighted total-variation shift
 - factor-exposure shift, when `factors=...` is supplied
 - regional concentration shift
 - observed no-shift baseline
+
+Use the grid to show whether a conclusion depends only on the saturated
+worst-case benchmark or also appears under narrower governance-approved
+scenarios.
 
 ## Portfolio Concentration Stress Presets
 

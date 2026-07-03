@@ -26,6 +26,7 @@ This documentation has three layers:
    :caption: Core Guides
 
    representation-adequacy
+   positioning-and-lineage
    mathematical-statistical-soundness
    theory-and-backends
    transport-presets
@@ -51,4 +52,3 @@ This documentation has three layers:
    :caption: Project
 
    releasing
-

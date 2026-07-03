@@ -9,6 +9,11 @@ estimate you are reporting.**
 rate, effect, or risk metric could move if the public buckets in a report stayed
 fixed but the hidden mix inside those buckets changed.
 
+Here, "hidden" means **retained but not publicly reported**, not unobserved or
+unknowable. The ambiguity interval is always relative to the retained
+refinement you choose and the admissible shift class `Q` you declare. It is not
+an absolute bound on every possible omitted variable or population shift.
+
 It is useful when a dashboard, model-review pack, policy table, or causal
 analysis reports a number by coarse public categories and you need to know:
 
@@ -48,11 +53,20 @@ The output is a review-ready Markdown audit with:
 This is not a replacement for causal identification, model validation, or
 sampling uncertainty. It is an audit layer for the reporting representation.
 
+The project does not claim new mathematics. The core calculation is a
+partial-identification / sensitivity-analysis problem with roots in ecological
+inference, Frechet-style bounds, and distributionally robust optimization. The
+value is the packaged workflow: compile a retained fine table, solve the stress
+test, explain the ambiguity, rank refinements, run sensitivity checks, and
+emit review-ready artifacts. See
+[docs/positioning-and-lineage.md](docs/positioning-and-lineage.md).
+
 ## Why the Math Is Sound
 
 `updatesupport` reduces the review question to a finite optimization problem.
-Given hidden cells `D`, public buckets `pi(D)`, supplied hidden-cell target
-values `h`, and an explicit admissible distribution class `Q`, it computes:
+Given retained fine cells `D`, public buckets `pi(D)`, supplied retained-cell
+target values `h`, and an explicit admissible distribution class `Q`, it
+computes:
 
 ```text
 inf/sup  sum_d h(d) q(d)
@@ -66,7 +80,7 @@ problem with a linear objective.
 
 The interval is statistically meaningful as a partial-identification or
 sensitivity interval conditional on the retained support, target values, and
-chosen `Q`. It is not a confidence interval. If hidden-cell target standard
+chosen `Q`. It is not a confidence interval. If retained-cell target standard
 errors are supplied, reports can add an estimator-uncertainty-aware outer
 interval, but causal, survey-design, and broader model uncertainty still belong
 to the upstream statistical workflow. With CVXPY-compatible Q sets, reports can
@@ -439,6 +453,7 @@ uv run pytest
 - [Sphinx documentation entry point](docs/index.rst)
 - [Local documentation build notes](docs/README.md)
 - [Representation adequacy guide](docs/representation-adequacy.md)
+- [Positioning and lineage](docs/positioning-and-lineage.md)
 - [Audit specs](docs/audit-specs.md)
 - [Structured exports](docs/structured-exports.md)
 - [Data diagnostics](docs/data-diagnostics.md)

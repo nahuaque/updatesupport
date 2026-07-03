@@ -10,9 +10,14 @@ Core Question
    aggregate target move if hidden composition inside public buckets changed?
 
 The framework is intentionally downstream of estimation. A causal estimator,
-survey estimator, model, or business metric supplies hidden-cell target values.
-``updatesupport`` audits whether the public representation is adequate for
-reporting that supplied target.
+survey estimator, model, or business metric supplies retained fine-cell target
+values. ``updatesupport`` audits whether the public representation is adequate
+for reporting that supplied target.
+
+Here, "hidden" means retained but not publicly reported. It does not mean
+unobserved or unknowable. Every reported ambiguity interval is conditional on
+the retained refinement and admissible shift class ``Q`` declared for the
+audit.
 
 Finite Problem
 --------------
@@ -20,16 +25,16 @@ Finite Problem
 A compiled audit has:
 
 ``D``
-   finite hidden cells.
+   finite retained fine cells.
 
 ``pi: D -> O``
-   the public projection from hidden cells to public report buckets.
+   the public projection from retained cells to public report buckets.
 
 ``h(d)``
-   supplied hidden-cell target values.
+   supplied retained-cell target values.
 
 ``Q``
-   an admissible class of hidden distributions or hidden-composition shifts.
+   an admissible class of retained-cell distributions or composition shifts.
 
 For a linear target, the interval solves:
 
@@ -93,4 +98,3 @@ Adapter helpers connect estimator outputs to support audits:
 These helpers do not estimate causal effects themselves. They attach supplied
 effect values, such as ``tau_hat = estimator.effect(X)``, to rows and then run
 the representation-stability audit.
-

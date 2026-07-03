@@ -231,9 +231,10 @@ def synthetic_portfolio_rows() -> list[dict[str, Any]]:
 
 def build_report(
     *,
-    q_radius: float = 0.35,
+    q_radius: float | None = None,
     ambiguity_limit: float = 0.006,
 ) -> usf.ModelRiskReport:
+    q = "saturated" if q_radius is None else usf.q_portfolio_mix_shift(radius=q_radius)
     return usf.model_risk_report(
         synthetic_portfolio_rows(),
         public=PUBLIC_COLUMNS,
@@ -241,7 +242,7 @@ def build_report(
         metric=usf.expected_loss(pd="pd", lgd="lgd"),
         exposure="ead",
         candidate_refinements=CANDIDATE_REFINEMENTS,
-        q=usf.q_portfolio_mix_shift(radius=q_radius),
+        q=q,
         model_id="EL_SYNTHETIC_RETAIL_001",
         portfolio_name="Synthetic retail credit portfolio",
         as_of_date="2026-06-30",
@@ -254,11 +255,20 @@ def build_report(
 
 def build_frontier(
     *,
-    q_radius: float = 0.35,
+    q_radius: float | None = None,
     ambiguity_limit: float = 0.006,
 ) -> us.PublicRepresentationFrontier:
     """Choose the smallest stable public segmentation for the portfolio metric."""
 
+    q_presets: tuple[Any, ...]
+    if q_radius is None:
+        q_presets = ("saturated", "observed")
+    else:
+        q_presets = (
+            "saturated",
+            usf.q_portfolio_mix_shift(radius=q_radius),
+            "observed",
+        )
     return us.public_representation_frontier(
         synthetic_portfolio_rows(),
         base_public=PUBLIC_COLUMNS,
@@ -266,11 +276,7 @@ def build_frontier(
         target=usf.expected_loss(pd="pd", lgd="lgd"),
         weight="ead",
         candidate_refinements=CANDIDATE_REFINEMENTS,
-        q_presets=(
-            "saturated",
-            usf.q_portfolio_mix_shift(radius=q_radius),
-            "observed",
-        ),
+        q_presets=q_presets,
         min_cell_weights=(1.0,),
         ambiguity_limit=ambiguity_limit,
         bucket_budget=12,
@@ -294,8 +300,11 @@ def main() -> None:
     parser.add_argument(
         "--q-radius",
         type=float,
-        default=0.35,
-        help="Portfolio mix-shift radius for the bounded-shift Q preset.",
+        default=None,
+        help=(
+            "Optional portfolio mix-shift radius for a bounded-shift sensitivity "
+            "scenario. Omit to use saturated stress as the report baseline."
+        ),
     )
     parser.add_argument(
         "--ambiguity-limit",

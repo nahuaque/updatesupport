@@ -185,8 +185,15 @@ report = usf.model_risk_report(
     metric=usf.expected_loss(pd="pd", lgd="lgd"),
     exposure="ead",
     candidate_refinements=["broker_channel", "employment_type", "vintage"],
-    q=usf.q_portfolio_mix_shift(radius=0.25),
+    q="saturated",
 )
 
 print(report.to_markdown())
 ```
+
+The finance plugin intentionally leads with saturated fixed-public-law stress
+because it is the easiest model-risk control to explain: it requires the public
+segmentation, retained internal refinements, and supplied metric, but no
+hand-chosen radius. Radius-based mix, TV, factor-exposure, and regional
+concentration presets are better treated as sensitivity scenarios with a
+documented governance rationale.

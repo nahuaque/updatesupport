@@ -3,14 +3,58 @@
 `updatesupport` is mathematically sound for a specific and explicit class of
 audits:
 
-> finite hidden state spaces, fixed public projections, target functionals fixed
-> after workflow compilation, and explicit admissible hidden-distribution
-> classes.
+> finite retained refinement cells, fixed public projections, target
+> functionals fixed after workflow compilation, and explicit admissible
+> distribution classes.
 
 In that setting the reported ambiguity interval is a well-defined
 partial-identification or sensitivity interval. It is not a confidence
 interval, not a causal identification result, and not a generic nonlinear
 functional optimizer.
+
+The project should be understood as implementation and reporting discipline
+around this standard object, not as a claim of novel identification theory. For
+the higher-level product positioning and lineage, see
+[Positioning and lineage](positioning-and-lineage.md).
+
+## Two Boundaries Up Front
+
+First, "hidden" means **not publicly reported at the chosen reporting level**.
+It does not mean unobserved, latent, unknowable, or missing from the analyst's
+data. In the usual tabular workflow, hidden cells are retained finer cells that
+the analyst has observed or constructed but has chosen not to publish in the
+coarse public report. A better mnemonic is:
+
+```text
+public = reported buckets
+hidden = retained finer refinement inside those buckets
+```
+
+Second, every ambiguity number is relative to a declared refinement and a
+declared admissible class `Q`. It is not an absolute bound on all ways the world
+could differ, all omitted variables, or all possible unmodeled populations.
+Changing the retained refinement columns, sparse-cell rule, target values, public
+projection, or `Q` changes the mathematical problem and can change the bound.
+
+What the core calculation actually does is a partial-identification /
+sensitivity analysis. Given:
+
+- a coarse reported partition, the public buckets;
+- a finer retained partition inside those buckets, the hidden refinement;
+- a target value per retained fine cell;
+- an admissible class `Q` of within-bucket mixes;
+
+`updatesupport` solves the infimum and supremum of an aggregate target while
+holding the public marginal fixed. This is close in spirit to ecological
+inference and Frechet-bound calculations: the public table is fixed, the
+within-public-bucket composition is stressed, and the resulting interval is the
+range of aggregate values compatible with that declared stress test.
+
+The saturated formula below is exactly the expected finite-support result:
+within each public fiber, place all admissible public mass on the lowest-target
+retained cell for the lower endpoint and on the highest-target retained cell
+for the upper endpoint. Since public fibers are disjoint and the public law is
+fixed, the public-fiber contributions add.
 
 The most important boundary is the aggregate target. The primary tabular
 contract compiles to a fixed linear plug-in target:
@@ -19,8 +63,8 @@ contract compiles to a fixed linear plug-in target:
 psi(q) = sum_d h(d) q(d)
 ```
 
-where `d` ranges over retained hidden cells, `q(d)` is hidden-cell mass, and
-`h(d)` is the supplied target value for hidden cell `d`.
+where `d` ranges over retained finer cells, `q(d)` is retained-cell mass, and
+`h(d)` is the supplied target value for retained cell `d`.
 
 `RatioTarget` adds an explicit fixed linear-fractional contract for supported
 solver backends. `MomentTransformTarget` adds fixed transforms of linear
@@ -30,9 +74,9 @@ procedure is compiled to a column or row metric for each representation, and the
 finite problem then solves the compiled fixed target.
 
 `UncertainLinearTarget` keeps the same fixed linear point-estimate target and
-adds hidden-cell estimator standard errors. Those standard errors do not change
-the base transport optimization. They are used in the report layer to widen the
-hidden-composition interval with endpoint-specific and conservative
+adds retained-cell estimator standard errors. Those standard errors do not
+change the base transport optimization. They are used in the report layer to
+widen the hidden-composition interval with endpoint-specific and conservative
 estimator-uncertainty margins.
 
 If the aggregate target is nonlinear in `q` or depends on the transported
@@ -44,11 +88,12 @@ target-functional backend.
 
 The current mathematical object is finite.
 
-- `D` is a finite hidden state space.
-- `pi: D -> O` maps hidden states to public report buckets.
-- `h: D -> R` is a fixed hidden-state target value.
+- `D` is a finite retained refinement state space. These are the cells not
+  shown in the public report, not necessarily unobserved cells.
+- `pi: D -> O` maps retained cells to public report buckets.
+- `h: D -> R` is a fixed retained-cell target value.
 - `q` is a probability distribution over `D`.
-- `Q` is the admissible class of hidden distributions.
+- `Q` is the admissible class of retained-cell distributions.
 - `psi(q) = sum_d h(d) q(d)` is the aggregate being audited.
 
 The public law is the pushforward `pi#q`. For a fixed observed public law `p`,
@@ -62,17 +107,22 @@ ambiguity = upper - lower
 
 This is the hidden-composition ambiguity conditional on:
 
-- the retained finite hidden support,
+- the retained finite refinement support,
 - the supplied cell-level target values,
 - the public projection,
 - the chosen admissible set `Q`.
+
+Nothing in this definition says that `D` is the true complete state space. It
+is the state space the audit has chosen to retain and stress. If substantively
+important refinements are absent from `D`, the interval does not protect
+against them.
 
 ## Target Contract
 
 The default target contract is:
 
 ```text
-hidden cell d  -> fixed scalar h(d)
+retained cell d -> fixed scalar h(d)
 aggregate      -> q-weighted average of h(d)
 ```
 
@@ -87,7 +137,8 @@ This covers many common review metrics when expressed at the right unit:
 - average treatment effects or uplift scores supplied by an external estimator.
 
 The phrase "fixed scalar" matters. Once `from_dataframe(...)` compiles one
-finite problem, `updatesupport` treats the hidden-cell target values as inputs.
+finite problem, `updatesupport` treats the retained-cell target values as
+inputs.
 It does not update them when `q` changes. If a `ProcedureTarget` is supplied,
 procedure-aware workflows compile a fresh target for each public representation
 or scenario before constructing that finite problem.
@@ -146,7 +197,7 @@ g(E_q[m_1], ..., E_q[m_k])
   = sum_d (c + sum_j a_j m_j(d)) q(d)
 ```
 
-so the target is a fixed linear target in equivalent hidden-cell form. Those
+so the target is a fixed linear target in equivalent retained-cell form. Those
 affine moment transforms support adequacy checks, interval solving, and
 public-fiber decomposition.
 
@@ -164,7 +215,7 @@ shape justifies the requested operation:
 Those monotone box endpoints may not be jointly attainable. The resulting
 interval is therefore valid as a conservative bound, not necessarily a sharp
 identified interval. Non-affine moment transforms also do not claim public
-adequacy or additive public-fiber decomposition support, because hidden-cell
+adequacy or additive public-fiber decomposition support, because retained-cell
 point ranges of `g(m(d))` are not, in general, the same object as variation in
 `g(E_q[m])`.
 
@@ -205,7 +256,7 @@ not transport intervals for one unchanged target.
 
 ### Composition-Dependent Structural Targets
 
-If the target value itself depends on the transported hidden distribution:
+If the target value itself depends on the transported retained-cell distribution:
 
 ```text
 h = h(d, q)
@@ -247,7 +298,7 @@ fiber-range shortcuts are not valid for arbitrary `T`.
 ## Saturated Reweighting
 
 The `saturated` preset fixes the observed public law and allows arbitrary
-reweighting among retained hidden cells inside each public fiber.
+reweighting among retained cells inside each public fiber.
 
 For the current fixed linear target, let:
 
@@ -262,13 +313,19 @@ sum_o p(o) range(o)
 ```
 
 The lower endpoint puts each public bucket's mass on the lowest-target retained
-hidden cell in that bucket. The upper endpoint puts the same public mass on the
-highest-target retained hidden cell. This is why the report can decompose the
-ambiguity into public-fiber contributions.
+cell in that bucket. The upper endpoint puts the same public mass on the
+highest-target retained cell. Because public buckets are disjoint and the
+public law is fixed, the bucket-level contributions add. This is why the report
+can decompose saturated ambiguity into public-fiber contributions:
+
+```text
+contribution(o) = p(o) range(o)
+ambiguity = sum_o contribution(o)
+```
 
 For saturated environments with an explicitly fixed public law, public fibers
-with zero admissible mass are irrelevant to adequacy. Hidden target variation in
-a zero-mass public fiber cannot move the aggregate because no admissible
+with zero admissible mass are irrelevant to adequacy. Target variation in a
+zero-mass public fiber cannot move the aggregate because no admissible
 distribution can place mass there.
 
 ## Linear and Convex Backends
@@ -294,7 +351,8 @@ functional.
 
 This distinction matters: CVXPY support does not mean that arbitrary nonlinear
 aggregate targets are currently supported. It means convex constraints on the
-admissible hidden distribution are supported for the same fixed linear target.
+admissible retained-cell distribution are supported for the same fixed linear
+target.
 
 Parameterized CVXPY reuses the same symbolic problem while changing parameters
 such as a radius. Tests compare parameterized and standard CVXPY backends on
@@ -302,19 +360,20 @@ the built-in divergence presets.
 
 ## Meaning of the Q Presets
 
-Each Q preset defines an explicit admissible hidden-composition stress test.
+Each Q preset defines an explicit admissible retained-cell composition stress
+test.
 
 | preset | admissible set |
 | --- | --- |
-| `observed` | only the observed retained hidden distribution |
-| `saturated` | fixed public law, arbitrary hidden reweighting inside public fibers |
+| `observed` | only the observed retained-cell distribution |
+| `saturated` | fixed public law, arbitrary retained-cell reweighting inside public fibers |
 | `bounded_shift(r)` | fixed public law and `(1-r) q0(d) <= q(d) <= (1+r) q0(d)` |
 | `tv_budget(r)` | fixed public law and `0.5 * ||q - q0||_1 <= r` |
 | `chi_square_budget(r)` | fixed public law and `sum_d (q(d)-q0(d))^2 / q0(d) <= r` |
 | `kl_budget(r)` | fixed public law and `sum_d q(d) log(q(d)/q0(d)) <= r` |
 | `wasserstein(cost, r)` | fixed public law and transport cost from `q0` to `q` no larger than `r` |
 
-Here `q0` is the observed retained hidden distribution. The presets do not
+Here `q0` is the observed retained-cell distribution. The presets do not
 estimate which stress test is true. They make the stress test explicit and then
 solve it exactly or numerically under that definition.
 
@@ -322,10 +381,12 @@ solve it exactly or numerically under that definition.
 
 `from_dataframe(...)` compiles rows into the finite linear target contract.
 
-- Hidden states are retained hidden cells.
-- The hidden-state target `h(d)` is the weighted empirical mean of the target
-  within hidden cell `d`.
-- The observed hidden distribution `q0` is the normalized retained cell weight.
+- Hidden states are retained finer cells, meaning cells not shown in the public
+  report.
+- The retained-cell target `h(d)` is the weighted empirical mean of the target
+  within retained cell `d`.
+- The observed retained-cell distribution `q0` is the normalized retained cell
+  weight.
 - The observed public law is the pushforward of `q0`.
 
 This is statistically sound as a plug-in finite empirical analysis: the
@@ -337,7 +398,7 @@ cell means are estimated, modeled, survey-weighted, or causal-effect estimates,
 their standard errors, bootstrap intervals, survey-design uncertainty, or model
 uncertainty should be accounted for explicitly.
 
-When hidden-cell estimator standard errors are supplied through
+When retained-cell estimator standard errors are supplied through
 `target_standard_error=...` or `effect_standard_error=...`, `updatesupport`
 constructs an `UncertainLinearTarget`. The base interval remains:
 
@@ -346,13 +407,13 @@ lower = inf { sum_d mu(d) q(d) : q in Q, pi#q = p }
 upper = sup { sum_d mu(d) q(d) : q in Q, pi#q = p }
 ```
 
-where `mu(d)` is the hidden-cell point estimate. The report then adds:
+where `mu(d)` is the retained-cell point estimate. The report then adds:
 
 ```text
 se(q) = sqrt(sum_d (se(d) q(d))^2)
 ```
 
-assuming independent hidden-cell target-estimation errors after compilation.
+assuming independent retained-cell target-estimation errors after compilation.
 If lower and upper witness distributions are available, the report evaluates
 `se(q)` at those endpoint witnesses and widens each endpoint by
 `confidence_multiplier * se(q)`.
@@ -363,12 +424,12 @@ The report also emits a conservative fixed-public-law outer interval using:
 se_conservative = sqrt(sum_o (p(o) max_{d: pi(d)=o} se(d))^2)
 ```
 
-This bound is deliberately wider when the hidden cell that maximizes estimator
-standard error is not the same hidden cell that maximizes or minimizes the point
-estimate. It is not an exact joint nonconvex solve over both hidden composition
-and target-estimation error. It is a transparent reporting adjustment that keeps
-statistical uncertainty and hidden-composition ambiguity visible as separate
-quantities.
+This bound is deliberately wider when the retained cell that maximizes
+estimator standard error is not the same retained cell that maximizes or
+minimizes the point estimate. It is not an exact joint nonconvex solve over both
+retained-cell composition and target-estimation error. It is a transparent
+reporting adjustment that keeps statistical uncertainty and hidden-composition
+ambiguity visible as separate quantities.
 
 When the selected Q backend is CVXPY-compatible, the report may also include an
 SOCP confidence-core diagnostic:
@@ -382,9 +443,9 @@ The lower-core problem is a concave maximization and the upper-core problem is a
 convex minimization, so both are disciplined convex/SOCP-compatible. This
 diagnostic computes the intersection of all composition-specific
 estimator-adjusted confidence bands. It is not an outer partial-identification
-interval. A nonempty core means every admissible hidden composition shares a
-common estimator-adjusted value range. An empty core means hidden-composition
-shift can separate the estimator-adjusted bands.
+interval. A nonempty core means every admissible retained-cell composition
+shares a common estimator-adjusted value range. An empty core means
+retained-cell composition shift can separate the estimator-adjusted bands.
 
 The `min_cell_weight` option changes the retained finite support. That can make
 reports less sensitive to one-off sparse cells, but it also changes the
@@ -395,7 +456,7 @@ constant-target fibers so that this choice is visible.
 ## Causal Inference Semantics
 
 In causal workflows, `updatesupport` audits reported effects after a causal
-estimator has produced row-level, subgroup-level, or hidden-cell-level effect
+estimator has produced row-level, subgroup-level, or retained-cell-level effect
 values.
 
 The library does not:
@@ -410,7 +471,7 @@ It does:
 
 - take supplied effect estimates as fixed `h(d)` values,
 - hold the public reporting distribution fixed,
-- stress hidden composition under the selected `Q`,
+- stress retained-cell composition under the selected `Q`,
 - report how much the aggregate fixed-effect summary could move,
 - keep causal estimate, statistical uncertainty, hidden-composition ambiguity,
   and refinement recommendations separate.
@@ -434,7 +495,7 @@ This is a reporting-stability recommendation. It is not a claim that the
 variable is causal, a confounder, or operationally worth collecting.
 
 Sensitivity reports evaluate the same public representation across a grid of
-Q presets, sparse-cell thresholds, or hidden-state definitions. They summarize
+Q presets, sparse-cell thresholds, or retained refinement definitions. They summarize
 how conclusions change across declared scenarios. The grid is not a posterior
 distribution and does not assign probabilities to scenarios.
 
@@ -459,7 +520,7 @@ psi(q) = sum_d n(d) q(d) / sum_d w(d) q(d)
 
 The current ratio slice is intentionally narrow and explicit:
 
-- denominator values must be strictly positive on retained hidden states;
+- denominator values must be strictly positive on retained cells;
 - `FiniteEnvironments` can evaluate ratios directly on enumerated admissible
   distributions;
 - `PublicFiberSaturated` solves fixed-public-law ratio extrema exactly with a
@@ -516,7 +577,7 @@ CvxpyTarget(objective_builder)
 
 Each target type would need its own adequacy condition, interval solver, witness
 construction, report language, and tests. Affine moment transforms are already
-reduced to fixed linear hidden-cell target values; convex/concave moment
+reduced to fixed linear retained-cell target values; convex/concave moment
 transforms expose only the DCP-compatible endpoint; monotone moment transforms
 can expose conservative box bounds. Some remaining nonlinear targets are
 convex or linear-fractional and can be solved cleanly. Some require
@@ -529,7 +590,7 @@ Until a broader target-functional layer exists, unsupported nonlinear targets
 should either be:
 
 - reduced explicitly to a fixed linear plug-in target,
-- audited through externally computed scalar hidden-cell values with the
+- audited through externally computed scalar retained-cell values with the
   limitation stated,
 - kept out of the core soundness claim.
 
@@ -549,7 +610,7 @@ The test suite exercises the current mathematical contract directly:
 - saturated ratio-target intervals via Charnes-Cooper LP,
 - affine moment-transform targets and capability guardrails for nonlinear
   moment transforms,
-- uncertain linear targets, including hidden-cell standard-error aggregation
+- uncertain linear targets, including retained-cell standard-error aggregation
   estimator-uncertainty-aware report intervals, and SOCP confidence-core
   diagnostics,
 - procedure-target compilation and recompilation across tabular, report, and
@@ -576,8 +637,8 @@ The reported interval can be misleading if:
 - a nonlinear target is silently interpreted as a fixed linear target,
 - a representation-dependent estimator is refit but described as one unchanged
   transported target rather than a `ProcedureTarget` workflow,
-- the hidden state space omits important unseen states,
-- hidden-cell target values are noisy but treated as exact without separate
+- the retained refinement space omits important relevant cells,
+- retained-cell target values are noisy but treated as exact without separate
   uncertainty reporting,
 - the chosen Q preset is not a plausible stress test for the application,
 - `min_cell_weight` drops substantively important cells,
@@ -585,7 +646,7 @@ The reported interval can be misleading if:
   a causal workflow,
 - greedy or beam frontier search is read as exhaustive.
 
-These are modeling and interpretation risks, not hidden behavior in the
+These are modeling and interpretation risks, not undocumented behavior in the
 optimizer. The library is designed to make the finite support, target, public
 projection, Q preset, diagnostics, and limitations inspectable.
 
@@ -593,8 +654,8 @@ projection, Q preset, diagnostics, and limitations inspectable.
 
 `updatesupport` is sound for the question it currently asks:
 
-> Conditional on the finite retained support, fixed hidden-cell target values,
-> selected public representation, and explicit admissible hidden-composition
+> Conditional on the finite retained support, fixed retained-cell target values,
+> selected public representation, and explicit admissible retained-cell composition
 > class, how much can the fixed linear aggregate move while the public
 > distribution is held fixed?
 

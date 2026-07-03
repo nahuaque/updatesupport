@@ -2,8 +2,13 @@
 
 `updatesupport` is for auditing whether a public representation is adequate for
 an estimate. The public representation is the set of categories you are willing
-or able to report. The hidden representation is a finer state space that may
-affect the estimate even when the public counts are unchanged.
+or able to report. The hidden representation is a retained finer state space
+that may affect the estimate even when the public counts are unchanged.
+
+In this documentation, "hidden" means **not publicly reported at the chosen
+granularity**. It does not mean unobserved, latent, or unavailable to the
+analyst. The audit is conditional on the retained hidden refinement and the
+admissible shift class `Q` chosen for the stress test.
 
 The central question is:
 
@@ -11,7 +16,15 @@ The central question is:
 > change because the hidden mix inside public cells changed?
 
 That question is different from causal identification, prediction accuracy, and
-sampling uncertainty. It is a stability question about a representation.
+sampling uncertainty. It is a stability question about a representation, and
+the answer is not an absolute statement about every possible omitted variable or
+population shift.
+
+This puts `updatesupport` in the partial-identification / sensitivity-analysis
+family. The package contribution is not new identification theory; it is the
+workflow around compiling the finite problem, solving the declared stress test,
+explaining the ambiguity, ranking refinements, and producing review artifacts.
+See [Positioning and lineage](positioning-and-lineage.md).
 
 For causal workflows, use causal inference libraries such as
 [EconML](https://www.pywhy.org/EconML/),
@@ -141,7 +154,10 @@ sensitivity checks.
 
 Hidden columns may not be available in production. In that case, `updatesupport`
 is still useful during validation on richer data, but the report should state
-that the audit depends on a richer reference dataset.
+that the audit depends on a richer reference dataset. If the relevant finer
+variables are genuinely unavailable and no defensible reference or
+model-assisted refinement is supplied, the library cannot bound ambiguity with
+respect to those variables.
 
 A simple groupby table is not enough. The value is in comparing public stability
 against hidden refinements while preserving the public law.
