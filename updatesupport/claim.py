@@ -11,7 +11,11 @@ from .certificate import (
 )
 from .data import TabularTarget
 from .frontier import PublicRepresentationCandidate
-from .joint import NonparametricJointDistribution, fit_joint_distribution
+from .joint import (
+    HiddenCompositionUncertaintyReport,
+    NonparametricJointDistribution,
+    hidden_composition_uncertainty,
+)
 from .presets import QPreset
 from .report import (
     PublicDescentReport,
@@ -56,6 +60,7 @@ class ModelAssistedStabilitySummary:
     rows: tuple[ModelAssistedDrawResult, ...]
     ambiguity_limit: float | None = None
     seed: int | None = None
+    uncertainty_report: HiddenCompositionUncertaintyReport | None = None
 
     @property
     def draw_count(self) -> int:
@@ -75,6 +80,8 @@ class ModelAssistedStabilitySummary:
 
     @property
     def failure_rate(self) -> float | None:
+        if self.ambiguity_limit is None:
+            return None
         if self.successful_draws == 0:
             return None
         return self.failed_draws / self.successful_draws
@@ -118,6 +125,9 @@ class ModelAssistedStabilitySummary:
             "ambiguity_mean": self.ambiguity_mean,
             "ambiguity_limit": self.ambiguity_limit,
             "seed": self.seed,
+            "metric_summaries": []
+            if self.uncertainty_report is None
+            else [row.as_dict() for row in self.uncertainty_report.metric_summaries],
             "joint_model": self.joint_model.as_dict(),
             "rows": [row.as_dict() for row in self.rows],
         }
@@ -705,65 +715,39 @@ def _model_assisted_summary(
     draw_count: int,
     seed: int | None,
 ) -> ModelAssistedStabilitySummary:
-    model = joint_model
-    if model is None:
-        model = fit_joint_distribution(
-            data,
-            public=claim.public,
-            hidden=claim.hidden,
-            target=claim.target,
-            weight=claim.weight,
-            min_cell_weight=claim.min_cell_weight,
+    uncertainty = hidden_composition_uncertainty(
+        data,
+        public=claim.public,
+        hidden=claim.hidden,
+        target=claim.target,
+        weight=claim.weight,
+        joint_model=joint_model,
+        draws=draw_count,
+        seed=seed,
+        min_cell_weight=claim.min_cell_weight,
+        q=claim.primary_q,
+        ambiguity_limit=claim.ambiguity_limit,
+        title=f"{claim.estimate_name} Model-Assisted Joint Uncertainty",
+    )
+    rows = tuple(
+        ModelAssistedDrawResult(
+            draw_index=row.draw_index,
+            observed_value=row.observed_value,
+            lower=row.lower,
+            upper=row.upper,
+            ambiguity=row.ambiguity,
+            public_adequate=row.public_adequate,
+            status=row.status,
+            error=row.error,
         )
-    rows = []
-    for draw in model.iter_draws(draw_count, seed=seed):
-        try:
-            report = public_descent_report(
-                draw.records(),
-                public=claim.public,
-                hidden=claim.hidden,
-                target=draw.target_column,
-                weight=draw.weight_column,
-                min_cell_weight=claim.min_cell_weight,
-                q=claim.primary_q,
-                top=0,
-                title=f"{claim.estimate_name} Model-Assisted Draw {draw.draw_index}",
-            )
-        except Exception as exc:  # pragma: no cover - exercised by user data shapes
-            rows.append(
-                ModelAssistedDrawResult(
-                    draw_index=draw.draw_index,
-                    observed_value=None,
-                    lower=None,
-                    upper=None,
-                    ambiguity=None,
-                    public_adequate=None,
-                    status="error",
-                    error=str(exc),
-                )
-            )
-            continue
-        status = "inconclusive"
-        if claim.ambiguity_limit is not None:
-            status = (
-                "pass" if report.interval.diameter <= claim.ambiguity_limit else "fail"
-            )
-        rows.append(
-            ModelAssistedDrawResult(
-                draw_index=draw.draw_index,
-                observed_value=report.observed_value,
-                lower=report.interval.lower,
-                upper=report.interval.upper,
-                ambiguity=report.interval.diameter,
-                public_adequate=report.public_adequate,
-                status=status,
-            )
-        )
+        for row in uncertainty.rows
+    )
     return ModelAssistedStabilitySummary(
-        joint_model=model,
-        rows=tuple(rows),
+        joint_model=uncertainty.joint_model,
+        rows=rows,
         ambiguity_limit=claim.ambiguity_limit,
         seed=seed,
+        uncertainty_report=uncertainty,
     )
 
 
@@ -882,6 +866,13 @@ def _model_assisted_markdown(
                 f"{summary.ambiguity_max:.4f}",
                 f"- Mean ambiguity: {summary.ambiguity_mean:.4f}",
             ]
+        )
+    if summary.uncertainty_report is not None:
+        ambiguity = summary.uncertainty_report.ambiguity_summary
+        lines.append(
+            "- Posterior/bootstrap ambiguity interval: "
+            f"[{_format_optional_float(ambiguity.lower)}, "
+            f"{_format_optional_float(ambiguity.upper)}]"
         )
     lines.extend(
         [

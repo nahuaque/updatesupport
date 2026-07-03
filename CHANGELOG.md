@@ -90,6 +90,11 @@ All notable changes to `updatesupport` are documented here.
 - Added model-assisted joint analysis with `fit_joint_distribution(...)`,
   `NonparametricJointDistribution`, Bayesian-bootstrap joint-cell draws, and
   `verify_claim(..., joint_model=..., joint_draws=...)` summaries.
+- Added `hidden_composition_uncertainty(...)` and
+  `HiddenCompositionUncertaintyReport` for posterior/bootstrap uncertainty over
+  hidden composition, including Bayesian-bootstrap and multinomial bootstrap
+  draw methods, public-law-preserving within-fiber draws, quantile summaries,
+  Markdown output, and structured exports.
 
 ### Fixed
 

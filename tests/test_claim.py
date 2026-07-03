@@ -145,6 +145,7 @@ class ReportingClaimTests(unittest.TestCase):
         self.assertEqual(report.model_assisted.failure_rate, 1.0)
         self.assertIn("Model-Assisted Joint Analysis", markdown)
         self.assertIn("model_assisted_summary", tables)
+        self.assertIn("model_assisted_metric_summaries", tables)
         self.assertIn("model_assisted_draws", tables)
         self.assertEqual(len(tables["model_assisted_draws"]), 5)
 

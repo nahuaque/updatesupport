@@ -66,10 +66,14 @@ from .frontier import (
     public_representation_frontier,
 )
 from .joint import (
+    HiddenCompositionUncertaintyReport,
+    HiddenCompositionUncertaintyRow,
     JointCell,
     JointDistributionDraw,
     NonparametricJointDistribution,
+    UncertaintyMetricSummary,
     fit_joint_distribution,
+    hidden_composition_uncertainty,
     joint_draw_records,
 )
 from .metrics import RowMetric, row_metric
@@ -200,6 +204,9 @@ __all__ = [
     "from_dataframe",
     "geq",
     "GroupedProblem",
+    "HiddenCompositionUncertaintyReport",
+    "HiddenCompositionUncertaintyRow",
+    "hidden_composition_uncertainty",
     "JointCell",
     "JointDistributionDraw",
     "joint_draw_records",
@@ -284,6 +291,7 @@ __all__ = [
     "UpdateSupportPlugin",
     "UnsupportedTarget",
     "UnsupportedTargetError",
+    "UncertaintyMetricSummary",
     "validate_plugin",
     "verify_claim",
     "Witness",

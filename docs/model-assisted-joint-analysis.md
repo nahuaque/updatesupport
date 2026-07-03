@@ -1,14 +1,14 @@
 # Model-Assisted Joint Analysis
 
 `updatesupport` can fit a nonparametric joint distribution over retained public
-and hidden cells, then use draws from that fitted joint law to rerun reporting
+and hidden cells, then use posterior/bootstrap draws to rerun reporting
 stability checks.
 
 This is a model-assisted layer. It does not replace adversarial Q-based
 ambiguity. It answers a different question:
 
-> Across plausible public/hidden compositions generated from the fitted joint
-> cell law, how often would this public representation still support the claim?
+> Across plausible hidden compositions generated from the fitted cell law, how
+> often would this public representation still support the claim?
 
 ## Fit A Joint Distribution
 
@@ -30,6 +30,8 @@ probabilities, and their hidden-cell target values. The default
 `method="bayesian_bootstrap"` draws new cell masses from a Dirichlet distribution
 centered on the empirical cell probabilities. Use `method="empirical"` when you
 want deterministic draws equal to the fitted empirical joint law.
+Use `method="bootstrap"` for an ordinary multinomial nonparametric bootstrap
+over retained hidden cells.
 
 You can inspect or reuse draws directly:
 
@@ -40,6 +42,62 @@ records = draw.records()
 
 The records are weighted hidden-cell rows with generated target and weight
 columns, so they can be fed back into the usual report helpers.
+
+For update-support audits, the most direct draw is usually a
+hidden-composition draw:
+
+```python
+draw = joint.hidden_composition_draw(seed=123)
+```
+
+That draw preserves the fitted public law and resamples hidden-cell shares
+inside each public fiber. Plain `joint.draw(...)` samples the full joint law,
+so public bucket masses can move too.
+
+## Posterior / Bootstrap Uncertainty Report
+
+Use `hidden_composition_uncertainty(...)` when you want a standalone uncertainty
+report over hidden composition:
+
+```python
+uncertainty = us.hidden_composition_uncertainty(
+    rows_or_frame,
+    public=["AGE_BAND", "EDU_BAND", "SEX"],
+    hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND", "RAC1P"],
+    target="income_over_threshold",
+    weight="sample_weight",
+    method="bayesian_bootstrap",
+    draws=500,
+    seed=123,
+    q=us.q_tv_budget(0.10),
+    ambiguity_limit=0.015,
+    confidence_level=0.90,
+)
+
+print(uncertainty.to_markdown())
+```
+
+The report summarizes posterior/bootstrap uncertainty over:
+
+- the observed aggregate value under sampled hidden-cell masses,
+- lower and upper hidden-composition interval endpoints,
+- ambiguity width,
+- public adequacy rate,
+- claim failure rate against `ambiguity_limit`.
+
+By default, `hidden_composition_uncertainty(...)` uses
+`preserve_public_law=True`. This keeps the public bucket distribution fixed and
+resamples hidden composition within each public fiber. Set
+`preserve_public_law=False` when you intentionally want full joint
+public/hidden composition uncertainty.
+
+It also emits structured tables:
+
+```python
+uncertainty.to_tables()["metric_summaries"]
+uncertainty.to_tables()["draws"]
+uncertainty.to_tables()["joint_cells"]
+```
 
 ## Verify A Claim With Joint Draws
 
@@ -78,14 +136,19 @@ If `joint_model` is omitted but `joint_draws` is positive, `verify_claim(...)`
 fits the joint model from the same data using the claim's public, hidden,
 target, weight, and `min_cell_weight` settings.
 
+Claim-level model-assisted analysis uses hidden-composition draws with the
+public law preserved, matching the main reporting-stability question. Use the
+standalone uncertainty report with `preserve_public_law=False` for monitoring
+questions where future public bucket mix is also allowed to vary.
+
 ## Interpretation
 
 Read the outputs as three distinct layers:
 
 - **Observed-support ambiguity:** adversarial Q-based interval on the retained
   observed support.
-- **Model-assisted joint draws:** plausible compositions according to the
-  fitted nonparametric joint model.
+- **Model-assisted hidden-composition draws:** plausible within-public-fiber
+  compositions according to the fitted nonparametric joint model.
 - **Statistical uncertainty:** external standard errors or intervals supplied
   by an upstream estimator.
 

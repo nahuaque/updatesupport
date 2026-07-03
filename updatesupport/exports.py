@@ -13,6 +13,7 @@ from .frontier import (
     PublicRepresentationCandidate,
     PublicRepresentationFrontier,
 )
+from .joint import HiddenCompositionUncertaintyReport
 from .report import (
     CausalReportingStabilitySuite,
     PublicDescentReport,
@@ -67,6 +68,9 @@ def report_tables(report: Any) -> ReportTables:
 
     if isinstance(report, ClaimVerificationReport):
         return _claim_verification_tables(report)
+
+    if isinstance(report, HiddenCompositionUncertaintyReport):
+        return _hidden_composition_uncertainty_tables(report)
 
     if _is_report_wrapper(report):
         tables = report_tables(report.report)
@@ -467,9 +471,14 @@ def _claim_verification_tables(report: ClaimVerificationReport) -> ReportTables:
             {
                 key: value
                 for key, value in report.model_assisted.as_dict().items()
-                if key not in {"rows", "joint_model"}
+                if key not in {"rows", "joint_model", "metric_summaries"}
             },
         )
+        if report.model_assisted.uncertainty_report is not None:
+            tables["model_assisted_metric_summaries"] = tuple(
+                row.as_dict()
+                for row in report.model_assisted.uncertainty_report.metric_summaries
+            )
         tables["model_assisted_draws"] = tuple(
             row.as_dict() for row in report.model_assisted.rows
         )
@@ -477,6 +486,37 @@ def _claim_verification_tables(report: ClaimVerificationReport) -> ReportTables:
             cell.as_dict() for cell in report.model_assisted.joint_model.cells
         )
     return tables
+
+
+def _hidden_composition_uncertainty_tables(
+    report: HiddenCompositionUncertaintyReport,
+) -> ReportTables:
+    return {
+        "summary": (
+            {
+                "title": report.title,
+                "draw_count": report.draw_count,
+                "successful_draws": report.successful_draws,
+                "error_count": report.error_count,
+                "failed_draws": report.failed_draws,
+                "failure_rate": report.failure_rate,
+                "public_adequate_rate": report.public_adequate_rate,
+                "public_columns": report.public_columns,
+                "hidden_columns": report.hidden_columns,
+                "target_name": report.target_name,
+                "q_name": report.q_name,
+                "ambiguity_limit": report.ambiguity_limit,
+                "confidence_level": report.confidence_level,
+                "seed": report.seed,
+                "preserve_public_law": report.preserve_public_law,
+                "joint_model_method": report.joint_model.method,
+                "joint_cell_count": report.joint_model.cell_count,
+            },
+        ),
+        "metric_summaries": tuple(row.as_dict() for row in report.metric_summaries),
+        "draws": tuple(row.as_dict() for row in report.rows),
+        "joint_cells": tuple(cell.as_dict() for cell in report.joint_model.cells),
+    }
 
 
 def _candidate_row(candidate: PublicRepresentationCandidate) -> dict[str, Any]:

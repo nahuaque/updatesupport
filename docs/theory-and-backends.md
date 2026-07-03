@@ -71,6 +71,8 @@ Tabular and reporting helpers:
 - `verify_claim(...)`
 - `fit_joint_distribution(...)`
 - `NonparametricJointDistribution`
+- `hidden_composition_uncertainty(...)`
+- `HiddenCompositionUncertaintyReport`
 - `report_to_json(...)`
 - `report_tables(...)`
 - `report_dataframes(...)`

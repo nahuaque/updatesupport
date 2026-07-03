@@ -167,7 +167,7 @@ hidden-composition ambiguity, public-refinement repair, counterexample witness,
 and limitations. See [docs/reporting-claims.md](docs/reporting-claims.md).
 
 For model-assisted plausibility checks, fit a nonparametric public/hidden joint
-distribution and run the claim across sampled joint compositions:
+distribution and run the claim across sampled hidden compositions:
 
 ```python
 joint = us.fit_joint_distribution(
@@ -186,6 +186,10 @@ verdict = us.verify_claim(
     joint_seed=123,
 )
 ```
+
+Use `hidden_composition_uncertainty(...)` when you want the posterior/bootstrap
+draw summary as its own report. By default it preserves the observed public
+bucket mix and resamples hidden composition inside each public bucket.
 
 See [docs/model-assisted-joint-analysis.md](docs/model-assisted-joint-analysis.md).
 

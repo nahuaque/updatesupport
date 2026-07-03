@@ -143,7 +143,15 @@ Claim verification reports expose:
 - prefixed certificate evidence when a repair/certification was run
 - prefixed witness evidence when a counterexample witness was produced
 - model-assisted tables, when requested: `model_assisted_summary`,
-  `model_assisted_draws`, and `model_assisted_cells`
+  `model_assisted_metric_summaries`, `model_assisted_draws`, and
+  `model_assisted_cells`
+
+Hidden-composition uncertainty reports expose:
+
+- `summary`
+- `metric_summaries`
+- `draws`
+- `joint_cells`
 
 Causal reporting suites prefix the component tables, for example:
 
