@@ -24,6 +24,8 @@ class NotebookTests(unittest.TestCase):
             self.assertIn("colab.research.google.com", source)
             self.assertIn("updatesupport[causal,examples]", source)
             self.assertIn("CausalForestDML", source)
+            self.assertIn("TwoModelEffectEstimator", source)
+            self.assertIn("ECONML_AVAILABLE", source)
             self.assertIn("adapt_econml_effects", source)
             self.assertIn("estimator.effect(X)", source)
             self.assertIn("tau_hat", source)
