@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 from typing import Any, Hashable, Mapping, Sequence
 
@@ -27,6 +27,8 @@ class QPreset:
     radius: float | None = None
     cost: Any | None = None
     backend: str | None = None
+    solver: str | None = None
+    solver_options: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -55,22 +57,58 @@ def q_bounded_shift(radius: float = 0.5) -> QPreset:
     return QPreset("bounded_shift", radius=float(radius))
 
 
-def q_tv_budget(radius: float, *, backend: str = "cvxpy") -> QPreset:
+def q_tv_budget(
+    radius: float,
+    *,
+    backend: str = "cvxpy",
+    solver: str | None = None,
+    solver_options: Mapping[str, Any] | None = None,
+) -> QPreset:
     """Constrain total variation distance from the observed hidden distribution."""
 
-    return QPreset("tv_budget", radius=float(radius), backend=backend)
+    return QPreset(
+        "tv_budget",
+        radius=float(radius),
+        backend=backend,
+        solver=solver,
+        solver_options=None if solver_options is None else dict(solver_options),
+    )
 
 
-def q_chi_square_budget(radius: float, *, backend: str = "cvxpy") -> QPreset:
+def q_chi_square_budget(
+    radius: float,
+    *,
+    backend: str = "cvxpy",
+    solver: str | None = None,
+    solver_options: Mapping[str, Any] | None = None,
+) -> QPreset:
     """Constrain Pearson chi-square divergence from the observed distribution."""
 
-    return QPreset("chi_square_budget", radius=float(radius), backend=backend)
+    return QPreset(
+        "chi_square_budget",
+        radius=float(radius),
+        backend=backend,
+        solver=solver,
+        solver_options=None if solver_options is None else dict(solver_options),
+    )
 
 
-def q_kl_budget(radius: float, *, backend: str = "cvxpy") -> QPreset:
+def q_kl_budget(
+    radius: float,
+    *,
+    backend: str = "cvxpy",
+    solver: str | None = None,
+    solver_options: Mapping[str, Any] | None = None,
+) -> QPreset:
     """Constrain KL divergence from the observed hidden distribution."""
 
-    return QPreset("kl_budget", radius=float(radius), backend=backend)
+    return QPreset(
+        "kl_budget",
+        radius=float(radius),
+        backend=backend,
+        solver=solver,
+        solver_options=None if solver_options is None else dict(solver_options),
+    )
 
 
 def q_wasserstein(
@@ -78,10 +116,19 @@ def q_wasserstein(
     radius: float,
     *,
     backend: str = "cvxpy",
+    solver: str | None = None,
+    solver_options: Mapping[str, Any] | None = None,
 ) -> QPreset:
     """Constrain Wasserstein distance using an explicit hidden-cell cost matrix."""
 
-    return QPreset("wasserstein", radius=float(radius), cost=cost, backend=backend)
+    return QPreset(
+        "wasserstein",
+        radius=float(radius),
+        cost=cost,
+        backend=backend,
+        solver=solver,
+        solver_options=None if solver_options is None else dict(solver_options),
+    )
 
 
 def resolve_q_environment(
@@ -167,6 +214,8 @@ def resolve_q_environment(
                         _tv_parameterized_constraint_builder(cell_weights),
                     ),
                     parameter_values={"radius": radius},
+                    solver=preset.solver,
+                    solver_options=preset.solver_options,
                     name=q_name(preset),
                 ),
                 preset=preset,
@@ -181,6 +230,8 @@ def resolve_q_environment(
                 environment=BatchedCvxpyEnvironments(
                     fixed_public_law=public_law,
                     constraint_builders=(_tv_constraint_builder(cell_weights, radius),),
+                    solver=preset.solver,
+                    solver_options=preset.solver_options,
                     name=q_name(preset),
                 ),
                 preset=preset,
@@ -195,6 +246,8 @@ def resolve_q_environment(
             environment=CvxpyEnvironments(
                 fixed_public_law=public_law,
                 constraint_builders=(_tv_constraint_builder(cell_weights, radius),),
+                solver=preset.solver,
+                solver_options=preset.solver_options,
                 name=q_name(preset),
             ),
             preset=preset,
@@ -225,6 +278,8 @@ def resolve_q_environment(
                         _chi_square_parameterized_constraint_builder(cell_weights),
                     ),
                     parameter_values={"radius": radius},
+                    solver=preset.solver,
+                    solver_options=preset.solver_options,
                     name=q_name(preset),
                 ),
                 preset=preset,
@@ -241,6 +296,8 @@ def resolve_q_environment(
                     constraint_builders=(
                         _chi_square_constraint_builder(cell_weights, radius),
                     ),
+                    solver=preset.solver,
+                    solver_options=preset.solver_options,
                     name=q_name(preset),
                 ),
                 preset=preset,
@@ -257,6 +314,8 @@ def resolve_q_environment(
                 constraint_builders=(
                     _chi_square_constraint_builder(cell_weights, radius),
                 ),
+                solver=preset.solver,
+                solver_options=preset.solver_options,
                 name=q_name(preset),
             ),
             preset=preset,
@@ -287,6 +346,8 @@ def resolve_q_environment(
                         _kl_parameterized_constraint_builder(cell_weights),
                     ),
                     parameter_values={"radius": radius},
+                    solver=preset.solver,
+                    solver_options=preset.solver_options,
                     name=q_name(preset),
                 ),
                 preset=preset,
@@ -301,6 +362,8 @@ def resolve_q_environment(
                 environment=BatchedCvxpyEnvironments(
                     fixed_public_law=public_law,
                     constraint_builders=(_kl_constraint_builder(cell_weights, radius),),
+                    solver=preset.solver,
+                    solver_options=preset.solver_options,
                     name=q_name(preset),
                 ),
                 preset=preset,
@@ -315,6 +378,8 @@ def resolve_q_environment(
             environment=CvxpyEnvironments(
                 fixed_public_law=public_law,
                 constraint_builders=(_kl_constraint_builder(cell_weights, radius),),
+                solver=preset.solver,
+                solver_options=preset.solver_options,
                 name=q_name(preset),
             ),
             preset=preset,
@@ -341,6 +406,8 @@ def resolve_q_environment(
                         ),
                     ),
                     parameter_values={"radius": radius},
+                    solver=preset.solver,
+                    solver_options=preset.solver_options,
                     name=q_name(preset),
                 ),
                 preset=preset,
@@ -361,6 +428,8 @@ def resolve_q_environment(
                             radius,
                         ),
                     ),
+                    solver=preset.solver,
+                    solver_options=preset.solver_options,
                     name=q_name(preset),
                 ),
                 preset=preset,
@@ -377,6 +446,8 @@ def resolve_q_environment(
                 constraint_builders=(
                     _wasserstein_constraint_builder(cell_weights, preset.cost, radius),
                 ),
+                solver=preset.solver,
+                solver_options=preset.solver_options,
                 name=q_name(preset),
             ),
             preset=preset,
@@ -428,23 +499,23 @@ def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | No
             )
         if preset.radius is not None and float(preset.radius) != float(q_radius):
             raise ValueError("q_radius conflicts with the QPreset radius")
-        preset = QPreset(preset.name, float(q_radius), preset.cost, preset.backend)
+        preset = replace(preset, radius=float(q_radius))
 
     if preset.name == "bounded_shift":
         radius = _bounded_radius(preset)
-        preset = QPreset(preset.name, radius, preset.cost, preset.backend)
+        preset = replace(preset, radius=radius)
     elif preset.name == "tv_budget":
         radius = _tv_radius(preset)
-        preset = QPreset(preset.name, radius, preset.cost, preset.backend)
+        preset = replace(preset, radius=radius)
     elif preset.name == "chi_square_budget":
         radius = _chi_square_radius(preset)
-        preset = QPreset(preset.name, radius, preset.cost, preset.backend)
+        preset = replace(preset, radius=radius)
     elif preset.name == "kl_budget":
         radius = _kl_radius(preset)
-        preset = QPreset(preset.name, radius, preset.cost, preset.backend)
+        preset = replace(preset, radius=radius)
     elif preset.name == "wasserstein":
         radius = _wasserstein_radius(preset)
-        preset = QPreset(preset.name, radius, preset.cost, preset.backend)
+        preset = replace(preset, radius=radius)
 
     return preset
 
@@ -545,9 +616,7 @@ def _canonical_preset(preset: QPreset) -> QPreset:
         name = aliases[key]
     except KeyError as exc:
         raise ValueError(f"unsupported Q preset: {preset.name!r}") from exc
-    return QPreset(
-        name=name, radius=preset.radius, cost=preset.cost, backend=preset.backend
-    )
+    return replace(preset, name=name)
 
 
 def _bounded_radius(preset: QPreset) -> float:

@@ -1820,16 +1820,37 @@ class CvxpyEnvironments:
                 options.setdefault("low", low)
             if high is not None:
                 options.setdefault("high", high)
+        solver = self._normalized_solver_name()
         try:
-            if self.solver is None:
+            if solver is None:
                 problem.solve(**options)
             else:
-                problem.solve(solver=self.solver, **options)
+                problem.solve(solver=solver, **options)
         except Exception as exc:  # pragma: no cover - solver exceptions vary by backend
             raise CvxpyError(str(exc)) from exc
 
         if problem.status not in {"optimal", "optimal_inaccurate"}:
             raise CvxpyError(f"CVXPY problem status: {problem.status}")
+
+    def _normalized_solver_name(self) -> str | None:
+        if self.solver is None:
+            return None
+        requested = str(self.solver)
+        installed = {
+            str(solver).upper(): str(solver)
+            for solver in self._cvxpy().installed_solvers()
+        }
+        matched = installed.get(requested.upper())
+        if matched is not None:
+            return matched
+
+        hint = ""
+        if requested.upper() == "SCIP":
+            hint = (
+                " Install SCIP support with `pip install updatesupport[scip]` "
+                "or `uv add updatesupport[scip]`."
+            )
+        raise CvxpyError(f"CVXPY solver {requested!r} is not installed.{hint}")
 
     def _clean_vector(self, problem, value) -> tuple[float, ...]:
         if value is None:

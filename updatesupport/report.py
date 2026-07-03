@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Hashable, Sequence
+from typing import Any, Hashable, Mapping, Sequence
 
 from .data import DataDiagnostic, GroupedProblem, TabularTarget, from_dataframe
 from .environments import BatchedCvxpyEnvironments, CvxpyEnvironments
@@ -1352,6 +1352,8 @@ def _parameterized_sensitivity_q(q: Any) -> QPreset | None:
         radius=preset.radius,
         cost=preset.cost,
         backend="parameterized_cvxpy",
+        solver=preset.solver,
+        solver_options=preset.solver_options,
     )
 
 
@@ -1361,7 +1363,18 @@ def _can_reuse_parameterized_problem(target: TabularTarget) -> bool:
 
 def _parameterized_sensitivity_key(preset: QPreset) -> tuple[Any, ...]:
     cost_key = id(preset.cost) if preset.name == "wasserstein" else None
-    return (preset.name, cost_key)
+    return (
+        preset.name,
+        cost_key,
+        preset.solver,
+        _solver_options_key(preset.solver_options),
+    )
+
+
+def _solver_options_key(options: Mapping[str, Any] | None) -> tuple[Any, ...] | None:
+    if options is None:
+        return None
+    return tuple(sorted((str(key), repr(value)) for key, value in options.items()))
 
 
 def _batched_sensitivity_key(q: Any) -> tuple[Any, ...] | None:
@@ -1398,15 +1411,20 @@ def _batched_sensitivity_rows(
         q="saturated",
     )
     scenario_builders = []
+    first_preset: QPreset | None = None
     for q_preset in q_presets:
         preset = normalize_q_preset(q_preset)
         if preset is None:
             raise TypeError("batched sensitivity requires built-in Q presets")
+        if first_preset is None:
+            first_preset = preset
         runtime_preset = QPreset(
             name=preset.name,
             radius=preset.radius,
             cost=preset.cost,
             backend="cvxpy",
+            solver=preset.solver,
+            solver_options=preset.solver_options,
         )
         q_environment = resolve_q_environment(
             runtime_preset,
@@ -1422,6 +1440,8 @@ def _batched_sensitivity_rows(
         fixed_public_law=grouped.public_law,
         scenario_constraint_builders=tuple(scenario_builders),
         scenario_names=tuple(scenarios),
+        solver=None if first_preset is None else first_preset.solver,
+        solver_options=None if first_preset is None else first_preset.solver_options,
         name="batched sensitivity cvxpy",
     )
     problem = FiniteProblem(

@@ -281,6 +281,7 @@ See [packages/updatesupport-finance/README.md](packages/updatesupport-finance/RE
 
 ```bash
 pip install "updatesupport[cvxpy]"      # TV, chi-square, KL, Wasserstein, custom CVXPY Q
+pip install "updatesupport[scip]"       # CVXPY plus PySCIPOpt for solver="SCIP"
 pip install "updatesupport[examples]"   # Folktables, pandas, plotting examples
 pip install "updatesupport[causal]"     # causal-effect examples
 pip install "updatesupport[dowhy]"      # CausalRefutation conversion
@@ -291,6 +292,7 @@ The same extras work with `uv add`:
 
 ```bash
 uv add "updatesupport[cvxpy]"
+uv add "updatesupport[scip]"
 uv add "updatesupport[examples]"
 uv add "updatesupport[causal]"
 uv add "updatesupport[dowhy]"
@@ -302,13 +304,16 @@ The causal docs cover [EconML](https://www.pywhy.org/EconML/),
 [DoubleML](https://docs.doubleml.org/), and
 [CausalML](https://causalml.readthedocs.io/en/latest/) handoffs.
 
-For all examples and optional integrations:
+For common examples and optional integrations:
 
 ```bash
 pip install "updatesupport[examples,causal,dowhy,cvxpy,finance]"
 # or
 uv add "updatesupport[examples,causal,dowhy,cvxpy,finance]"
 ```
+
+`updatesupport[scip]` is intentionally separate because solver wheels and
+platform requirements are heavier than the default CVXPY workflow.
 
 ## Examples
 

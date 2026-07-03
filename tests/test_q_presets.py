@@ -76,6 +76,27 @@ class QPresetTests(unittest.TestCase):
         self.assertEqual(grouped.q_name, "bounded_shift(radius=0)")
         self.assertAlmostEqual(grouped.problem.global_transport_modulus().diameter, 0.0)
 
+    def test_cvxpy_q_preset_carries_solver_metadata(self):
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            q=us.q_tv_budget(
+                0.15,
+                solver="SCIP",
+                solver_options={"limits/time": 5},
+            ),
+        )
+
+        env = grouped.problem.environments
+
+        self.assertEqual(grouped.q_name, "tv_budget(radius=0.15)")
+        self.assertIsInstance(env, us.CvxpyEnvironments)
+        self.assertEqual(env.solver, "SCIP")
+        self.assertEqual(env.solver_options, {"limits/time": 5})
+
     def test_sensitivity_report_runs_q_and_min_cell_weight_grid(self):
         report = us.sensitivity_report(
             _rows(),

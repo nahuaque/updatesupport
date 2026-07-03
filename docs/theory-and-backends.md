@@ -311,6 +311,45 @@ public-law equalities, Q-budget constraints, or active state lower bounds.
 Custom constraint builders can return `us.cvxpy_constraint(...)` to attach a
 readable name and kind to their dual rows.
 
+## SCIP Solver Selection
+
+The CVXPY backend uses CVXPY's default installed solver unless a solver is
+named explicitly. To route a CVXPY-backed environment through SCIP, install the
+SCIP extra:
+
+```bash
+pip install "updatesupport[scip]"
+# or
+uv add "updatesupport[scip]"
+```
+
+Then pass `solver="SCIP"` through a CVXPY-backed Q preset:
+
+```python
+grouped = us.from_dataframe(
+    rows,
+    public=["region"],
+    hidden=["region", "occupation", "channel"],
+    target="outcome",
+    q=us.q_tv_budget(0.10, solver="SCIP"),
+)
+```
+
+For hand-built problems, pass the same solver name to any CVXPY environment:
+
+```python
+env = us.CvxpyEnvironments(
+    fixed_public_law={"North": 0.4, "South": 0.6},
+    solver="SCIP",
+)
+```
+
+`solver_options` are forwarded to `cvxpy.Problem.solve(...)`, so any
+CVXPY-supported SCIP options can be supplied there. This first slice only
+selects SCIP for problems already expressible through the existing CVXPY
+backend. Mixed-integer public-representation design APIs can build on the same
+solver path later.
+
 ## Parameterized CVXPY Sweeps
 
 For repeated radius sweeps on the same compiled finite problem, use the

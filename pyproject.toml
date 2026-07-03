@@ -44,6 +44,10 @@ causal = [
 cvxpy = [
     "cvxpy>=1.5",
 ]
+scip = [
+    "cvxpy>=1.5",
+    "pyscipopt>=5.0",
+]
 dowhy = [
     "dowhy>=0.13",
 ]

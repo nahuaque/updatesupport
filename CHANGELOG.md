@@ -49,6 +49,9 @@ All notable changes to `updatesupport` are documented here.
 - Added `ProcedureTarget` and `ProcedureTargetContext` for
   representation-dependent reporting procedures that compile to a column or
   row metric per public representation before solving.
+- Added optional SCIP solver support for CVXPY-backed presets via
+  `updatesupport[scip]`, `solver="SCIP"` on CVXPY environments, solver
+  metadata on `QPreset`/`QSpec`, and clearer missing-solver diagnostics.
 
 ### Fixed
 

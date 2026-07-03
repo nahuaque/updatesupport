@@ -14,6 +14,15 @@ def _require_cvxpy() -> None:
         raise unittest.SkipTest("cvxpy extra is not installed") from exc
 
 
+def _require_cvxpy_solver(name: str) -> None:
+    _require_cvxpy()
+    import cvxpy as cp
+
+    installed = {solver.upper() for solver in cp.installed_solvers()}
+    if name.upper() not in installed:
+        raise unittest.SkipTest(f"CVXPY solver {name!r} is not installed")
+
+
 def _rows():
     return [
         {"PUBLIC": "A", "HIDDEN": "x", "Y": 0.0, "W": 3.0},
@@ -23,6 +32,42 @@ def _rows():
 
 
 class CvxpyBackendTests(unittest.TestCase):
+    def test_missing_scip_solver_error_mentions_optional_extra(self):
+        _require_cvxpy()
+
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand={"a": 0.0, "b": 1.0},
+            environments=us.CvxpyEnvironments(
+                fixed_public_law={"o": 1.0},
+                solver="SCIP",
+            ),
+        )
+
+        with mock.patch("cvxpy.installed_solvers", return_value=[]):
+            with self.assertRaisesRegex(us.CvxpyError, r"updatesupport\[scip\]"):
+                problem.global_transport_modulus()
+
+    def test_scip_solver_solves_interval_when_installed(self):
+        _require_cvxpy_solver("SCIP")
+
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand={"a": 0.0, "b": 1.0},
+            environments=us.CvxpyEnvironments(
+                fixed_public_law={"o": 1.0},
+                solver="scip",
+            ),
+        )
+
+        interval = problem.global_transport_modulus()
+
+        self.assertAlmostEqual(interval.lower, 0.0, places=5)
+        self.assertAlmostEqual(interval.upper, 1.0, places=5)
+        self.assertAlmostEqual(interval.diameter, 1.0, places=5)
+
     def test_custom_convex_constraint_backend_solves_interval(self):
         _require_cvxpy()
 

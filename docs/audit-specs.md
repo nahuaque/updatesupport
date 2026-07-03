@@ -118,8 +118,12 @@ Specs use serializable Q descriptions:
 "saturated"
 {"name": "bounded_shift", "radius": 0.5}
 {"name": "tv_budget", "radius": 0.1, "backend": "cvxpy"}
+{"name": "tv_budget", "radius": 0.1, "backend": "cvxpy", "solver": "SCIP"}
 {"name": "observed"}
 ```
+
+`solver_options` may also be supplied as a JSON object and are forwarded to
+`cvxpy.Problem.solve(...)` for CVXPY-backed presets.
 
 For non-serializable custom environments, custom constraint builders, or
 plugin-specific runtime objects, call the lower-level Python APIs directly.

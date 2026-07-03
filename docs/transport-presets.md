@@ -65,6 +65,29 @@ All built-in presets produced by `from_dataframe(...)`,
 which hidden cells are stable enough to include in the state space. `Q` decides
 how the retained cells may be reweighted.
 
+## CVXPY Solver Choice
+
+CVXPY-backed presets use CVXPY's default solver unless a solver is named
+explicitly. The TV, chi-square, KL, and Wasserstein preset helpers accept
+`solver` and `solver_options`:
+
+```python
+q = us.q_tv_budget(0.15, solver="SCIP")
+```
+
+Install the SCIP extra first:
+
+```bash
+pip install "updatesupport[scip]"
+# or
+uv add "updatesupport[scip]"
+```
+
+Use this when you want the existing convex transport model to route through
+SCIP, or when you are preparing for later mixed-integer workflows that will
+need a MIP-capable CVXPY solver. The stress-test semantics do not change:
+`tv_budget(radius=0.15)` remains the reported Q preset.
+
 ## Saturated
 
 Use:

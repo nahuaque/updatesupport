@@ -155,6 +155,32 @@ class AuditSpecTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             us.QSpec.from_value({"name": "saturated", "unexpected": True})
 
+    def test_q_spec_round_trips_solver_metadata(self):
+        spec = us.QSpec.from_value(
+            {
+                "name": "tv_budget",
+                "radius": 0.1,
+                "backend": "cvxpy",
+                "solver": "SCIP",
+                "solver_options": {"limits/time": 5},
+            }
+        )
+
+        preset = spec.to_preset()
+
+        self.assertEqual(
+            spec.as_dict(),
+            {
+                "name": "tv_budget",
+                "radius": 0.1,
+                "backend": "cvxpy",
+                "solver": "SCIP",
+                "solver_options": {"limits/time": 5},
+            },
+        )
+        self.assertEqual(preset.solver, "SCIP")
+        self.assertEqual(preset.solver_options, {"limits/time": 5})
+
     def test_audit_spec_rejects_string_column_sequence(self):
         with self.assertRaises(TypeError):
             us.AuditSpec(public="segment", hidden=["segment"], target="target")
