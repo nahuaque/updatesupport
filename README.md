@@ -447,6 +447,12 @@ Run the no-download AI / ML evaluation stability demo:
 uv run python examples/ml_eval_stability.py
 ```
 
+Run the no-download product experimentation / A/B testing stability demo:
+
+```bash
+uv run python examples/product_experiment_stability.py
+```
+
 Run the real Folktables ACSIncome example:
 
 ```bash

@@ -36,6 +36,10 @@ from examples.folktables_acs_causal import (
 )
 from examples.ml_eval_stability import render_report as render_ml_eval_report
 from examples.ml_eval_stability import synthetic_eval_rows
+from examples.product_experiment_stability import (
+    render_report as render_product_experiment_report,
+)
+from examples.product_experiment_stability import synthetic_experiment_rows
 
 
 DEFAULT_OUTPUT_DIR = Path("data/benchmark_gallery")
@@ -92,6 +96,7 @@ def generate_benchmark_gallery(
     reports: list[GalleryReport] = []
 
     reports.append(_generate_ml_eval_report(output_dir))
+    reports.append(_generate_product_experiment_report(output_dir))
     reports.append(_generate_folktables_label_report(output_dir))
     if include_real_folktables:
         reports.append(
@@ -135,6 +140,24 @@ def _generate_ml_eval_report(output_dir: Path) -> GalleryReport:
         status="generated",
         path=path,
         row_count=len(synthetic_eval_rows()),
+    )
+
+
+def _generate_product_experiment_report(output_dir: Path) -> GalleryReport:
+    markdown = render_product_experiment_report()
+    path = output_dir / "product_experiment_stability_synthetic.md"
+    _write_markdown(path, markdown)
+    return GalleryReport(
+        slug="product_experiment_stability_synthetic",
+        title="Product Experimentation Stability Synthetic Audit",
+        description=(
+            "No-download A/B-test example that audits whether a positive "
+            "reported lift survives hidden segment recomposition inside public "
+            "experiment buckets."
+        ),
+        status="generated",
+        path=path,
+        row_count=len(synthetic_experiment_rows()),
     )
 
 

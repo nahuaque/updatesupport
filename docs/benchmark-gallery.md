@@ -31,6 +31,10 @@ The generated `data/benchmark_gallery/index.md` links to each saved case study.
   model-comparison benchmark example. It reports a positive challenger-minus-
   baseline margin, then shows that the ranking is not invariant when hidden
   task composition shifts inside fixed public task buckets.
+- **Product experimentation stability synthetic audit**: a no-download A/B-test
+  example. It reports a positive treatment lift, then shows that the launch
+  decision is not invariant when acquisition, tenure, geography, plan, and
+  device mix can shift inside fixed public experiment buckets.
 - **Folktables ACSIncome synthetic label-rate audit**: a no-download
   ACS-shaped label-rate example for testing the public/hidden reporting
   workflow. The report includes a public-representation frontier that asks
