@@ -79,7 +79,9 @@ from .plugins import (
 )
 from .problem import FiniteProblem, TooManyPartitions
 from .presets import (
+    CvxpyAdmissibleSetSpec,
     QPreset,
+    cvxpy_admissible_set_spec,
     q_bounded_shift,
     q_chi_square_budget,
     q_fiber_support_floor,
@@ -157,6 +159,8 @@ __all__ = [
     "CvxpyConstraintMetadata",
     "CvxpyError",
     "ConvexAdmissibleSet",
+    "CvxpyAdmissibleSetSpec",
+    "cvxpy_admissible_set_spec",
     "cvxpy_constraint",
     "causal_reporting_stability",
     "DataDiagnostic",

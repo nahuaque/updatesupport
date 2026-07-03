@@ -62,6 +62,9 @@ All notable changes to `updatesupport` are documented here.
   `SupportFunctionBackend`, a CVXPY `SuppFunc`-based backend for evaluating
   fixed-linear transport intervals as support functions of the admissible
   hidden-distribution set.
+- Added `CvxpyAdmissibleSetSpec` and `cvxpy_admissible_set_spec(...)` so
+  compatible CVXPY Q presets expose reusable admissible-set constraint builders
+  for standard, parameterized, batched, and support-function backends.
 
 ### Fixed
 

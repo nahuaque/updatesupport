@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from math import isfinite
 from typing import Any, Hashable, Mapping, Sequence
 
 from .environments import (
     BatchedCvxpyEnvironments,
+    ConvexAdmissibleSet,
     CvxpyEnvironments,
+    CvxpyConstraintBuilder,
     Environment,
     FiniteEnvironments,
     ParameterizedCvxpyEnvironments,
+    CvxpyParameterizedConstraintBuilder,
     PolytopeEnvironments,
     PublicFiberSaturated,
     SupportFunctionBackend,
@@ -39,6 +42,117 @@ class QEnvironment:
     preset: QPreset | None
     name: str
     description: str
+
+
+@dataclass(frozen=True)
+class CvxpyAdmissibleSetSpec:
+    """Reusable CVXPY constraints for one admissible Q preset."""
+
+    preset: QPreset
+    fixed_public_law: Mapping[Hashable, float]
+    constraint_builders: Sequence[CvxpyConstraintBuilder] = ()
+    parameterized_constraint_builders: Sequence[
+        CvxpyParameterizedConstraintBuilder
+    ] = ()
+    parameter_values: Mapping[str, Any] = field(default_factory=dict)
+    solver: str | None = None
+    solver_options: Mapping[str, Any] | None = None
+    name: str | None = None
+    description: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "fixed_public_law",
+            {
+                public_value: float(mass)
+                for public_value, mass in self.fixed_public_law.items()
+            },
+        )
+        object.__setattr__(self, "constraint_builders", tuple(self.constraint_builders))
+        object.__setattr__(
+            self,
+            "parameterized_constraint_builders",
+            tuple(self.parameterized_constraint_builders),
+        )
+        object.__setattr__(self, "parameter_values", dict(self.parameter_values))
+        object.__setattr__(self, "name", self.name or q_name(self.preset))
+        object.__setattr__(
+            self,
+            "description",
+            self.description or q_description(self.preset),
+        )
+
+    def environment(self, backend: str = "cvxpy") -> Environment:
+        """Materialize this constraint spec as a CVXPY-compatible environment."""
+
+        backend_key = backend.strip().lower().replace("-", "_")
+        if backend_key == "cvxpy":
+            return CvxpyEnvironments(
+                fixed_public_law=self.fixed_public_law,
+                constraint_builders=self.constraint_builders,
+                solver=self.solver,
+                solver_options=self.solver_options,
+                name=self.name or q_name(self.preset),
+            )
+        if backend_key == "support_function":
+            return SupportFunctionBackend(
+                fixed_public_law=self.fixed_public_law,
+                constraint_builders=self.constraint_builders,
+                solver=self.solver,
+                solver_options=self.solver_options,
+                name=self.name or q_name(self.preset),
+            )
+        if backend_key == "batched_cvxpy":
+            return BatchedCvxpyEnvironments(
+                fixed_public_law=self.fixed_public_law,
+                constraint_builders=self.constraint_builders,
+                solver=self.solver,
+                solver_options=self.solver_options,
+                name=self.name or q_name(self.preset),
+            )
+        if backend_key == "parameterized_cvxpy":
+            if not self.parameterized_constraint_builders:
+                raise ValueError(
+                    f"{self.name} does not expose parameterized CVXPY constraints"
+                )
+            return ParameterizedCvxpyEnvironments(
+                fixed_public_law=self.fixed_public_law,
+                parameterized_constraint_builders=self.parameterized_constraint_builders,
+                parameter_values=self.parameter_values,
+                solver=self.solver,
+                solver_options=self.solver_options,
+                name=self.name or q_name(self.preset),
+            )
+        raise ValueError(f"unsupported CVXPY admissible-set backend: {backend!r}")
+
+    def convex_admissible_set(self, problem) -> ConvexAdmissibleSet:
+        """Build a concrete CVXPY admissible set for ``problem``."""
+
+        env = self.environment("support_function")
+        return env.convex_admissible_set(
+            problem,
+            public_law=self.fixed_public_law,
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "preset": self.preset.name,
+            "radius": self.preset.radius,
+            "backend": self.preset.backend,
+            "fixed_public_law": dict(self.fixed_public_law),
+            "constraint_builder_count": len(self.constraint_builders),
+            "parameterized_constraint_builder_count": len(
+                self.parameterized_constraint_builders
+            ),
+            "parameter_values": dict(self.parameter_values),
+            "solver": self.solver,
+            "solver_options": None
+            if self.solver_options is None
+            else dict(self.solver_options),
+        }
 
 
 def q_saturated() -> QPreset:
@@ -166,6 +280,27 @@ def q_wasserstein(
     )
 
 
+def cvxpy_admissible_set_spec(
+    q: Any,
+    *,
+    public_law: Mapping[Hashable, float],
+    public_map: Mapping[Hashable, Hashable],
+    cell_weights: Mapping[Hashable, float],
+    q_radius: float | None = None,
+) -> CvxpyAdmissibleSetSpec:
+    """Expose CVXPY admissible-set constraints for a compatible Q preset."""
+
+    preset = normalize_q_preset(q, q_radius=q_radius)
+    if preset is None:
+        raise TypeError("cvxpy_admissible_set_spec requires a named Q preset")
+    return _cvxpy_admissible_set_spec_from_preset(
+        preset,
+        public_law=public_law,
+        public_map=public_map,
+        cell_weights=cell_weights,
+    )
+
+
 def resolve_q_environment(
     q: Any,
     *,
@@ -286,73 +421,13 @@ def resolve_q_environment(
                 ),
             )
         backend = _backend_name(preset, default="cvxpy")
-        if backend == "parameterized_cvxpy":
-            return QEnvironment(
-                environment=ParameterizedCvxpyEnvironments(
-                    fixed_public_law=public_law,
-                    parameterized_constraint_builders=(
-                        _tv_parameterized_constraint_builder(cell_weights),
-                    ),
-                    parameter_values={"radius": radius},
-                    solver=preset.solver,
-                    solver_options=preset.solver_options,
-                    name=q_name(preset),
-                ),
-                preset=preset,
-                name=q_name(preset),
-                description=(
-                    "fixed observed public law with total variation distance from "
-                    f"the observed hidden distribution <= {radius:g}"
-                ),
-            )
-        if backend == "batched_cvxpy":
-            return QEnvironment(
-                environment=BatchedCvxpyEnvironments(
-                    fixed_public_law=public_law,
-                    constraint_builders=(_tv_constraint_builder(cell_weights, radius),),
-                    solver=preset.solver,
-                    solver_options=preset.solver_options,
-                    name=q_name(preset),
-                ),
-                preset=preset,
-                name=q_name(preset),
-                description=(
-                    "fixed observed public law with total variation distance from "
-                    f"the observed hidden distribution <= {radius:g}"
-                ),
-            )
-        if backend == "support_function":
-            return QEnvironment(
-                environment=SupportFunctionBackend(
-                    fixed_public_law=public_law,
-                    constraint_builders=(_tv_constraint_builder(cell_weights, radius),),
-                    solver=preset.solver,
-                    solver_options=preset.solver_options,
-                    name=q_name(preset),
-                ),
-                preset=preset,
-                name=q_name(preset),
-                description=(
-                    "fixed observed public law with total variation distance from "
-                    f"the observed hidden distribution <= {radius:g}"
-                ),
-            )
-        _require_backend(preset, "cvxpy")
-        return QEnvironment(
-            environment=CvxpyEnvironments(
-                fixed_public_law=public_law,
-                constraint_builders=(_tv_constraint_builder(cell_weights, radius),),
-                solver=preset.solver,
-                solver_options=preset.solver_options,
-                name=q_name(preset),
-            ),
-            preset=preset,
-            name=q_name(preset),
-            description=(
-                "fixed observed public law with total variation distance from "
-                f"the observed hidden distribution <= {radius:g}"
-            ),
+        spec = _cvxpy_admissible_set_spec_from_preset(
+            preset,
+            public_law=public_law,
+            public_map=public_map,
+            cell_weights=cell_weights,
         )
+        return _q_environment_from_cvxpy_spec(spec, backend=backend)
 
     if preset.name == "chi_square_budget":
         radius = _chi_square_radius(preset)
@@ -366,79 +441,13 @@ def resolve_q_environment(
                 ),
             )
         backend = _backend_name(preset, default="cvxpy")
-        if backend == "parameterized_cvxpy":
-            return QEnvironment(
-                environment=ParameterizedCvxpyEnvironments(
-                    fixed_public_law=public_law,
-                    parameterized_constraint_builders=(
-                        _chi_square_parameterized_constraint_builder(cell_weights),
-                    ),
-                    parameter_values={"radius": radius},
-                    solver=preset.solver,
-                    solver_options=preset.solver_options,
-                    name=q_name(preset),
-                ),
-                preset=preset,
-                name=q_name(preset),
-                description=(
-                    "fixed observed public law with Pearson chi-square divergence "
-                    f"from the observed hidden distribution <= {radius:g}"
-                ),
-            )
-        if backend == "batched_cvxpy":
-            return QEnvironment(
-                environment=BatchedCvxpyEnvironments(
-                    fixed_public_law=public_law,
-                    constraint_builders=(
-                        _chi_square_constraint_builder(cell_weights, radius),
-                    ),
-                    solver=preset.solver,
-                    solver_options=preset.solver_options,
-                    name=q_name(preset),
-                ),
-                preset=preset,
-                name=q_name(preset),
-                description=(
-                    "fixed observed public law with Pearson chi-square divergence "
-                    f"from the observed hidden distribution <= {radius:g}"
-                ),
-            )
-        if backend == "support_function":
-            return QEnvironment(
-                environment=SupportFunctionBackend(
-                    fixed_public_law=public_law,
-                    constraint_builders=(
-                        _chi_square_constraint_builder(cell_weights, radius),
-                    ),
-                    solver=preset.solver,
-                    solver_options=preset.solver_options,
-                    name=q_name(preset),
-                ),
-                preset=preset,
-                name=q_name(preset),
-                description=(
-                    "fixed observed public law with Pearson chi-square divergence "
-                    f"from the observed hidden distribution <= {radius:g}"
-                ),
-            )
-        _require_backend(preset, "cvxpy")
-        return QEnvironment(
-            environment=CvxpyEnvironments(
-                fixed_public_law=public_law,
-                constraint_builders=(
-                    _chi_square_constraint_builder(cell_weights, radius),
-                ),
-                solver=preset.solver,
-                solver_options=preset.solver_options,
-                name=q_name(preset),
-            ),
-            preset=preset,
-            name=q_name(preset),
-            description=(
-                "fixed observed public law with Pearson chi-square divergence "
-                f"from the observed hidden distribution <= {radius:g}"
-            ),
+        spec = _cvxpy_admissible_set_spec_from_preset(
+            preset,
+            public_law=public_law,
+            public_map=public_map,
+            cell_weights=cell_weights,
         )
+        return _q_environment_from_cvxpy_spec(spec, backend=backend)
 
     if preset.name == "kl_budget":
         radius = _kl_radius(preset)
@@ -452,165 +461,151 @@ def resolve_q_environment(
                 ),
             )
         backend = _backend_name(preset, default="cvxpy")
-        if backend == "parameterized_cvxpy":
-            return QEnvironment(
-                environment=ParameterizedCvxpyEnvironments(
-                    fixed_public_law=public_law,
-                    parameterized_constraint_builders=(
-                        _kl_parameterized_constraint_builder(cell_weights),
-                    ),
-                    parameter_values={"radius": radius},
-                    solver=preset.solver,
-                    solver_options=preset.solver_options,
-                    name=q_name(preset),
-                ),
-                preset=preset,
-                name=q_name(preset),
-                description=(
-                    "fixed observed public law with KL divergence from the observed "
-                    f"hidden distribution <= {radius:g}"
-                ),
-            )
-        if backend == "batched_cvxpy":
-            return QEnvironment(
-                environment=BatchedCvxpyEnvironments(
-                    fixed_public_law=public_law,
-                    constraint_builders=(_kl_constraint_builder(cell_weights, radius),),
-                    solver=preset.solver,
-                    solver_options=preset.solver_options,
-                    name=q_name(preset),
-                ),
-                preset=preset,
-                name=q_name(preset),
-                description=(
-                    "fixed observed public law with KL divergence from the observed "
-                    f"hidden distribution <= {radius:g}"
-                ),
-            )
-        if backend == "support_function":
-            return QEnvironment(
-                environment=SupportFunctionBackend(
-                    fixed_public_law=public_law,
-                    constraint_builders=(_kl_constraint_builder(cell_weights, radius),),
-                    solver=preset.solver,
-                    solver_options=preset.solver_options,
-                    name=q_name(preset),
-                ),
-                preset=preset,
-                name=q_name(preset),
-                description=(
-                    "fixed observed public law with KL divergence from the observed "
-                    f"hidden distribution <= {radius:g}"
-                ),
-            )
-        _require_backend(preset, "cvxpy")
-        return QEnvironment(
-            environment=CvxpyEnvironments(
-                fixed_public_law=public_law,
-                constraint_builders=(_kl_constraint_builder(cell_weights, radius),),
-                solver=preset.solver,
-                solver_options=preset.solver_options,
-                name=q_name(preset),
-            ),
+        spec = _cvxpy_admissible_set_spec_from_preset(
+            preset,
+            public_law=public_law,
+            public_map=public_map,
+            cell_weights=cell_weights,
+        )
+        return _q_environment_from_cvxpy_spec(spec, backend=backend)
+
+    if preset.name == "wasserstein":
+        if preset.cost is None:
+            raise ValueError("q_wasserstein requires an explicit cost matrix")
+        backend = _backend_name(preset, default="cvxpy")
+        spec = _cvxpy_admissible_set_spec_from_preset(
+            preset,
+            public_law=public_law,
+            public_map=public_map,
+            cell_weights=cell_weights,
+        )
+        return _q_environment_from_cvxpy_spec(spec, backend=backend)
+
+    raise ValueError(f"unsupported Q preset: {preset.name!r}")
+
+
+def _cvxpy_admissible_set_spec_from_preset(
+    preset: QPreset,
+    *,
+    public_law: Mapping[Hashable, float],
+    public_map: Mapping[Hashable, Hashable],
+    cell_weights: Mapping[Hashable, float],
+) -> CvxpyAdmissibleSetSpec:
+    _validate_cvxpy_spec_inputs(
+        public_law=public_law,
+        public_map=public_map,
+        cell_weights=cell_weights,
+    )
+    if preset.name == "tv_budget":
+        radius = _tv_radius(preset)
+        return CvxpyAdmissibleSetSpec(
             preset=preset,
-            name=q_name(preset),
-            description=(
-                "fixed observed public law with KL divergence from the observed "
-                f"hidden distribution <= {radius:g}"
+            fixed_public_law=public_law,
+            constraint_builders=(_tv_constraint_builder(cell_weights, radius),),
+            parameterized_constraint_builders=(
+                _tv_parameterized_constraint_builder(cell_weights),
             ),
+            parameter_values={"radius": radius},
+            solver=preset.solver,
+            solver_options=preset.solver_options,
+            name=q_name(preset),
+            description=q_description(preset),
+        )
+
+    if preset.name == "chi_square_budget":
+        radius = _chi_square_radius(preset)
+        return CvxpyAdmissibleSetSpec(
+            preset=preset,
+            fixed_public_law=public_law,
+            constraint_builders=(_chi_square_constraint_builder(cell_weights, radius),),
+            parameterized_constraint_builders=(
+                _chi_square_parameterized_constraint_builder(cell_weights),
+            ),
+            parameter_values={"radius": radius},
+            solver=preset.solver,
+            solver_options=preset.solver_options,
+            name=q_name(preset),
+            description=q_description(preset),
+        )
+
+    if preset.name == "kl_budget":
+        radius = _kl_radius(preset)
+        return CvxpyAdmissibleSetSpec(
+            preset=preset,
+            fixed_public_law=public_law,
+            constraint_builders=(_kl_constraint_builder(cell_weights, radius),),
+            parameterized_constraint_builders=(
+                _kl_parameterized_constraint_builder(cell_weights),
+            ),
+            parameter_values={"radius": radius},
+            solver=preset.solver,
+            solver_options=preset.solver_options,
+            name=q_name(preset),
+            description=q_description(preset),
         )
 
     if preset.name == "wasserstein":
         radius = _wasserstein_radius(preset)
         if preset.cost is None:
             raise ValueError("q_wasserstein requires an explicit cost matrix")
-        backend = _backend_name(preset, default="cvxpy")
-        if backend == "parameterized_cvxpy":
-            return QEnvironment(
-                environment=ParameterizedCvxpyEnvironments(
-                    fixed_public_law=public_law,
-                    parameterized_constraint_builders=(
-                        _wasserstein_parameterized_constraint_builder(
-                            cell_weights,
-                            preset.cost,
-                        ),
-                    ),
-                    parameter_values={"radius": radius},
-                    solver=preset.solver,
-                    solver_options=preset.solver_options,
-                    name=q_name(preset),
-                ),
-                preset=preset,
-                name=q_name(preset),
-                description=(
-                    "fixed observed public law with Wasserstein cost from the "
-                    f"observed hidden distribution <= {radius:g}"
-                ),
-            )
-        if backend == "batched_cvxpy":
-            return QEnvironment(
-                environment=BatchedCvxpyEnvironments(
-                    fixed_public_law=public_law,
-                    constraint_builders=(
-                        _wasserstein_constraint_builder(
-                            cell_weights,
-                            preset.cost,
-                            radius,
-                        ),
-                    ),
-                    solver=preset.solver,
-                    solver_options=preset.solver_options,
-                    name=q_name(preset),
-                ),
-                preset=preset,
-                name=q_name(preset),
-                description=(
-                    "fixed observed public law with Wasserstein cost from the "
-                    f"observed hidden distribution <= {radius:g}"
-                ),
-            )
-        if backend == "support_function":
-            return QEnvironment(
-                environment=SupportFunctionBackend(
-                    fixed_public_law=public_law,
-                    constraint_builders=(
-                        _wasserstein_constraint_builder(
-                            cell_weights,
-                            preset.cost,
-                            radius,
-                        ),
-                    ),
-                    solver=preset.solver,
-                    solver_options=preset.solver_options,
-                    name=q_name(preset),
-                ),
-                preset=preset,
-                name=q_name(preset),
-                description=(
-                    "fixed observed public law with Wasserstein cost from the "
-                    f"observed hidden distribution <= {radius:g}"
-                ),
-            )
-        _require_backend(preset, "cvxpy")
-        return QEnvironment(
-            environment=CvxpyEnvironments(
-                fixed_public_law=public_law,
-                constraint_builders=(
-                    _wasserstein_constraint_builder(cell_weights, preset.cost, radius),
-                ),
-                solver=preset.solver,
-                solver_options=preset.solver_options,
-                name=q_name(preset),
-            ),
+        return CvxpyAdmissibleSetSpec(
             preset=preset,
-            name=q_name(preset),
-            description=(
-                "fixed observed public law with Wasserstein cost from the "
-                f"observed hidden distribution <= {radius:g}"
+            fixed_public_law=public_law,
+            constraint_builders=(
+                _wasserstein_constraint_builder(cell_weights, preset.cost, radius),
             ),
+            parameterized_constraint_builders=(
+                _wasserstein_parameterized_constraint_builder(
+                    cell_weights,
+                    preset.cost,
+                ),
+            ),
+            parameter_values={"radius": radius},
+            solver=preset.solver,
+            solver_options=preset.solver_options,
+            name=q_name(preset),
+            description=q_description(preset),
         )
 
-    raise ValueError(f"unsupported Q preset: {preset.name!r}")
+    if preset.name == "fiber_support_floor":
+        raise ValueError(
+            "fiber_support_floor is mixed-integer and does not expose a convex "
+            "CVXPY admissible-set spec"
+        )
+    raise ValueError(
+        f"{preset.name!r} does not expose CVXPY admissible-set constraints"
+    )
+
+
+def _validate_cvxpy_spec_inputs(
+    *,
+    public_law: Mapping[Hashable, float],
+    public_map: Mapping[Hashable, Hashable],
+    cell_weights: Mapping[Hashable, float],
+) -> None:
+    missing_states = [state for state in cell_weights if state not in public_map]
+    if missing_states:
+        raise ValueError(f"public_map is missing states: {missing_states!r}")
+    missing_public = [
+        public_map[state]
+        for state in cell_weights
+        if public_map[state] not in public_law
+    ]
+    if missing_public:
+        raise ValueError(f"public_law is missing public values: {missing_public!r}")
+
+
+def _q_environment_from_cvxpy_spec(
+    spec: CvxpyAdmissibleSetSpec,
+    *,
+    backend: str,
+) -> QEnvironment:
+    return QEnvironment(
+        environment=spec.environment(backend),
+        preset=spec.preset,
+        name=spec.name or q_name(spec.preset),
+        description=spec.description or q_description(spec.preset),
+    )
 
 
 def _point_environment(

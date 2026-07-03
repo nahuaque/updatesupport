@@ -203,6 +203,61 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.upper, 0.65, places=5)
         self.assertAlmostEqual(interval.diameter, 0.30, places=5)
 
+    def test_cvxpy_q_preset_exposes_admissible_set_spec(self):
+        _require_cvxpy()
+
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q="saturated",
+        )
+
+        spec = us.cvxpy_admissible_set_spec(
+            us.q_tv_budget(0.15),
+            public_law=grouped.public_law,
+            public_map=grouped.problem.public_map,
+            cell_weights=grouped.cell_weights,
+        )
+        admissible_set = spec.convex_admissible_set(grouped.problem)
+        target_direction = [
+            grouped.problem.estimand_map[state] for state in grouped.problem.states
+        ]
+        result = admissible_set.support_value(target_direction)
+
+        self.assertIsInstance(spec, us.CvxpyAdmissibleSetSpec)
+        self.assertEqual(spec.name, "tv_budget(radius=0.15)")
+        self.assertEqual(spec.parameter_values, {"radius": 0.15})
+        self.assertEqual(spec.as_dict()["constraint_builder_count"], 1)
+        self.assertIsInstance(spec.environment("cvxpy"), us.CvxpyEnvironments)
+        self.assertIsInstance(
+            spec.environment("parameterized_cvxpy"),
+            us.ParameterizedCvxpyEnvironments,
+        )
+        self.assertIsInstance(
+            spec.environment("batched_cvxpy"),
+            us.BatchedCvxpyEnvironments,
+        )
+        self.assertIsInstance(
+            spec.environment("support_function"),
+            us.SupportFunctionBackend,
+        )
+        self.assertIsInstance(admissible_set, us.ConvexAdmissibleSet)
+        self.assertIn("tv_budget", {row.kind for row in admissible_set.records})
+        self.assertIn("public_law", {row.kind for row in admissible_set.records})
+        self.assertAlmostEqual(result.value, 0.65, places=5)
+
+    def test_non_cvxpy_q_preset_does_not_expose_admissible_set_spec(self):
+        with self.assertRaisesRegex(ValueError, "does not expose"):
+            us.cvxpy_admissible_set_spec(
+                "saturated",
+                public_law={"A": 1.0},
+                public_map={"x": "A"},
+                cell_weights={"x": 1.0},
+            )
+
     def test_batched_cvxpy_solves_multiple_public_laws(self):
         _require_cvxpy()
 

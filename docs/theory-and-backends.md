@@ -51,6 +51,7 @@ Core finite objects:
 - `PolytopeEnvironments`
 - `CvxpyEnvironments`
 - `ConvexAdmissibleSet`
+- `CvxpyAdmissibleSetSpec`
 - `SupportFunctionBackend`
 - `SupportFunctionResult`
 - `ParameterizedCvxpyEnvironments`
@@ -354,6 +355,28 @@ Compatible built-in convex presets can opt into this backend:
 ```python
 q = us.q_tv_budget(0.10, backend="support_function")
 ```
+
+Those same presets also expose their admissible-set constraints before a backend
+is chosen:
+
+```python
+spec = us.cvxpy_admissible_set_spec(
+    us.q_tv_budget(0.10),
+    public_law=grouped.public_law,
+    public_map=grouped.problem.public_map,
+    cell_weights=grouped.cell_weights,
+)
+
+q_set = spec.convex_admissible_set(grouped.problem)
+upper = q_set.support_value(
+    [grouped.problem.estimand_map[state] for state in grouped.problem.states]
+)
+```
+
+`CvxpyAdmissibleSetSpec` can materialize the same constraints as a standard
+CVXPY environment, parameterized CVXPY environment, batched CVXPY environment,
+or support-function backend. This keeps the mathematical admissible set shared
+across solver modes.
 
 This first support-function slice is for continuous convex Q sets and fixed
 linear targets. Mixed-integer presets such as `q_fiber_support_floor(...)` and
