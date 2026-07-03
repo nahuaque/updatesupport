@@ -11,7 +11,12 @@ from .metrics import (
     loss_given_default,
 )
 from .portfolio import from_portfolio, model_risk_report
-from .presets import q_exposure_weighted_tv, q_portfolio_mix_shift
+from .presets import (
+    q_exposure_weighted_tv,
+    q_factor_exposure_shift,
+    q_portfolio_mix_shift,
+    q_regional_concentration_shift,
+)
 
 
 plugin = us.UpdateSupportPlugin(
@@ -27,6 +32,8 @@ plugin = us.UpdateSupportPlugin(
     q_presets={
         "portfolio_mix_shift": q_portfolio_mix_shift,
         "exposure_weighted_tv": q_exposure_weighted_tv,
+        "factor_exposure_shift": q_factor_exposure_shift,
+        "regional_concentration_shift": q_regional_concentration_shift,
     },
     report_profiles={
         "model_risk": model_risk_report,

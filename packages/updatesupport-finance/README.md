@@ -34,6 +34,13 @@ The package provides finance-oriented row metrics, Q preset aliases, portfolio
 compilation, and a model-risk report profile while keeping financial vocabulary
 out of the core `updatesupport` package.
 
+Conic concentration presets require the core CVXPY extra when solved:
+
+```bash
+pip install "updatesupport[cvxpy]" updatesupport-finance
+uv add "updatesupport[cvxpy]" updatesupport-finance
+```
+
 ## Why This Is Useful
 
 Financial analysts already monitor model performance, population drift,
@@ -152,6 +159,71 @@ The example prints both the finance model-risk report and a core
 `public_representation_frontier(...)` report for the same expected-loss metric.
 The frontier section compares baseline versus selected ambiguity, close
 dominated alternatives, and any screened-out refinement fields.
+
+## Portfolio Concentration Stress Presets
+
+Use concentration presets when independent hidden-bucket movement is too
+coarse for a model-risk review. These helpers constrain portfolio-level exposure
+drift while preserving the observed public segmentation.
+
+Factor exposure drift:
+
+```python
+q = usf.q_factor_exposure_shift(
+    0.20,
+    portfolio,
+    hidden=[
+        "product",
+        "region",
+        "fico_band",
+        "ltv_band",
+        "broker_channel",
+        "employment_type",
+    ],
+    factors={
+        "macro_beta": "macro_beta",
+        "rate_sensitivity": "rate_sensitivity",
+        "house_price_beta": "house_price_beta",
+    },
+    exposure="ead",
+)
+```
+
+Regional concentration drift:
+
+```python
+q = usf.q_regional_concentration_shift(
+    0.10,
+    portfolio,
+    hidden=[
+        "product",
+        "region",
+        "fico_band",
+        "ltv_band",
+        "broker_channel",
+        "employment_type",
+    ],
+    region="region",
+    exposure="ead",
+)
+```
+
+Both helpers compile exposure-weighted hidden-cell moments and route through the
+core `q_covariate_balance(...)` preset:
+
+```text
+|| standardized_factor_or_concentration_shift ||_2 <= radius
+```
+
+In model-review language, this asks:
+
+> If the public risk buckets stay fixed, but hidden portfolio factor exposure or
+> regional concentration can drift within this L2 tolerance, how much can the
+> reported risk metric move?
+
+This maps naturally to expected loss, default rate, LGD, delinquency, approval
+benefit, and capital review where shifts are governed by portfolio exposure
+profiles rather than arbitrary independent hidden-cell movement.
 
 To write the Markdown report:
 

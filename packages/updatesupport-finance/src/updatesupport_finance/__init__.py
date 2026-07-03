@@ -17,7 +17,14 @@ from .portfolio import (
     from_portfolio,
     model_risk_report,
 )
-from .presets import q_exposure_weighted_tv, q_portfolio_mix_shift
+from .presets import (
+    portfolio_concentration_moments,
+    portfolio_factor_moments,
+    q_exposure_weighted_tv,
+    q_factor_exposure_shift,
+    q_portfolio_mix_shift,
+    q_regional_concentration_shift,
+)
 from .plugin import plugin
 
 try:
@@ -36,7 +43,11 @@ __all__ = [
     "ModelRiskReport",
     "model_risk_report",
     "plugin",
+    "portfolio_concentration_moments",
+    "portfolio_factor_moments",
     "q_exposure_weighted_tv",
+    "q_factor_exposure_shift",
     "q_portfolio_mix_shift",
+    "q_regional_concentration_shift",
     "ReviewThresholds",
 ]

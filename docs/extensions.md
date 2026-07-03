@@ -160,6 +160,8 @@ The plugin only controls how the row-level target value is computed.
 - `model_risk_report(...)`
 - `q_portfolio_mix_shift(...)`
 - `q_exposure_weighted_tv(...)`
+- `q_factor_exposure_shift(...)`
+- `q_regional_concentration_shift(...)`
 
 Example:
 

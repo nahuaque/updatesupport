@@ -59,6 +59,10 @@ All notable changes to `updatesupport` are documented here.
   causal and model-review workflows that bounds standardized hidden
   covariate-moment drift while preserving the observed public law, including
   parameterized sensitivity and support-function frontier support.
+- Added finance-plugin portfolio concentration helpers:
+  `q_factor_exposure_shift(...)` and `q_regional_concentration_shift(...)`,
+  backed by exposure-weighted hidden-cell moments and the core
+  covariate-balance preset.
 - Added `WitnessReport` and `witness_report(...)` for analyst-facing
   lower-vs-upper adversarial witness reports that show which hidden cells move
   between interval endpoints while the public distribution stays fixed.

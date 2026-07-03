@@ -8,6 +8,13 @@ import updatesupport as us
 import updatesupport_finance as usf
 
 
+def _require_cvxpy() -> None:
+    try:
+        import cvxpy  # noqa: F401
+    except ImportError as exc:
+        raise unittest.SkipTest("cvxpy extra is not installed") from exc
+
+
 def _portfolio_rows():
     return [
         {
@@ -45,6 +52,38 @@ def _portfolio_rows():
             "lgd": 0.70,
             "ead": 10_000,
             "defaulted": 0,
+        },
+    ]
+
+
+def _factor_rows():
+    return [
+        {
+            "product": "loan",
+            "region": "north",
+            "channel": "broker",
+            "pd": 0.0,
+            "lgd": 1.0,
+            "ead": 30.0,
+            "macro_factor": -1.0,
+        },
+        {
+            "product": "loan",
+            "region": "north",
+            "channel": "direct",
+            "pd": 1.0,
+            "lgd": 1.0,
+            "ead": 30.0,
+            "macro_factor": 1.0,
+        },
+        {
+            "product": "card",
+            "region": "south",
+            "channel": "direct",
+            "pd": 0.5,
+            "lgd": 1.0,
+            "ead": 40.0,
+            "macro_factor": 0.0,
         },
     ]
 
@@ -142,6 +181,87 @@ class FinancePluginTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ambiguity_limit must be non-negative"):
             usf.ReviewThresholds(ambiguity_limit=-0.01)
 
+    def test_factor_exposure_shift_limits_portfolio_metric_movement(self):
+        _require_cvxpy()
+        rows = _factor_rows()
+        moments = usf.portfolio_factor_moments(
+            rows,
+            hidden=["product", "channel"],
+            factors={"macro": "macro_factor"},
+            exposure="ead",
+        )
+
+        grouped = usf.from_portfolio(
+            rows,
+            public=["product"],
+            hidden=["product", "channel"],
+            metric=usf.expected_loss(pd="pd", lgd="lgd"),
+            exposure="ead",
+            q=usf.q_factor_exposure_shift(
+                0.2,
+                rows,
+                hidden=["product", "channel"],
+                factors={"macro": "macro_factor"},
+                exposure="ead",
+            ),
+        )
+        interval = grouped.problem.global_transport_modulus()
+
+        self.assertEqual(set(moments), {"factor:macro"})
+        self.assertAlmostEqual(moments["factor:macro"][("loan", "broker")], -1.0)
+        self.assertEqual(grouped.q_name, "covariate_balance(radius=0.2)")
+        self.assertAlmostEqual(interval.lower, 0.42254033, places=5)
+        self.assertAlmostEqual(interval.upper, 0.57745967, places=5)
+        self.assertAlmostEqual(interval.diameter, 0.15491933, places=5)
+
+    def test_regional_concentration_shift_can_pin_region_mix(self):
+        _require_cvxpy()
+        rows = [
+            {
+                "product": "loan",
+                "region": "north",
+                "pd": 0.0,
+                "lgd": 1.0,
+                "ead": 50.0,
+            },
+            {
+                "product": "loan",
+                "region": "south",
+                "pd": 1.0,
+                "lgd": 1.0,
+                "ead": 50.0,
+            },
+        ]
+
+        moments = usf.portfolio_concentration_moments(
+            rows,
+            hidden=["product", "region"],
+            category="region",
+            exposure="ead",
+        )
+        grouped = usf.from_portfolio(
+            rows,
+            public=["product"],
+            hidden=["product", "region"],
+            metric=usf.expected_loss(pd="pd", lgd="lgd"),
+            exposure="ead",
+            q=usf.q_regional_concentration_shift(
+                0.0,
+                rows,
+                hidden=["product", "region"],
+                region="region",
+                exposure="ead",
+            ),
+        )
+        interval = grouped.problem.global_transport_modulus()
+
+        self.assertEqual(set(moments), {"region:north", "region:south"})
+        self.assertAlmostEqual(moments["region:north"][("loan", "north")], 1.0)
+        self.assertAlmostEqual(moments["region:north"][("loan", "south")], 0.0)
+        self.assertAlmostEqual(interval.lower, 0.5, places=5)
+        self.assertAlmostEqual(interval.upper, 0.5, places=5)
+        self.assertAlmostEqual(interval.diameter, 0.0, places=5)
+
     def test_plugin_descriptor_can_be_registered(self):
         us.register_plugin(usf.plugin)
 
@@ -153,6 +273,14 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIs(
             us.plugin_q_preset("finance", "portfolio_mix_shift"),
             usf.q_portfolio_mix_shift,
+        )
+        self.assertIs(
+            us.plugin_q_preset("finance", "factor_exposure_shift"),
+            usf.q_factor_exposure_shift,
+        )
+        self.assertIs(
+            us.plugin_q_preset("finance", "regional_concentration_shift"),
+            usf.q_regional_concentration_shift,
         )
         self.assertIs(us.plugin_compiler("finance", "portfolio"), usf.from_portfolio)
 
