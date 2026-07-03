@@ -2992,7 +2992,7 @@ wheels = [
 
 [[package]]
 name = "updatesupport"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version != '3.11.*'" },
@@ -3067,7 +3067,7 @@ dev = [
 
 [[package]]
 name = "updatesupport-finance"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/updatesupport-finance" }
 dependencies = [
     { name = "updatesupport" },

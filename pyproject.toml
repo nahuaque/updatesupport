@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "updatesupport"
-version = "0.1.1"
+version = "0.1.2"
 description = "Representation adequacy and transport-stability auditing in Python"
 readme = "README.md"
 license = "MIT"
@@ -58,7 +58,7 @@ examples = [
     "seaborn>=0.13",
 ]
 finance = [
-    "updatesupport-finance>=0.1.0",
+    "updatesupport-finance>=0.1.1",
 ]
 
 [dependency-groups]

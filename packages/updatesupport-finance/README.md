@@ -263,6 +263,20 @@ The example prints both the finance model-risk report and a core
 The frontier section compares baseline versus selected ambiguity, close
 dominated alternatives, and any screened-out refinement fields.
 
+## Colab Demo Notebooks
+
+Interactive Colab demos are available under `examples/notebooks`:
+
+- [Portfolio model-risk walkthrough](https://colab.research.google.com/github/nahuaque/updatesupport/blob/main/packages/updatesupport-finance/examples/notebooks/model_risk_portfolio_colab.ipynb):
+  expected-loss segmentation audit, hidden-cell risk plots, refinement
+  recommendations, and public-representation frontier search.
+- [Model-assisted portfolio uncertainty](https://colab.research.google.com/github/nahuaque/updatesupport/blob/main/packages/updatesupport-finance/examples/notebooks/model_assisted_portfolio_uncertainty_colab.ipynb):
+  PD/LGD estimator uncertainty, posterior/bootstrap hidden-composition draws,
+  and decision-threshold invariance.
+
+Both notebooks use seaborn plus `ipywidgets` controls so analysts can adjust
+Q radii, ambiguity limits, draw counts, and decision thresholds in the browser.
+
 ## Finance Sensitivity Profiles
 
 `finance_sensitivity_grid(...)` builds an opinionated Q grid for portfolio

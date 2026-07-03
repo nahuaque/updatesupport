@@ -584,6 +584,33 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIn("hardship_history", markdown)
         self.assertIn("local_housing_market", markdown)
 
+    def test_colab_demo_notebooks_are_valid_and_unexecuted(self):
+        notebook_dir = Path(__file__).resolve().parents[1] / "examples" / "notebooks"
+        notebooks = sorted(notebook_dir.glob("*.ipynb"))
+
+        self.assertEqual(
+            {path.name for path in notebooks},
+            {
+                "model_assisted_portfolio_uncertainty_colab.ipynb",
+                "model_risk_portfolio_colab.ipynb",
+            },
+        )
+        for path in notebooks:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["nbformat"], 4)
+            self.assertGreaterEqual(len(payload["cells"]), 8)
+            source = "\n".join(
+                "".join(cell.get("source", ())) for cell in payload["cells"]
+            )
+            self.assertIn("updatesupport_finance", source)
+            self.assertIn("seaborn", source)
+            self.assertIn("ipywidgets", source)
+            self.assertIn("colab.research.google.com", source)
+            for cell in payload["cells"]:
+                if cell["cell_type"] == "code":
+                    self.assertIsNone(cell.get("execution_count"))
+                    self.assertEqual(cell.get("outputs", []), [])
+
 
 if __name__ == "__main__":
     unittest.main()
