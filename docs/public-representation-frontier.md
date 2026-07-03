@@ -203,17 +203,56 @@ the search defaults to `{"max_ambiguity": 1.0}`. This is useful when public-cell
 or added-column penalties should affect the search path, not only the final
 report ranking.
 
+Use `search="mip"` when the stress grid uses saturated Q presets and you want
+SCIP to solve the public-column selection problem directly instead of using a
+greedy or beam heuristic:
+
+```python
+frontier = us.public_representation_frontier(
+    rows_or_frame,
+    base_public=["product", "region"],
+    hidden=["product", "region", "score_band", "ltv_band", "channel"],
+    target="expected_loss",
+    weight="ead",
+    candidate_refinements=["score_band", "ltv_band", "channel"],
+    q_presets=["saturated"],
+    ambiguity_limit=0.005,
+    search="mip",
+    max_added_columns=2,
+)
+```
+
+The MIP mode optimizes the saturated ambiguity objective over the declared
+candidate columns. It supports `ambiguity_limit`, `max_added_columns`,
+`must_include`, `must_exclude`, scalarized weights over `max_ambiguity`,
+`mean_ambiguity`, `public_cells`, `hidden_cells`, and `added_columns`, and hard
+bucket budgets when `enforce_bucket_budget=True`.
+
+Limitations:
+
+- MIP search currently supports saturated Q presets only.
+- Representation-dependent `ProcedureTarget` objects are not supported because
+  the target changes with the selected public representation.
+- The returned candidate table contains evaluated evidence candidates, not an
+  exhaustively enumerated Pareto frontier.
+- If `bucket_budget` is supplied without `enforce_bucket_budget=True`, the
+  budget is still reporting-only and the MIP guarantee is not a full
+  budget-constrained certificate.
+
 The returned report includes `frontier.search_trace` with:
 
 - `search`: the selected search mode.
 - `exact`: whether the reported frontier is exhaustive over the requested
-  candidate space.
+  candidate space, or whether MIP mode solved its supported selection objective
+  exactly.
 - `evaluated_candidates` and `candidate_space_size`.
 - `scenario_count`: the number of Q / min-cell / hidden-set scenarios evaluated
   for each representation.
 - `stopping_reason`, such as `completed`, `ambiguity_limit reached`, or
   `max_evaluations reached`.
 - pruning counts for beam and optional bucket-budget enforcement.
+- MIP-specific solver metadata, including `solver`, `solver_status`,
+  `objective_value`, and `optimization_guarantee`.
 
 Useful constraints:
 

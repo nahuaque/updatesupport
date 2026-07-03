@@ -441,6 +441,25 @@ solves generally do not produce the same dual diagnostics as continuous convex
 solves; use their primal intervals and witness distributions as the main
 diagnostic evidence.
 
+SCIP can also power public-representation search:
+
+```python
+frontier = us.public_representation_frontier(
+    rows,
+    base_public=["region"],
+    hidden=["region", "occupation", "channel"],
+    target="outcome",
+    candidate_refinements=["occupation", "channel"],
+    q_presets=["saturated"],
+    search="mip",
+)
+```
+
+This MIP mode is a column-selection optimizer for saturated fixed-public-law
+ambiguity. It is not a generic mixed-integer wrapper around every Q preset. Use
+it when the design question is which named hidden columns to promote into the
+public representation under saturated stress tests.
+
 ## Parameterized CVXPY Sweeps
 
 For repeated radius sweeps on the same compiled finite problem, use the

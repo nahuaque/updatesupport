@@ -117,6 +117,10 @@ When scalarized frontier scoring is requested, `summary` includes
 `scalarized_weights` and `best_scalarized`, while each candidate row includes
 `scalarized_score` and `scalarized_components`.
 
+When MIP frontier search is used, `search_trace` includes solver metadata such
+as `solver`, `solver_status`, `objective_value`, and
+`optimization_guarantee`.
+
 Representation-stability certificates expose:
 
 - `summary`

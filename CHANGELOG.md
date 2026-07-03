@@ -71,6 +71,10 @@ All notable changes to `updatesupport` are documented here.
 - Added scalarized public-representation frontier scoring and
   `search="scalarized"` so reviewers can rank or greedily search candidates by
   explicit weighted ambiguity/complexity tradeoffs.
+- Added `search="mip"` for SCIP-powered public-representation column selection
+  under saturated Q presets, including ambiguity limits, scalarized objectives,
+  public-cell counting, hard bucket-budget constraints, and solver metadata in
+  the frontier trace.
 
 ### Fixed
 

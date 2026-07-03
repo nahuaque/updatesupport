@@ -6,6 +6,16 @@ from typing import cast
 import updatesupport as us
 
 
+def _require_cvxpy_solver(name: str) -> None:
+    try:
+        import cvxpy as cp
+    except ImportError as exc:  # pragma: no cover - depends on optional extras
+        raise unittest.SkipTest("CVXPY is not installed") from exc
+    installed = {str(solver).upper() for solver in cp.installed_solvers()}
+    if name.upper() not in installed:
+        raise unittest.SkipTest(f"CVXPY solver {name!r} is not installed")
+
+
 class PublicRepresentationFrontierTests(unittest.TestCase):
     def test_certify_public_representation_passes_with_exact_stable_candidate(self):
         rows = [
@@ -412,6 +422,98 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
         self.assertEqual(report.best_scalarized.added_columns, ())
         self.assertIn((), [row.added_columns for row in report.candidates])
         self.assertIn(("driver",), [row.added_columns for row in report.candidates])
+
+    def test_public_representation_frontier_supports_mip_search(self):
+        _require_cvxpy_solver("SCIP")
+        rows = [
+            {
+                "segment": "A",
+                "driver": "low",
+                "noise": "n1",
+                "target": 0.0,
+                "weight": 30,
+            },
+            {
+                "segment": "A",
+                "driver": "high",
+                "noise": "n1",
+                "target": 1.0,
+                "weight": 30,
+            },
+            {
+                "segment": "B",
+                "driver": "flat",
+                "noise": "n2",
+                "target": 0.5,
+                "weight": 40,
+            },
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver", "noise"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["noise", "driver"],
+            q_presets=["saturated"],
+            ambiguity_limit=0.05,
+            search="mip",
+            max_added_columns=1,
+        )
+        markdown = report.to_markdown()
+
+        self.assertTrue(report.search_trace.exact)
+        self.assertEqual(report.search_trace.search, "mip")
+        self.assertEqual(report.search_trace.solver.upper(), "SCIP")
+        self.assertIn("optimal", report.search_trace.solver_status)
+        self.assertIn("mip", report.search_trace.stopping_reason)
+        self.assertEqual(report.minimal_stable.added_columns, ("driver",))
+        self.assertIn(("driver",), [row.added_columns for row in report.candidates])
+        self.assertIn("Search solver: SCIP", markdown)
+        self.assertIn("MIP search directly optimizes", markdown)
+
+    def test_public_representation_frontier_mip_supports_scalarized_public_cells(self):
+        _require_cvxpy_solver("SCIP")
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0, "weight": 30},
+            {"segment": "A", "driver": "high", "target": 1.0, "weight": 30},
+            {"segment": "B", "driver": "flat", "target": 0.5, "weight": 40},
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            q_presets=["saturated"],
+            search="mip",
+            max_added_columns=1,
+            scalarized_weights={"max_ambiguity": 1.0, "public_cells": 1.0},
+        )
+
+        self.assertTrue(report.search_trace.exact)
+        self.assertEqual(report.best_scalarized.added_columns, ())
+        self.assertEqual(report.search_trace.scalarized_weights["public_cells"], 1.0)
+
+    def test_public_representation_frontier_mip_rejects_non_saturated_q(self):
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0},
+            {"segment": "A", "driver": "high", "target": 1.0},
+        ]
+
+        with self.assertRaisesRegex(ValueError, "only saturated Q presets"):
+            us.public_representation_frontier(
+                rows,
+                base_public=["segment"],
+                hidden=["segment", "driver"],
+                target="target",
+                candidate_refinements=["driver"],
+                q_presets=[us.q_bounded_shift(0.5)],
+                search="mip",
+            )
 
     def test_public_representation_frontier_rejects_bad_scalarized_weights(self):
         rows = [

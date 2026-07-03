@@ -8,7 +8,9 @@ from math import comb
 from typing import Any, Mapping, Sequence
 
 from .data import TabularTarget, from_dataframe
+from .environments import CvxpyError
 from .presets import q_description, q_name
+from .targets import ProcedureTarget
 
 
 _SCALARIZED_COMPONENT_ORDER = (
@@ -86,6 +88,10 @@ class FrontierSearchTrace:
     pruned_by_dominance: int = 0
     pruned_by_beam: int = 0
     scalarized_weights: dict[str, float] | None = None
+    solver: str | None = None
+    solver_status: str | None = None
+    objective_value: float | None = None
+    optimization_guarantee: str | None = None
     stopping_reason: str = "completed"
 
     def as_dict(self) -> dict[str, Any]:
@@ -103,6 +109,10 @@ class FrontierSearchTrace:
             "pruned_by_dominance": self.pruned_by_dominance,
             "pruned_by_beam": self.pruned_by_beam,
             "scalarized_weights": self.scalarized_weights,
+            "solver": self.solver,
+            "solver_status": self.solver_status,
+            "objective_value": self.objective_value,
+            "optimization_guarantee": self.optimization_guarantee,
             "stopping_reason": self.stopping_reason,
         }
 
@@ -551,6 +561,17 @@ class PublicRepresentationFrontier:
                     f"- Search stopping reason: {self.search_trace.stopping_reason}",
                 ]
             )
+            if self.search_trace.solver is not None:
+                lines.append(f"- Search solver: {self.search_trace.solver}")
+            if self.search_trace.solver_status is not None:
+                lines.append(
+                    f"- Search solver status: {self.search_trace.solver_status}"
+                )
+            if self.search_trace.optimization_guarantee is not None:
+                lines.append(
+                    "- Search optimization guarantee: "
+                    f"{self.search_trace.optimization_guarantee}"
+                )
         if self.ambiguity_limit is not None:
             lines.append(f"- Ambiguity limit: {self.ambiguity_limit:.4f}")
         if self.bucket_budget is not None:
@@ -657,6 +678,8 @@ def public_representation_frontier(
     beam_width: int = 12,
     max_evaluations: int | None = None,
     scalarized_weights: Mapping[str, float] | None = None,
+    mip_solver: str | None = "SCIP",
+    mip_solver_options: Mapping[str, Any] | None = None,
     must_include: Sequence[str] | None = None,
     must_exclude: Sequence[str] | None = None,
     enforce_bucket_budget: bool = False,
@@ -713,6 +736,11 @@ def public_representation_frontier(
         raise ValueError("beam_width must be positive")
     if max_evaluations is not None and max_evaluations < 0:
         raise ValueError("max_evaluations must be non-negative")
+    if mip_solver_options is not None and not isinstance(
+        mip_solver_options,
+        Mapping,
+    ):
+        raise TypeError("mip_solver_options must be a mapping or None")
     if not q_presets:
         raise ValueError("q_presets must contain at least one preset")
 
@@ -780,6 +808,8 @@ def public_representation_frontier(
         beam_width=beam_width,
         max_evaluations=max_evaluations,
         scalarized_weights=normalized_scalarized_weights,
+        mip_solver=mip_solver,
+        mip_solver_options=mip_solver_options,
         enforce_bucket_budget=enforce_bucket_budget,
         candidate_space_size=candidate_space_size,
     )
@@ -810,6 +840,33 @@ def public_representation_frontier(
 class _SearchResult:
     candidates: tuple[PublicRepresentationCandidate, ...]
     trace: FrontierSearchTrace
+
+
+@dataclass(frozen=True)
+class _MipSearchOutcome:
+    stopping_reason: str
+    exact: bool
+    solver: str | None
+    solver_status: str | None
+    objective_value: float | None
+    optimization_guarantee: str | None
+
+
+@dataclass(frozen=True)
+class _MipScenarioData:
+    hidden_columns: tuple[str, ...]
+    states: tuple[tuple[Any, ...], ...]
+    public_values: tuple[tuple[Any, ...], ...]
+    targets: tuple[float, ...]
+    weights: tuple[float, ...]
+    candidate_indices: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class _MipSolveResult:
+    added_columns: tuple[str, ...] | None
+    status: str
+    objective_value: float | None
 
 
 @dataclass
@@ -910,6 +967,8 @@ def _search_candidates(
     beam_width: int,
     max_evaluations: int | None,
     scalarized_weights: dict[str, float] | None,
+    mip_solver: str | None,
+    mip_solver_options: Mapping[str, Any] | None,
     enforce_bucket_budget: bool,
     candidate_space_size: int,
 ) -> _SearchResult:
@@ -931,6 +990,7 @@ def _search_candidates(
     )
     pruned_by_dominance = 0
     pruned_by_beam = 0
+    mip_outcome: _MipSearchOutcome | None = None
     if search == "exhaustive":
         stopping_reason = _exhaustive_search(
             state,
@@ -954,6 +1014,17 @@ def _search_candidates(
             include_base=include_base,
             scalarized_weights=scalarized_weights,
         )
+    elif search == "mip":
+        mip_outcome = _mip_search(
+            state,
+            required_columns=required_columns,
+            max_added_columns=max_added_columns,
+            include_base=include_base,
+            solver=mip_solver,
+            solver_options=mip_solver_options,
+            scalarized_weights=scalarized_weights,
+        )
+        stopping_reason = mip_outcome.stopping_reason
     else:
         stopping_reason, pruned_by_dominance, pruned_by_beam = _beam_search(
             state,
@@ -968,6 +1039,11 @@ def _search_candidates(
         search == "exhaustive"
         and not state.evaluation_limit_hit
         and not enforce_bucket_budget
+    ) or (
+        search == "mip"
+        and mip_outcome is not None
+        and mip_outcome.exact
+        and not state.evaluation_limit_hit
     )
     if state.evaluation_limit_hit:
         stopping_reason = "max_evaluations reached"
@@ -987,6 +1063,14 @@ def _search_candidates(
             pruned_by_dominance=pruned_by_dominance,
             pruned_by_beam=pruned_by_beam,
             scalarized_weights=scalarized_weights,
+            solver=None if mip_outcome is None else mip_outcome.solver,
+            solver_status=None if mip_outcome is None else mip_outcome.solver_status,
+            objective_value=None
+            if mip_outcome is None
+            else mip_outcome.objective_value,
+            optimization_guarantee=None
+            if mip_outcome is None
+            else mip_outcome.optimization_guarantee,
             stopping_reason=stopping_reason,
         ),
     )
@@ -1124,6 +1208,455 @@ def _beam_search(
         beam = ranked[:beam_width]
 
     return "completed", pruned_by_dominance, pruned_by_beam
+
+
+def _mip_search(
+    state: _EvaluationState,
+    *,
+    required_columns: tuple[str, ...],
+    max_added_columns: int,
+    include_base: bool,
+    solver: str | None,
+    solver_options: Mapping[str, Any] | None,
+    scalarized_weights: dict[str, float] | None,
+) -> _MipSearchOutcome:
+    _validate_mip_search(
+        state,
+        required_columns=required_columns,
+        include_base=include_base,
+    )
+    if not state.candidate_refinements:
+        candidate = state.evaluate(
+            required_columns,
+            include_result=include_base or bool(required_columns),
+        )
+        reason = "completed" if candidate is not None else "max_evaluations reached"
+        return _MipSearchOutcome(
+            stopping_reason=reason,
+            exact=candidate is not None,
+            solver=None,
+            solver_status=None,
+            objective_value=None,
+            optimization_guarantee="no candidate refinements required a MIP solve",
+        )
+    if max_added_columns == 0 and not include_base and not required_columns:
+        return _MipSearchOutcome(
+            stopping_reason="no candidates",
+            exact=True,
+            solver=None,
+            solver_status=None,
+            objective_value=None,
+            optimization_guarantee="no feasible candidate subsets under search bounds",
+        )
+
+    scenario_data = _mip_scenario_data(state)
+    solver_name = _normalized_mip_solver(solver)
+    stable_limit = state.ambiguity_limit
+    solve = _solve_mip_column_selection(
+        scenario_data,
+        candidate_refinements=state.candidate_refinements,
+        required_columns=required_columns,
+        max_added_columns=max_added_columns,
+        include_base=include_base,
+        ambiguity_limit=stable_limit,
+        bucket_budget=state.bucket_budget if state.enforce_bucket_budget else None,
+        scalarized_weights=scalarized_weights,
+        solver=solver_name,
+        solver_options=solver_options,
+    )
+    stopping_reason = "mip optimal"
+    if solve.added_columns is None and _is_infeasible_status(solve.status):
+        if stable_limit is not None:
+            fallback = _solve_mip_column_selection(
+                scenario_data,
+                candidate_refinements=state.candidate_refinements,
+                required_columns=required_columns,
+                max_added_columns=max_added_columns,
+                include_base=include_base,
+                ambiguity_limit=None,
+                bucket_budget=state.bucket_budget
+                if state.enforce_bucket_budget
+                else None,
+                scalarized_weights=scalarized_weights,
+                solver=solver_name,
+                solver_options=solver_options,
+            )
+            if fallback.added_columns is None:
+                return _MipSearchOutcome(
+                    stopping_reason="no candidates",
+                    exact=True,
+                    solver=solver_name,
+                    solver_status=fallback.status,
+                    objective_value=fallback.objective_value,
+                    optimization_guarantee=_mip_guarantee(state),
+                )
+            solve = fallback
+            stopping_reason = "no stable representation; mip best alternative optimal"
+        else:
+            return _MipSearchOutcome(
+                stopping_reason="no candidates",
+                exact=True,
+                solver=solver_name,
+                solver_status=solve.status,
+                objective_value=solve.objective_value,
+                optimization_guarantee=_mip_guarantee(state),
+            )
+    elif solve.added_columns is None:
+        raise CvxpyError(
+            "MIP frontier search did not converge to an optimal solution; "
+            f"solver status was {solve.status!r}."
+        )
+
+    if include_base or required_columns:
+        if (
+            state.evaluate(
+                required_columns,
+                include_result=include_base or bool(required_columns),
+            )
+            is None
+        ):
+            return _MipSearchOutcome(
+                stopping_reason="max_evaluations reached",
+                exact=False,
+                solver=solver_name,
+                solver_status=solve.status,
+                objective_value=solve.objective_value,
+                optimization_guarantee=_mip_guarantee(state),
+            )
+    if state.evaluate(solve.added_columns) is None:
+        return _MipSearchOutcome(
+            stopping_reason="max_evaluations reached",
+            exact=False,
+            solver=solver_name,
+            solver_status=solve.status,
+            objective_value=solve.objective_value,
+            optimization_guarantee=_mip_guarantee(state),
+        )
+
+    exact = state.bucket_budget is None or state.enforce_bucket_budget
+    return _MipSearchOutcome(
+        stopping_reason=stopping_reason,
+        exact=exact,
+        solver=solver_name,
+        solver_status=solve.status,
+        objective_value=solve.objective_value,
+        optimization_guarantee=_mip_guarantee(state),
+    )
+
+
+def _validate_mip_search(
+    state: _EvaluationState,
+    *,
+    required_columns: tuple[str, ...],
+    include_base: bool,
+) -> None:
+    if isinstance(state.target, ProcedureTarget):
+        raise ValueError(
+            "search='mip' currently supports fixed row/column targets only; "
+            "ProcedureTarget depends on the public representation and must be "
+            "evaluated by exhaustive, greedy, beam, or scalarized search."
+        )
+    non_saturated = [
+        q_name(spec.q) for spec in state.scenario_specs if q_name(spec.q) != "saturated"
+    ]
+    if non_saturated:
+        raise ValueError(
+            "search='mip' currently supports only saturated Q presets; "
+            f"unsupported presets: {tuple(non_saturated)!r}"
+        )
+    if not include_base and not required_columns and not state.candidate_refinements:
+        raise ValueError("search='mip' has no candidate representation to evaluate")
+
+
+def _mip_scenario_data(state: _EvaluationState) -> tuple[_MipScenarioData, ...]:
+    scenarios = []
+    for spec in state.scenario_specs:
+        grouped = from_dataframe(
+            state.data,
+            public=state.base_public,
+            hidden=spec.hidden_columns,
+            target=state.target,
+            weight=state.weight,
+            min_cell_weight=spec.min_cell_weight,
+            q="saturated",
+        )
+        states = tuple(grouped.problem.states)
+        scenarios.append(
+            _MipScenarioData(
+                hidden_columns=spec.hidden_columns,
+                states=states,
+                public_values=tuple(
+                    grouped.problem.public_map[state] for state in states
+                ),
+                targets=tuple(
+                    float(grouped.problem.estimand_map[state]) for state in states
+                ),
+                weights=tuple(float(grouped.cell_weights[state]) for state in states),
+                candidate_indices=tuple(
+                    spec.hidden_columns.index(column)
+                    for column in state.candidate_refinements
+                ),
+            )
+        )
+    return tuple(scenarios)
+
+
+def _solve_mip_column_selection(
+    scenario_data: tuple[_MipScenarioData, ...],
+    *,
+    candidate_refinements: tuple[str, ...],
+    required_columns: tuple[str, ...],
+    max_added_columns: int,
+    include_base: bool,
+    ambiguity_limit: float | None,
+    bucket_budget: int | None,
+    scalarized_weights: dict[str, float] | None,
+    solver: str | None,
+    solver_options: Mapping[str, Any] | None,
+) -> _MipSolveResult:
+    cp = _import_cvxpy_for_mip()
+    column_count = len(candidate_refinements)
+    x = cp.Variable(column_count, boolean=True)
+    constraints = [cp.sum(x) <= max_added_columns]
+    for column in required_columns:
+        constraints.append(x[candidate_refinements.index(column)] == 1)
+    if not include_base and not required_columns:
+        constraints.append(cp.sum(x) >= 1)
+
+    max_ambiguity = cp.Variable(nonneg=True)
+    max_public_cells = cp.Variable(nonneg=True)
+    scenario_ambiguities = []
+    target_scale = 1.0
+    for scenario in scenario_data:
+        scenario_range = max(scenario.targets) - min(scenario.targets)
+        target_scale = max(target_scale, abs(scenario_range))
+        ambiguity, public_cells, scenario_constraints = _mip_scenario_expressions(
+            cp,
+            x=x,
+            scenario=scenario,
+        )
+        constraints.extend(scenario_constraints)
+        constraints.append(max_ambiguity >= ambiguity)
+        constraints.append(max_public_cells >= public_cells)
+        scenario_ambiguities.append(ambiguity)
+
+    if ambiguity_limit is not None:
+        constraints.append(max_ambiguity <= ambiguity_limit)
+    if bucket_budget is not None:
+        constraints.append(max_public_cells <= bucket_budget)
+
+    selected_count = cp.sum(x)
+    mean_ambiguity = sum(scenario_ambiguities) / len(scenario_ambiguities)
+    objective = _mip_objective(
+        max_ambiguity=max_ambiguity,
+        mean_ambiguity=mean_ambiguity,
+        max_public_cells=max_public_cells,
+        hidden_cells=max(len(scenario.states) for scenario in scenario_data),
+        selected_count=selected_count,
+        target_scale=target_scale,
+        ambiguity_limit=ambiguity_limit,
+        scalarized_weights=scalarized_weights,
+    )
+    problem = cp.Problem(cp.Minimize(objective), constraints)
+    options = dict(solver_options or {})
+    if solver is None:
+        problem.solve(**options)
+    else:
+        problem.solve(solver=solver, **options)
+
+    status = str(problem.status)
+    if not _is_optimal_status(status):
+        return _MipSolveResult(
+            added_columns=None,
+            status=status,
+            objective_value=None if problem.value is None else float(problem.value),
+        )
+    selected = tuple(
+        column
+        for column, value in zip(candidate_refinements, x.value, strict=True)
+        if float(value) >= 0.5
+    )
+    return _MipSolveResult(
+        added_columns=selected,
+        status=status,
+        objective_value=None if problem.value is None else float(problem.value),
+    )
+
+
+def _mip_scenario_expressions(
+    cp: Any,
+    *,
+    x: Any,
+    scenario: _MipScenarioData,
+) -> tuple[Any, Any, list[Any]]:
+    state_count = len(scenario.states)
+    lower_bound = min(scenario.targets)
+    upper_bound = max(scenario.targets)
+    big_m = max(upper_bound - lower_bound, 1.0)
+    high = cp.Variable(state_count)
+    low = cp.Variable(state_count)
+    representatives = cp.Variable(state_count, boolean=True)
+    constraints = [
+        high >= lower_bound,
+        high <= upper_bound,
+        low >= lower_bound,
+        low <= upper_bound,
+        high >= low,
+    ]
+    same_indicators: dict[tuple[int, int], Any | None] = {}
+    for i, target_i in enumerate(scenario.targets):
+        constraints.extend([high[i] >= target_i, low[i] <= target_i])
+
+    for i in range(state_count):
+        for k in range(i + 1, state_count):
+            if scenario.public_values[i] != scenario.public_values[k]:
+                continue
+            indicator = _mip_same_fiber_indicator(
+                cp,
+                x=x,
+                scenario=scenario,
+                left=i,
+                right=k,
+                constraints=constraints,
+            )
+            same_indicators[(i, k)] = indicator
+            target_i = scenario.targets[i]
+            target_k = scenario.targets[k]
+            if indicator is None:
+                constraints.extend(
+                    [
+                        high[i] >= target_k,
+                        low[i] <= target_k,
+                        high[k] >= target_i,
+                        low[k] <= target_i,
+                    ]
+                )
+            else:
+                constraints.extend(
+                    [
+                        high[i] >= target_k - big_m * (1 - indicator),
+                        low[i] <= target_k + big_m * (1 - indicator),
+                        high[k] >= target_i - big_m * (1 - indicator),
+                        low[k] <= target_i + big_m * (1 - indicator),
+                    ]
+                )
+
+    for i in range(state_count):
+        previous = [
+            same_indicators[(k, i)]
+            for k in range(i)
+            if scenario.public_values[k] == scenario.public_values[i]
+        ]
+        if not previous:
+            constraints.append(representatives[i] == 1)
+        elif any(indicator is None for indicator in previous):
+            constraints.append(representatives[i] == 0)
+        else:
+            for indicator in previous:
+                constraints.append(representatives[i] <= 1 - indicator)
+            constraints.append(representatives[i] >= 1 - sum(previous))
+
+    ambiguity = cp.sum(cp.multiply(scenario.weights, high - low))
+    public_cells = cp.sum(representatives)
+    return ambiguity, public_cells, constraints
+
+
+def _mip_same_fiber_indicator(
+    cp: Any,
+    *,
+    x: Any,
+    scenario: _MipScenarioData,
+    left: int,
+    right: int,
+    constraints: list[Any],
+) -> Any | None:
+    differing_columns = tuple(
+        index
+        for index, hidden_index in enumerate(scenario.candidate_indices)
+        if scenario.states[left][hidden_index] != scenario.states[right][hidden_index]
+    )
+    if not differing_columns:
+        return None
+    indicator = cp.Variable(boolean=True)
+    for index in differing_columns:
+        constraints.append(indicator <= 1 - x[index])
+    constraints.append(indicator >= 1 - sum(x[index] for index in differing_columns))
+    return indicator
+
+
+def _mip_objective(
+    *,
+    max_ambiguity: Any,
+    mean_ambiguity: Any,
+    max_public_cells: Any,
+    hidden_cells: int,
+    selected_count: Any,
+    target_scale: float,
+    ambiguity_limit: float | None,
+    scalarized_weights: dict[str, float] | None,
+) -> Any:
+    if scalarized_weights is not None:
+        return (
+            scalarized_weights.get("max_ambiguity", 0.0) * max_ambiguity
+            + scalarized_weights.get("mean_ambiguity", 0.0) * mean_ambiguity
+            + scalarized_weights.get("public_cells", 0.0) * max_public_cells
+            + scalarized_weights.get("hidden_cells", 0.0) * float(hidden_cells)
+            + scalarized_weights.get("added_columns", 0.0) * selected_count
+        )
+    scaled_ambiguity = max_ambiguity / max(target_scale, 1.0)
+    if ambiguity_limit is not None:
+        return max_public_cells + 1e-6 * selected_count + 1e-9 * scaled_ambiguity
+    return scaled_ambiguity + 1e-6 * max_public_cells + 1e-9 * selected_count
+
+
+def _normalized_mip_solver(solver: str | None) -> str | None:
+    if solver is None:
+        return None
+    cp = _import_cvxpy_for_mip()
+    requested = str(solver)
+    installed = {str(name).upper(): str(name) for name in cp.installed_solvers()}
+    if requested.upper() in installed:
+        return installed[requested.upper()]
+    hint = ""
+    if requested.upper() == "SCIP":
+        hint = (
+            " Install SCIP support with `pip install updatesupport[scip]` "
+            "or `uv add updatesupport[scip]`."
+        )
+    raise CvxpyError(f"CVXPY solver {requested!r} is not installed.{hint}")
+
+
+def _import_cvxpy_for_mip() -> Any:
+    try:
+        import cvxpy as cp
+    except ImportError as exc:  # pragma: no cover - depends on optional extras
+        raise CvxpyError(
+            "search='mip' requires CVXPY and a MIP-capable solver. "
+            "Install SCIP support with `pip install updatesupport[scip]` "
+            "or `uv add updatesupport[scip]`."
+        ) from exc
+    return cp
+
+
+def _is_optimal_status(status: str) -> bool:
+    return status in {"optimal", "optimal_inaccurate"}
+
+
+def _is_infeasible_status(status: str) -> bool:
+    return status in {"infeasible", "infeasible_inaccurate"}
+
+
+def _mip_guarantee(state: _EvaluationState) -> str:
+    if state.bucket_budget is not None and not state.enforce_bucket_budget:
+        return (
+            "SCIP solved the saturated column-selection MIP objective, but the "
+            "public-cell budget was reporting-only rather than a hard MIP "
+            "constraint."
+        )
+    return (
+        "SCIP solved the saturated column-selection MIP over the declared "
+        "candidate space and search bounds."
+    )
 
 
 def _evaluate_candidate(
@@ -1664,9 +2197,9 @@ def _resolve_optional_int_arg(
 
 def _normalize_search(search: str) -> str:
     search_mode = search.strip().lower()
-    if search_mode not in {"exhaustive", "greedy", "beam", "scalarized"}:
+    if search_mode not in {"exhaustive", "greedy", "beam", "scalarized", "mip"}:
         raise ValueError(
-            "search must be one of: 'exhaustive', 'greedy', 'beam', 'scalarized'"
+            "search must be one of: 'exhaustive', 'greedy', 'beam', 'scalarized', 'mip'"
         )
     return search_mode
 
@@ -1772,6 +2305,13 @@ def _frontier_interpretation(report: PublicRepresentationFrontier) -> list[str]:
             "- The bucket-budget recommendation chooses the lowest worst-case "
             "ambiguity among representations with no more than the supplied "
             "number of public cells."
+        )
+    if report.search_trace is not None and report.search_trace.search == "mip":
+        lines.append(
+            "- MIP search directly optimizes the saturated column-selection "
+            "problem over the declared candidate columns. The candidate table "
+            "contains evaluated evidence candidates, not an exhaustive Pareto "
+            "frontier unless every candidate was also evaluated."
         )
     if report.scalarized_weights is not None:
         lines.append(
