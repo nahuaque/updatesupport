@@ -112,9 +112,11 @@ from .results import (
 from .spec import AuditRun, AuditSpec, QSpec, run_audit
 from .targets import (
     LinearTarget,
+    MomentTransformTarget,
     ProcedureTarget,
     ProcedureTargetContext,
     RatioTarget,
+    TargetCapabilities,
     TargetContract,
     UnsupportedTarget,
     UnsupportedTargetError,
@@ -168,6 +170,7 @@ __all__ = [
     "LinearTarget",
     "linear_constraint",
     "LPError",
+    "MomentTransformTarget",
     "Partition",
     "PartitionError",
     "ParameterizedCvxpyEnvironments",
@@ -224,6 +227,7 @@ __all__ = [
     "SensitivitySummary",
     "StatisticalUncertainty",
     "sensitivity_report",
+    "TargetCapabilities",
     "TooManyPartitions",
     "TransportResult",
     "TargetContract",

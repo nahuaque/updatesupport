@@ -172,6 +172,84 @@ class RatioTargetTests(unittest.TestCase):
         self.assertAlmostEqual(interval.diameter, 1.0)
 
 
+class MomentTransformTargetTests(unittest.TestCase):
+    def test_affine_moment_transform_target_uses_linear_backends(self):
+        target = us.MomentTransformTarget(
+            moments={
+                "score": {"a": 0.0, "b": 2.0},
+                "risk": {"a": 1.0, "b": 3.0},
+            },
+            transform=lambda moments: (
+                1.0 + 3.0 * moments["score"] - 0.5 * moments["risk"]
+            ),
+            affine_coefficients={"score": 3.0, "risk": -0.5},
+            intercept=1.0,
+            name="affine_score_risk",
+            description="affine transform of score and risk moments",
+        )
+
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand=target,
+        )
+        interval = problem.global_transport_modulus()
+
+        self.assertIs(problem.target_functional, target)
+        self.assertEqual(problem.target_contract.kind, "moment_transform")
+        self.assertTrue(problem.target_contract.capabilities.supports_interval)
+        self.assertTrue(problem.target_contract.supports_fiber_decomposition)
+        self.assertEqual(problem.estimand_map, {"a": 0.5, "b": 5.5})
+        self.assertAlmostEqual(problem.psi({"a": 0.25, "b": 0.75}), 4.25)
+        self.assertFalse(problem.is_public_adequate())
+        self.assertAlmostEqual(interval.lower, 0.5)
+        self.assertAlmostEqual(interval.upper, 5.5)
+        self.assertAlmostEqual(interval.diameter, 5.0)
+        self.assertEqual(target.as_dict()["moment_names"], ("score", "risk"))
+
+    def test_nonlinear_moment_transform_target_declares_no_solver_capabilities(self):
+        target = us.MomentTransformTarget(
+            moments={"score": {"a": 0.0, "b": 2.0}},
+            transform=lambda moments: moments["score"] ** 2,
+            name="squared_mean_score",
+        )
+
+        self.assertEqual(target.contract.kind, "moment_transform")
+        self.assertFalse(target.contract.supports_interval)
+        self.assertFalse(target.contract.capabilities.supports_adequacy)
+        with self.assertRaisesRegex(
+            us.UnsupportedTargetError,
+            "only for affine transforms",
+        ):
+            us.FiniteProblem(
+                states=["a", "b"],
+                public={"a": "o", "b": "o"},
+                estimand=target,
+            )
+
+    def test_moment_transform_capabilities_cannot_claim_nonlinear_support(self):
+        with self.assertRaisesRegex(ValueError, "capability flags cannot be true"):
+            us.MomentTransformTarget(
+                moments={"score": {"a": 0.0, "b": 2.0}},
+                transform=lambda moments: moments["score"] ** 2,
+                capabilities=us.TargetCapabilities.linear(),
+            )
+
+    def test_moment_transform_rejects_missing_states(self):
+        target = us.MomentTransformTarget(
+            moments={"score": {"a": 0.0}},
+            transform=lambda moments: moments["score"],
+            affine_coefficients={"score": 1.0},
+        )
+
+        with self.assertRaisesRegex(ValueError, "moment 'score' is missing states"):
+            us.FiniteProblem(
+                states=["a", "b"],
+                public={"a": "o", "b": "o"},
+                estimand=target,
+            )
+
+
 class SaturatedSupportTests(unittest.TestCase):
     def test_public_descent_succeeds_when_estimand_is_constant_on_fibers(self):
         problem = us.FiniteProblem(

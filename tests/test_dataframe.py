@@ -241,6 +241,24 @@ class FromDataFrameTests(unittest.TestCase):
                 target=target,
             )
 
+    def test_from_dataframe_rejects_moment_transform_as_row_target(self):
+        target = us.MomentTransformTarget(
+            moments={"score": {("A", "x"): 1.0}},
+            transform=lambda moments: moments["score"],
+            affine_coefficients={"score": 1.0},
+        )
+
+        with self.assertRaisesRegex(
+            us.UnsupportedTargetError,
+            "MomentTransformTarget is a finite target functional",
+        ):
+            us.from_dataframe(
+                [{"public": "A", "hidden": "x", "score": 1.0}],
+                public=["public"],
+                hidden=["public", "hidden"],
+                target=target,
+            )
+
     def test_from_dataframe_rejects_unsupported_nonlinear_target(self):
         target = us.UnsupportedTarget(
             name="approval_quantile",

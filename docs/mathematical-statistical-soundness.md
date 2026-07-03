@@ -23,10 +23,11 @@ where `d` ranges over retained hidden cells, `q(d)` is hidden-cell mass, and
 `h(d)` is the supplied target value for hidden cell `d`.
 
 `RatioTarget` adds an explicit fixed linear-fractional contract for supported
-solver backends. `ProcedureTarget` adds a workflow contract for
-representation-dependent reporting procedures: the procedure is compiled to a
-column or row metric for each representation, and the finite problem then
-solves the compiled fixed target.
+solver backends. `MomentTransformTarget` adds fixed transforms of linear
+moments, with current solver support for affine transforms. `ProcedureTarget`
+adds a workflow contract for representation-dependent reporting procedures: the
+procedure is compiled to a column or row metric for each representation, and the
+finite problem then solves the compiled fixed target.
 
 If the aggregate target is nonlinear in `q` or depends on the transported
 distribution itself, it is not automatically covered by the current soundness
@@ -129,6 +130,20 @@ indices, nonlinear risk scores, and transformed moments.
 The current library can audit a supplied scalar cell value such as
 `h(d) = g_d`, but that is different from optimizing the global nonlinear
 functional `g(E_q[a], E_q[b], E_q[c])`.
+
+`MomentTransformTarget` makes this boundary explicit. If `g` is affine and the
+target declares `affine_coefficients`, then:
+
+```text
+g(E_q[m_1], ..., E_q[m_k])
+  = c + sum_j a_j E_q[m_j]
+  = sum_d (c + sum_j a_j m_j(d)) q(d)
+```
+
+so the target is a fixed linear target in equivalent hidden-cell form. Those
+affine moment transforms support adequacy checks, interval solving, and
+public-fiber decomposition. Non-affine moment transforms have false capability
+flags and raise before solving until a dedicated nonlinear backend exists.
 
 ### Distributional Targets
 
@@ -423,16 +438,18 @@ example:
 ```python
 LinearTarget(h)
 RatioTarget(numerator, denominator)  # supported for finite/saturated Q
-MomentTransformTarget(moments, transform)
+MomentTransformTarget(moments, transform)  # affine transforms supported
 CvxpyTarget(objective_builder)
 ```
 
 Each target type would need its own adequacy condition, interval solver, witness
-construction, report language, and tests. Some nonlinear targets are convex or
-linear-fractional and can be solved cleanly. Some require mixed-integer
-optimization or only admit conservative bounds. Representation-dependent
-procedures are currently treated as scenario comparisons through
-`ProcedureTarget`, not as a single transported nonlinear functional.
+construction, report language, and tests. Affine moment transforms are already
+reduced to fixed linear hidden-cell target values. Some remaining nonlinear
+targets are convex or linear-fractional and can be solved cleanly. Some require
+mixed-integer optimization or only admit conservative bounds.
+Representation-dependent procedures are currently treated as scenario
+comparisons through `ProcedureTarget`, not as a single transported nonlinear
+functional.
 
 Until a broader target-functional layer exists, unsupported nonlinear targets
 should either be:
@@ -456,6 +473,8 @@ The test suite exercises the current mathematical contract directly:
 
 - saturated closed-form fiber-range formulas,
 - saturated ratio-target intervals via Charnes-Cooper LP,
+- affine moment-transform targets and capability guardrails for nonlinear
+  moment transforms,
 - procedure-target compilation and recompilation across tabular, report, and
   frontier workflows,
 - fixed public-law saturated witnesses and zero-mass public fibers,

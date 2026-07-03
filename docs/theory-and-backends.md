@@ -36,9 +36,11 @@ Core finite objects:
 
 - `FiniteProblem`
 - `LinearTarget`
+- `MomentTransformTarget`
 - `ProcedureTarget`
 - `ProcedureTargetContext`
 - `RatioTarget`
+- `TargetCapabilities`
 - `TargetContract`
 - `UnsupportedTarget`
 - `UnsupportedTargetError`
@@ -208,6 +210,50 @@ Procedure-aware workflows such as `recommend_refinements(...)`,
 compiler for each candidate representation or scenario. Read those results as
 procedure-comparison sensitivity analyses. Inside each solved finite problem,
 the compiled target is still fixed after compilation.
+
+## Moment Transform Targets
+
+`MomentTransformTarget` represents targets of the form:
+
+```text
+psi(q) = g(E_q[m_1], ..., E_q[m_k])
+```
+
+where each `m_j` is a fixed hidden-state moment. The current solver support is
+deliberately narrow: affine transforms of moments are supported because they
+are equivalent to a fixed linear target.
+
+```python
+import updatesupport as us
+
+target = us.MomentTransformTarget(
+    moments={
+        "score": {"low": 0.0, "high": 2.0},
+        "risk": {"low": 1.0, "high": 3.0},
+    },
+    transform=lambda m: 1.0 + 3.0 * m["score"] - 0.5 * m["risk"],
+    affine_coefficients={"score": 3.0, "risk": -0.5},
+    intercept=1.0,
+    name="affine_score_risk",
+)
+
+problem = us.FiniteProblem(
+    states=["low", "high"],
+    public={"low": "bucket", "high": "bucket"},
+    estimand=target,
+)
+```
+
+The target contract keeps `kind="moment_transform"` and exposes capability
+flags through `TargetCapabilities`. Affine moment transforms default to
+adequacy, interval, and public-fiber decomposition support. Non-affine moment
+transforms default to no solver capabilities and raise before solving.
+
+Use this when a business or statistical metric is a fixed affine transform of
+several hidden-cell moments. Use `RatioTarget` for linear-fractional targets,
+`ProcedureTarget` for representation-dependent procedures, and a future
+nonlinear backend for genuinely nonlinear transforms such as squared means,
+calibrated nonlinear indices, or distributional statistics.
 
 ## Convex CVXPY Backend
 

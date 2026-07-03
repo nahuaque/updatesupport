@@ -34,6 +34,10 @@ All notable changes to `updatesupport` are documented here.
   public-fiber intervals, finite-environment evaluation, CVXPY DQCP support for
   local/fixed-public-law ratio intervals, and explicit guardrails for ratio
   cases that still need dedicated constrained solvers.
+- Added `TargetCapabilities` and `MomentTransformTarget` for fixed transforms
+  of linear moments, with affine moment transforms supported through the
+  existing linear backends and nonlinear transforms guarded by false capability
+  flags.
 - Added `ProcedureTarget` and `ProcedureTargetContext` for
   representation-dependent reporting procedures that compile to a column or
   row metric per public representation before solving.
