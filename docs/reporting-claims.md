@@ -16,6 +16,11 @@ claim = us.ReportingClaim(
     q_presets=[us.q_tv_budget(0.10), us.q_chi_square_budget(0.25)],
     candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P"],
     ambiguity_limit=0.015,
+    decision=us.threshold_decision(
+        ">=",
+        0.12,
+        label="income-threshold rate clears reporting floor",
+    ),
     bucket_budget=40,
     statistical_interval=(0.119, 0.128),
 )
@@ -29,6 +34,7 @@ The verifier produces one report that separates:
 - the reported causal or statistical estimate,
 - statistical uncertainty, if supplied,
 - hidden-composition ambiguity,
+- decision invariance, if a threshold decision rule is supplied,
 - a pass/fail/inconclusive verdict,
 - a counterexample witness when the public representation is unstable,
 - a repair representation when candidate refinements can stabilize the claim,
@@ -37,17 +43,58 @@ The verifier produces one report that separates:
 ## Verdict Semantics
 
 The current public representation **passes** when its primary
-hidden-composition ambiguity is no larger than `ambiguity_limit` and any
+hidden-composition ambiguity is no larger than `ambiguity_limit`, any supplied
+decision rule is invariant over the hidden-composition interval, and any
 requested representation certificate also passes.
 
-It **fails** when the current representation exceeds the ambiguity limit. If a
-repair representation is found, the report still marks the original claim as
-failed and shows the repair separately. This distinction is intentional: the
+It **fails** when the current representation exceeds the ambiguity limit or
+when the hidden-composition interval crosses the supplied decision threshold.
+If a repair representation is found, the report still marks the original claim
+as failed and shows the repair separately. This distinction is intentional: the
 original public representation did not support the claim, but the report tells
 you how to make a defensible version.
 
-It is **inconclusive** when no `ambiguity_limit` is supplied or when the repair
-search is heuristic and `exact_required=True`.
+It is **inconclusive** when neither an `ambiguity_limit` nor a decision rule is
+supplied, or when the repair search is heuristic and `exact_required=True`.
+
+## Decision Invariance
+
+Use `decision=...` when the practical claim is a conclusion or action rather
+than a raw interval width:
+
+```python
+claim = us.ReportingClaim(
+    estimate_name="Expected-loss estimate",
+    public=["product", "region", "score_band"],
+    hidden=["product", "region", "score_band", "channel", "vintage"],
+    target="expected_loss",
+    weight="ead",
+    q_presets=[us.q_tv_budget(0.10)],
+    decision=us.threshold_decision(
+        "<=",
+        0.025,
+        label="expected loss within model-review tolerance",
+    ),
+    candidate_refinements=["channel", "vintage"],
+)
+```
+
+For `pass_if <= threshold`, the decision is certified when the upper endpoint
+of the hidden-composition interval is still at or below the threshold. It is
+certified failed when the lower endpoint is already above the threshold. It is
+not invariant when the interval crosses the threshold.
+
+The verifier reports:
+
+- the observed decision,
+- lower- and upper-endpoint decisions,
+- whether the decision is invariant,
+- a decision-specific repair representation, if candidate refinements can make
+  the observed decision invariant across all evaluated stress-test scenarios.
+
+This is intentionally different from `ambiguity_limit`. A wide interval can
+still support a decision if it stays on one side of the threshold, and a narrow
+interval can fail decision invariance if it straddles the threshold.
 
 ## Exact Minimum Repairs
 

@@ -10,7 +10,7 @@ from .certificate import (
     certify_public_representation,
 )
 from .data import TabularTarget
-from .frontier import PublicRepresentationCandidate
+from .frontier import PublicRepresentationCandidate, public_representation_frontier
 from .joint import (
     HiddenCompositionUncertaintyReport,
     NonparametricJointDistribution,
@@ -24,6 +24,169 @@ from .report import (
     public_descent_report,
 )
 from .spec import QSpec
+
+
+@dataclass(frozen=True)
+class DecisionRule:
+    """Threshold decision rule for a reported scalar estimate."""
+
+    operator: str
+    threshold: float
+    label: str | None = None
+    pass_label: str = "pass"
+    fail_label: str = "fail"
+
+    def __post_init__(self) -> None:
+        operator = _normalize_decision_operator(self.operator)
+        object.__setattr__(self, "operator", operator)
+        object.__setattr__(self, "threshold", float(self.threshold))
+        if not self.pass_label:
+            raise ValueError("pass_label cannot be empty")
+        if not self.fail_label:
+            raise ValueError("fail_label cannot be empty")
+
+    @property
+    def name(self) -> str:
+        if self.label:
+            return self.label
+        return f"value {self.operator} {self.threshold:g}"
+
+    def evaluate(self, value: float) -> str:
+        return self.pass_label if self._passes(float(value)) else self.fail_label
+
+    def interval_result(
+        self,
+        *,
+        observed_value: float,
+        lower: float,
+        upper: float,
+    ) -> "DecisionResult":
+        lower_value = float(lower)
+        upper_value = float(upper)
+        if lower_value > upper_value:
+            raise ValueError("decision interval lower bound exceeds upper bound")
+        observed_decision = self.evaluate(observed_value)
+        lower_decision = self.evaluate(lower_value)
+        upper_decision = self.evaluate(upper_value)
+        invariant = lower_decision == upper_decision
+        certified_decision = lower_decision if invariant else None
+        threshold_crossed = not invariant
+        reason = (
+            f"All admissible values imply decision {certified_decision!r}."
+            if invariant
+            else (
+                f"The admissible interval crosses the decision threshold "
+                f"{self.threshold:g}."
+            )
+        )
+        return DecisionResult(
+            rule=self,
+            observed_value=float(observed_value),
+            lower=lower_value,
+            upper=upper_value,
+            observed_decision=observed_decision,
+            lower_decision=lower_decision,
+            upper_decision=upper_decision,
+            invariant=invariant,
+            certified_decision=certified_decision,
+            threshold_crossed=threshold_crossed,
+            reason=reason,
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "operator": self.operator,
+            "threshold": self.threshold,
+            "label": self.label,
+            "pass_label": self.pass_label,
+            "fail_label": self.fail_label,
+        }
+
+    @classmethod
+    def from_value(cls, value: "DecisionRule | Mapping[str, Any]") -> "DecisionRule":
+        if isinstance(value, DecisionRule):
+            return value
+        if isinstance(value, Mapping):
+            return cls(**dict(value))
+        raise TypeError("decision must be a DecisionRule, mapping, or None")
+
+    def _passes(self, value: float) -> bool:
+        if self.operator == "<=":
+            return value <= self.threshold
+        if self.operator == "<":
+            return value < self.threshold
+        if self.operator == ">=":
+            return value >= self.threshold
+        if self.operator == ">":
+            return value > self.threshold
+        raise AssertionError(f"unsupported decision operator: {self.operator!r}")
+
+
+@dataclass(frozen=True)
+class DecisionResult:
+    """Decision-rule evaluation over a hidden-composition interval."""
+
+    rule: DecisionRule
+    observed_value: float
+    lower: float
+    upper: float
+    observed_decision: str
+    lower_decision: str
+    upper_decision: str
+    invariant: bool
+    certified_decision: str | None
+    threshold_crossed: bool
+    reason: str
+
+    @property
+    def status(self) -> str:
+        return "pass" if self.invariant else "fail"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "rule": self.rule.as_dict(),
+            "observed_value": self.observed_value,
+            "lower": self.lower,
+            "upper": self.upper,
+            "observed_decision": self.observed_decision,
+            "lower_decision": self.lower_decision,
+            "upper_decision": self.upper_decision,
+            "invariant": self.invariant,
+            "certified_decision": self.certified_decision,
+            "threshold_crossed": self.threshold_crossed,
+            "status": self.status,
+            "reason": self.reason,
+        }
+
+
+def threshold_decision(
+    operator: str | None = None,
+    threshold: float | None = None,
+    *,
+    pass_if: str | None = None,
+    label: str | None = None,
+    pass_label: str = "pass",
+    fail_label: str = "fail",
+) -> DecisionRule:
+    """Create a threshold decision rule for claim verification."""
+
+    if pass_if is not None:
+        if operator is not None and _normalize_decision_operator(operator) != (
+            _normalize_decision_operator(pass_if)
+        ):
+            raise TypeError("use either operator or pass_if, not both")
+        operator = pass_if
+    if operator is None:
+        raise TypeError("threshold_decision() missing required operator/pass_if")
+    if threshold is None:
+        raise TypeError("threshold_decision() missing required threshold")
+    return DecisionRule(
+        operator=operator,
+        threshold=float(threshold),
+        label=label,
+        pass_label=pass_label,
+        fail_label=fail_label,
+    )
 
 
 @dataclass(frozen=True)
@@ -147,6 +310,7 @@ class ReportingClaim:
     candidate_refinements: Sequence[str] = ()
     ambiguity_limit: float | None = None
     bucket_budget: int | None = None
+    decision: DecisionRule | Mapping[str, Any] | None = None
     statistical_interval: tuple[float, float] | None = None
     statistical_uncertainty: StatisticalUncertainty | Mapping[str, Any] | None = None
     min_cell_weight: float = 1.0
@@ -219,6 +383,8 @@ class ReportingClaim:
             raise ValueError("ambiguity_limit must be non-negative")
         if self.bucket_budget is not None and self.bucket_budget < 0:
             raise ValueError("bucket_budget must be non-negative")
+        if self.decision is not None:
+            object.__setattr__(self, "decision", DecisionRule.from_value(self.decision))
         if self.max_added_columns is not None and self.max_added_columns < 0:
             raise ValueError("max_added_columns must be non-negative")
         if self.top < 0:
@@ -269,6 +435,7 @@ class ReportingClaim:
             "candidate_refinements": list(self.candidate_refinements),
             "ambiguity_limit": self.ambiguity_limit,
             "bucket_budget": self.bucket_budget,
+            "decision": None if self.decision is None else self.decision.as_dict(),
             "statistical_interval": self.statistical_interval,
             "statistical_uncertainty": None
             if self.statistical_uncertainty is None
@@ -316,6 +483,9 @@ class ClaimVerificationReport:
     certificate: RepresentationStabilityCertificate | None = None
     witness: WitnessReport | None = None
     model_assisted: ModelAssistedStabilitySummary | None = None
+    decision: DecisionResult | None = None
+    decision_repair_candidate: PublicRepresentationCandidate | None = None
+    decision_repair_search_exact: bool | None = None
     status: str = "inconclusive"
     reasons: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
@@ -341,6 +511,8 @@ class ClaimVerificationReport:
 
     @property
     def repair_candidate(self) -> PublicRepresentationCandidate | None:
+        if self.decision_repair_candidate is not None:
+            return self.decision_repair_candidate
         if self.certificate is None:
             return None
         return self.certificate.selected_candidate
@@ -361,6 +533,11 @@ class ClaimVerificationReport:
             "model_assisted": None
             if self.model_assisted is None
             else self.model_assisted.as_dict(),
+            "decision": None if self.decision is None else self.decision.as_dict(),
+            "decision_repair_candidate": None
+            if self.decision_repair_candidate is None
+            else self.decision_repair_candidate.as_dict(),
+            "decision_repair_search_exact": self.decision_repair_search_exact,
             "repair_candidate": None
             if self.repair_candidate is None
             else self.repair_candidate.as_dict(),
@@ -404,6 +581,19 @@ class ClaimVerificationReport:
                 "- Statistical uncertainty: "
                 f"{_format_statistical_uncertainty(self.claim.statistical_uncertainty)}"
             )
+        if self.decision is not None:
+            lines.extend(
+                [
+                    f"- Decision rule: {self.decision.rule.name}",
+                    f"- Observed decision: {self.decision.observed_decision}",
+                    "- Decision invariant: "
+                    f"{'yes' if self.decision.invariant else 'no'}",
+                ]
+            )
+            if self.decision.certified_decision is not None:
+                lines.append(
+                    f"- Certified decision: {self.decision.certified_decision}"
+                )
         if self.certificate is not None:
             lines.append(
                 f"- Representation certificate: {self.certificate.status.upper()}"
@@ -432,6 +622,8 @@ class ClaimVerificationReport:
                 f"{', '.join(_q_label(q) for q in self.claim.q_presets)}",
             ]
         )
+        if self.claim.decision is not None:
+            lines.append(f"- Decision rule: {self.claim.decision.name}")
         if self.claim.candidate_refinements:
             lines.append(
                 "- Candidate public refinements: "
@@ -462,6 +654,10 @@ class ClaimVerificationReport:
                 _format_statistical_uncertainty(self.claim.statistical_uncertainty)
             )
 
+        if self.decision is not None:
+            lines.extend(["", "## Decision Invariance", ""])
+            lines.extend(_decision_markdown(self))
+
         lines.extend(["", "## Hidden-Composition Ambiguity", ""])
         lines.extend(
             [
@@ -478,6 +674,12 @@ class ClaimVerificationReport:
         if self.certificate is not None:
             lines.extend(["", "## Repair Or Certification", ""])
             lines.extend(_certificate_summary_markdown(self.certificate))
+        if self.decision_repair_candidate is not None:
+            if self.certificate is None:
+                lines.extend(["", "## Repair Or Certification", ""])
+            else:
+                lines.extend(["", "### Decision-Invariant Repair", ""])
+            lines.extend(_decision_repair_markdown(self))
 
         if self.witness is not None:
             lines.extend(["", "## Counterexample Witness", ""])
@@ -540,6 +742,15 @@ def verify_claim(
         observed_label=claim.observed_label,
         q=claim.primary_q,
     )
+    decision = (
+        None
+        if claim.decision is None
+        else claim.decision.interval_result(
+            observed_value=primary.observed_value,
+            lower=primary.interval.lower,
+            upper=primary.interval.upper,
+        )
+    )
 
     certificate: RepresentationStabilityCertificate | None = None
     if claim.ambiguity_limit is not None or claim.candidate_refinements:
@@ -572,10 +783,24 @@ def verify_claim(
             title=f"{claim.estimate_name} Representation Certificate",
         )
 
+    decision_repair_candidate = None
+    decision_repair_search_exact = None
+    if decision is not None and not decision.invariant and claim.candidate_refinements:
+        decision_repair_candidate, decision_repair_search_exact = (
+            _decision_repair_candidate(
+                data,
+                claim=claim,
+                expected_decision=decision.observed_decision,
+            )
+        )
+
     status, reasons = _claim_status(
         claim,
         primary=primary,
         certificate=certificate,
+        decision=decision,
+        decision_repair_candidate=decision_repair_candidate,
+        decision_repair_search_exact=decision_repair_search_exact,
     )
     witness = None
     if status == "fail" or not primary.public_adequate:
@@ -599,6 +824,9 @@ def verify_claim(
         certificate=certificate,
         witness=witness,
         model_assisted=model_assisted,
+        decision=decision,
+        decision_repair_candidate=decision_repair_candidate,
+        decision_repair_search_exact=decision_repair_search_exact,
         status=status,
         reasons=reasons,
         limitations=_claim_limitations(claim, primary, certificate),
@@ -611,8 +839,48 @@ def _claim_status(
     *,
     primary: PublicDescentReport,
     certificate: RepresentationStabilityCertificate | None,
+    decision: DecisionResult | None,
+    decision_repair_candidate: PublicRepresentationCandidate | None,
+    decision_repair_search_exact: bool | None,
 ) -> tuple[str, tuple[str, ...]]:
     reasons: list[str] = []
+    if decision is not None:
+        if decision.invariant:
+            reasons.append(
+                "The decision rule is invariant over the primary "
+                "hidden-composition interval."
+            )
+        else:
+            reasons.append(
+                "The decision rule is not invariant over the primary "
+                "hidden-composition interval."
+            )
+            if decision_repair_candidate is None:
+                if claim.exact_required and decision_repair_search_exact is False:
+                    reasons.append(
+                        "Decision-invariant repair search was heuristic, so the "
+                        "absence of a repair is inconclusive under the requested "
+                        "exactness standard."
+                    )
+                    return "inconclusive", tuple(reasons)
+                reasons.append(
+                    "No decision-invariant repair representation was found within "
+                    "the declared refinement and bucket constraints."
+                )
+                return "fail", tuple(reasons)
+            if claim.exact_required and decision_repair_search_exact is False:
+                reasons.append(
+                    "A decision-invariant repair representation was found, but "
+                    "the repair search was inconclusive under the requested "
+                    "exactness standard."
+                )
+                return "inconclusive", tuple(reasons)
+            reasons.append(
+                "A decision-invariant repair representation makes the observed "
+                "decision invariant under the declared stress tests."
+            )
+            return "fail", tuple(reasons)
+
     if claim.ambiguity_limit is not None:
         if primary.interval.diameter <= claim.ambiguity_limit:
             reasons.append(
@@ -642,13 +910,19 @@ def _claim_status(
             )
             return "fail", tuple(reasons)
     else:
+        if decision is None:
+            reasons.append(
+                "No ambiguity limit or decision rule was supplied, so the "
+                "verifier reports evidence but cannot issue a pass/fail "
+                "stability verdict."
+            )
+            return "inconclusive", tuple(reasons)
         reasons.append(
-            "No ambiguity limit was supplied, so the verifier reports evidence "
-            "but cannot issue a pass/fail stability verdict."
+            "No ambiguity limit was supplied; the pass/fail verdict is based on "
+            "decision invariance."
         )
-        return "inconclusive", tuple(reasons)
 
-    if certificate is not None:
+    if certificate is not None and claim.ambiguity_limit is not None:
         if certificate.failed:
             reasons.append(
                 "The representation certificate did not find any candidate "
@@ -704,7 +978,86 @@ def _claim_limitations(
         "fitted joint-cell model and should be read separately from adversarial "
         "Q-based hidden-composition ambiguity."
     )
+    if claim.decision is not None:
+        limitations.append(
+            "Decision invariance verifies the supplied threshold rule only; it "
+            "does not validate whether the threshold itself is appropriate."
+        )
     return tuple(limitations)
+
+
+def _decision_repair_candidate(
+    data: Any,
+    *,
+    claim: ReportingClaim,
+    expected_decision: str,
+) -> tuple[PublicRepresentationCandidate | None, bool | None]:
+    search = claim.search
+    if search in {"mip", "mip_oracle", "mip_minimum", "mip_exact"}:
+        search = "exhaustive"
+    frontier = public_representation_frontier(
+        data,
+        base_public=claim.public,
+        hidden=claim.hidden,
+        target=claim.target,
+        weight=claim.weight,
+        candidate_refinements=claim.candidate_refinements,
+        min_cell_weight=claim.min_cell_weight,
+        min_cell_weights=claim.min_cell_weights,
+        hidden_sets=claim.hidden_sets,
+        q_presets=claim.q_presets,
+        ambiguity_limit=None,
+        bucket_budget=claim.bucket_budget,
+        max_added_columns=claim.max_added_columns,
+        search=search,
+        beam_width=claim.beam_width,
+        max_evaluations=claim.max_evaluations,
+        must_include=claim.must_include,
+        must_exclude=claim.must_exclude,
+        enforce_bucket_budget=claim.enforce_bucket_budget,
+        include_base=claim.include_base,
+        title=f"{claim.estimate_name} Decision-Invariant Repair Search",
+    )
+    candidates = [
+        candidate
+        for candidate in frontier.candidates
+        if _candidate_decision_invariant(
+            candidate,
+            decision=claim.decision,
+            expected_decision=expected_decision,
+        )
+    ]
+    exact = None if frontier.search_trace is None else frontier.search_trace.exact
+    if not candidates:
+        return None, exact
+    return min(
+        candidates,
+        key=lambda candidate: (
+            candidate.public_cells,
+            candidate.added_column_count,
+            candidate.max_ambiguity,
+            candidate.added_columns,
+        ),
+    ), exact
+
+
+def _candidate_decision_invariant(
+    candidate: PublicRepresentationCandidate,
+    *,
+    decision: DecisionRule | None,
+    expected_decision: str,
+) -> bool:
+    if decision is None:
+        return False
+    for scenario in candidate.scenarios:
+        result = decision.interval_result(
+            observed_value=scenario.observed_value,
+            lower=scenario.lower,
+            upper=scenario.upper,
+        )
+        if not result.invariant or result.certified_decision != expected_decision:
+            return False
+    return True
 
 
 def _model_assisted_summary(
@@ -730,17 +1083,7 @@ def _model_assisted_summary(
         title=f"{claim.estimate_name} Model-Assisted Joint Uncertainty",
     )
     rows = tuple(
-        ModelAssistedDrawResult(
-            draw_index=row.draw_index,
-            observed_value=row.observed_value,
-            lower=row.lower,
-            upper=row.upper,
-            ambiguity=row.ambiguity,
-            public_adequate=row.public_adequate,
-            status=row.status,
-            error=row.error,
-        )
-        for row in uncertainty.rows
+        _model_assisted_draw_result(row, claim=claim) for row in uncertainty.rows
     )
     return ModelAssistedStabilitySummary(
         joint_model=uncertainty.joint_model,
@@ -748,6 +1091,37 @@ def _model_assisted_summary(
         ambiguity_limit=claim.ambiguity_limit,
         seed=seed,
         uncertainty_report=uncertainty,
+    )
+
+
+def _model_assisted_draw_result(
+    row,
+    *,
+    claim: ReportingClaim,
+) -> ModelAssistedDrawResult:
+    status = row.status
+    if (
+        claim.decision is not None
+        and row.error is None
+        and row.observed_value is not None
+        and row.lower is not None
+        and row.upper is not None
+    ):
+        decision = claim.decision.interval_result(
+            observed_value=row.observed_value,
+            lower=row.lower,
+            upper=row.upper,
+        )
+        status = "pass" if decision.invariant else "fail"
+    return ModelAssistedDrawResult(
+        draw_index=row.draw_index,
+        observed_value=row.observed_value,
+        lower=row.lower,
+        upper=row.upper,
+        ambiguity=row.ambiguity,
+        public_adequate=row.public_adequate,
+        status=status,
+        error=row.error,
     )
 
 
@@ -777,6 +1151,54 @@ def _normalize_optional_q(value: Any) -> Any:
         return value
 
 
+def _decision_markdown(report: ClaimVerificationReport) -> list[str]:
+    if report.decision is None:
+        return []
+    decision = report.decision
+    lines = [
+        f"- Rule: {decision.rule.name}",
+        f"- Observed value: {decision.observed_value:.4f}",
+        f"- Observed decision: {decision.observed_decision}",
+        "- Hidden-composition decision interval: "
+        f"[{decision.lower:.4f}, {decision.upper:.4f}]",
+        f"- Lower-endpoint decision: {decision.lower_decision}",
+        f"- Upper-endpoint decision: {decision.upper_decision}",
+        f"- Decision invariant: {'yes' if decision.invariant else 'no'}",
+        f"- Reason: {decision.reason}",
+    ]
+    if decision.certified_decision is not None:
+        lines.append(f"- Certified decision: {decision.certified_decision}")
+    if report.decision_repair_candidate is not None:
+        candidate = report.decision_repair_candidate
+        lines.append(
+            "- Decision-invariant repair candidate: "
+            f"`{candidate.label}` with {candidate.public_cells} public cells"
+        )
+    return lines
+
+
+def _decision_repair_markdown(report: ClaimVerificationReport) -> list[str]:
+    candidate = report.decision_repair_candidate
+    if candidate is None:
+        return []
+    lines = [
+        "The decision-specific repair promotes enough hidden information into "
+        "the public representation to keep the observed decision fixed under "
+        "all evaluated stress-test scenarios.",
+        "",
+        f"- Selected repair: `{candidate.label}`",
+        f"- Added columns: `{_column_label(candidate.added_columns)}`",
+        f"- Public cells: {candidate.public_cells}",
+        f"- Max ambiguity after repair: {candidate.max_ambiguity:.4f}",
+    ]
+    if report.decision_repair_search_exact is not None:
+        lines.append(
+            "- Repair search exact: "
+            f"{'yes' if report.decision_repair_search_exact else 'no'}"
+        )
+    return lines
+
+
 def _certificate_summary_markdown(
     certificate: RepresentationStabilityCertificate,
 ) -> list[str]:
@@ -799,14 +1221,14 @@ def _certificate_summary_markdown(
 
 
 def _refinement_markdown(report: ClaimVerificationReport) -> list[str]:
-    if (
+    if report.decision_repair_candidate is not None or (
         report.certificate is not None
         and report.certificate.selected_candidate is not None
     ):
-        candidate = report.certificate.selected_candidate
+        candidate = report.repair_candidate
         if candidate.added_columns:
             return [
-                "The certificate-selected repair promotes these hidden variables "
+                "The selected repair promotes these hidden variables "
                 "into the public representation:",
                 "",
                 f"- `{_column_label(candidate.added_columns)}`",
@@ -951,6 +1373,38 @@ def _format_optional_rate(value: float | None) -> str:
     return "" if value is None else f"{100.0 * value:.1f}%"
 
 
+def _normalize_decision_operator(value: str) -> str:
+    key = str(value).strip().lower().replace("-", "_")
+    aliases = {
+        "<=": "<=",
+        "le": "<=",
+        "leq": "<=",
+        "at_most": "<=",
+        "less_equal": "<=",
+        "less_than_or_equal": "<=",
+        "<": "<",
+        "lt": "<",
+        "below": "<",
+        "less_than": "<",
+        ">=": ">=",
+        "ge": ">=",
+        "geq": ">=",
+        "at_least": ">=",
+        "greater_equal": ">=",
+        "greater_than_or_equal": ">=",
+        ">": ">",
+        "gt": ">",
+        "above": ">",
+        "greater_than": ">",
+    }
+    try:
+        return aliases[key]
+    except KeyError as exc:
+        raise ValueError(
+            "decision operator must be one of '<=', '<', '>=', or '>'"
+        ) from exc
+
+
 def _q_payload(value: Any) -> Any:
     try:
         return QSpec.from_value(value).as_dict()
@@ -1002,8 +1456,11 @@ def _float_tuple(values: Sequence[float], name: str) -> tuple[float, ...]:
 
 __all__ = [
     "ClaimVerificationReport",
+    "DecisionResult",
+    "DecisionRule",
     "ModelAssistedDrawResult",
     "ModelAssistedStabilitySummary",
     "ReportingClaim",
+    "threshold_decision",
     "verify_claim",
 ]

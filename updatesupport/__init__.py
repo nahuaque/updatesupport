@@ -15,9 +15,12 @@ from .certificate import (
 )
 from .claim import (
     ClaimVerificationReport,
+    DecisionResult,
+    DecisionRule,
     ModelAssistedDrawResult,
     ModelAssistedStabilitySummary,
     ReportingClaim,
+    threshold_decision,
     verify_claim,
 )
 from .data import DataDiagnostic, DataDiagnostics, GroupedProblem, from_dataframe
@@ -191,6 +194,8 @@ __all__ = [
     "causal_reporting_stability",
     "DataDiagnostic",
     "DataDiagnostics",
+    "DecisionResult",
+    "DecisionRule",
     "DoWhyRepresentationAudit",
     "eq",
     "EstimatorUncertaintyAdjustment",
@@ -294,6 +299,7 @@ __all__ = [
     "SupportFunctionIntervalResult",
     "SupportFunctionResult",
     "TargetCapabilities",
+    "threshold_decision",
     "TooManyPartitions",
     "TransportResult",
     "TargetContract",

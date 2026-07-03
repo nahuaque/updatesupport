@@ -108,6 +108,66 @@ class ReportingClaimTests(unittest.TestCase):
         self.assertIn("reasons", tables)
         self.assertIn("primary_refinements", tables)
 
+    def test_verify_claim_passes_when_decision_is_invariant(self):
+        claim = us.ReportingClaim(
+            estimate_name="Decision-stable target",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            q_presets=["saturated"],
+            decision=us.threshold_decision("<=", 0.9, label="target within limit"),
+        )
+
+        report = us.verify_claim(_rows(), claim)
+        markdown = report.to_markdown()
+        tables = report.to_tables()
+
+        self.assertTrue(report.passed)
+        self.assertIsInstance(report.decision, us.DecisionResult)
+        self.assertTrue(report.decision.invariant)
+        self.assertEqual(report.decision.certified_decision, "pass")
+        self.assertIn("Decision Invariance", markdown)
+        self.assertIn("Decision invariant: yes", markdown)
+        self.assertEqual(tables["summary"][0]["decision_invariant"], True)
+        self.assertEqual(tables["decision"][0]["certified_decision"], "pass")
+
+    def test_verify_claim_fails_and_reports_decision_repair_when_threshold_crosses(
+        self,
+    ):
+        claim = us.ReportingClaim(
+            estimate_name="Decision-crossing target",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            q_presets=["saturated"],
+            candidate_refinements=["driver"],
+            decision={
+                "operator": "<=",
+                "threshold": 0.6,
+                "label": "target within tolerance",
+            },
+        )
+
+        report = us.verify_claim(_rows(), claim)
+        payload = json.loads(report.to_json())
+        tables = report.to_tables()
+
+        self.assertTrue(report.failed)
+        self.assertIsNotNone(report.decision)
+        self.assertFalse(report.decision.invariant)
+        self.assertIsNotNone(report.decision_repair_candidate)
+        self.assertEqual(report.decision_repair_candidate.added_columns, ("driver",))
+        self.assertEqual(report.repair_candidate.added_columns, ("driver",))
+        self.assertIn("decision-invariant repair", report.reasons[-1])
+        self.assertEqual(payload["decision"]["threshold_crossed"], True)
+        self.assertIn("decision_repair", tables)
+        self.assertEqual(
+            tables["decision_repair"][0]["added_columns"],
+            ("driver",),
+        )
+
     def test_verify_claim_supports_model_assisted_joint_draws(self):
         claim = us.ReportingClaim(
             estimate_name="Model-assisted claim",

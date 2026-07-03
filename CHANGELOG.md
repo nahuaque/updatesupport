@@ -127,6 +127,10 @@ All notable changes to `updatesupport` are documented here.
   `composition_uncertainty_draws=...` on `model_risk_report(...)`, and
   `expected_loss_standard_error(...)` for PD/LGD delta-method hidden-cell
   estimator uncertainty.
+- Added decision-invariance claim verification with `DecisionRule`,
+  `DecisionResult`, and `threshold_decision(...)`, allowing
+  `ReportingClaim` to certify whether a threshold decision remains invariant
+  over hidden-composition intervals and to report decision-specific repairs.
 
 ### Fixed
 

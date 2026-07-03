@@ -469,6 +469,25 @@ def _claim_verification_tables(report: ClaimVerificationReport) -> ReportTables:
                 "has_statistical_uncertainty": (
                     report.claim.statistical_uncertainty is not None
                 ),
+                "has_decision": report.decision is not None,
+                "decision_label": None
+                if report.decision is None
+                else report.decision.rule.label,
+                "decision_operator": None
+                if report.decision is None
+                else report.decision.rule.operator,
+                "decision_threshold": None
+                if report.decision is None
+                else report.decision.rule.threshold,
+                "observed_decision": None
+                if report.decision is None
+                else report.decision.observed_decision,
+                "decision_invariant": None
+                if report.decision is None
+                else report.decision.invariant,
+                "certified_decision": None
+                if report.decision is None
+                else report.decision.certified_decision,
                 "certificate_status": None
                 if report.certificate is None
                 else report.certificate.status,
@@ -479,6 +498,7 @@ def _claim_verification_tables(report: ClaimVerificationReport) -> ReportTables:
                 "repair_max_ambiguity": None
                 if repair is None
                 else repair.max_ambiguity,
+                "decision_repair_search_exact": (report.decision_repair_search_exact),
             },
         ),
         "claim": (report.claim.as_dict(),),
@@ -487,6 +507,10 @@ def _claim_verification_tables(report: ClaimVerificationReport) -> ReportTables:
             {"limitation": limitation} for limitation in report.limitations
         ),
     }
+    if report.decision is not None:
+        tables["decision"] = (report.decision.as_dict(),)
+    if report.decision_repair_candidate is not None:
+        tables["decision_repair"] = (report.decision_repair_candidate.as_dict(),)
     tables.update(_prefix_tables("primary", _public_descent_tables(report.primary)))
     if report.certificate is not None:
         tables.update(
