@@ -13,6 +13,7 @@ from .certificate import (
     RepresentationStabilityCertificate,
     certify_public_representation,
 )
+from .claim import ClaimVerificationReport, ReportingClaim, verify_claim
 from .data import DataDiagnostic, DataDiagnostics, GroupedProblem, from_dataframe
 from .dowhy import (
     DoWhyRepresentationAudit,
@@ -155,6 +156,7 @@ __all__ = [
     "CardinalGapResult",
     "CausalReportingStabilitySuite",
     "certify_public_representation",
+    "ClaimVerificationReport",
     "ConstraintDual",
     "CvxpyEnvironments",
     "CvxpyConstraintMetadata",
@@ -245,6 +247,7 @@ __all__ = [
     "RefinementSensitivityScenario",
     "RepresentationStabilityCertificate",
     "RatioTarget",
+    "ReportingClaim",
     "SensitivityReport",
     "SensitivityRow",
     "SensitivitySummary",
@@ -262,6 +265,7 @@ __all__ = [
     "UnsupportedTarget",
     "UnsupportedTargetError",
     "validate_plugin",
+    "verify_claim",
     "Witness",
     "WitnessCellShift",
     "WitnessFiberShift",

@@ -7,6 +7,7 @@ from dataclasses import is_dataclass
 from typing import Any, Mapping
 
 from .certificate import RepresentationStabilityCertificate
+from .claim import ClaimVerificationReport
 from .frontier import (
     FrontierCandidateExplanation,
     PublicRepresentationCandidate,
@@ -63,6 +64,9 @@ def report_tables(report: Any) -> ReportTables:
 
     if isinstance(report, RepresentationStabilityCertificate):
         return _certificate_tables(report)
+
+    if isinstance(report, ClaimVerificationReport):
+        return _claim_verification_tables(report)
 
     if _is_report_wrapper(report):
         tables = report_tables(report.report)
@@ -410,6 +414,53 @@ def _certificate_tables(
         else tuple(row.as_dict() for row in selected.scenarios),
     }
     tables.update(_prefix_tables("frontier", _frontier_tables(certificate.frontier)))
+    return tables
+
+
+def _claim_verification_tables(report: ClaimVerificationReport) -> ReportTables:
+    repair = report.repair_candidate
+    tables: ReportTables = {
+        "summary": (
+            {
+                "title": report.title,
+                "status": report.status,
+                "passed": report.passed,
+                "failed": report.failed,
+                "inconclusive": report.inconclusive,
+                "estimate_name": report.claim.estimate_name,
+                "observed_value": report.primary.observed_value,
+                "lower": report.primary.interval.lower,
+                "upper": report.primary.interval.upper,
+                "ambiguity": report.primary.interval.diameter,
+                "ambiguity_limit": report.claim.ambiguity_limit,
+                "public_adequate": report.primary.public_adequate,
+                "has_statistical_uncertainty": (
+                    report.claim.statistical_uncertainty is not None
+                ),
+                "certificate_status": None
+                if report.certificate is None
+                else report.certificate.status,
+                "has_witness": report.witness is not None,
+                "repair_label": None if repair is None else repair.label,
+                "repair_public_cells": None if repair is None else repair.public_cells,
+                "repair_max_ambiguity": None
+                if repair is None
+                else repair.max_ambiguity,
+            },
+        ),
+        "claim": (report.claim.as_dict(),),
+        "reasons": tuple({"reason": reason} for reason in report.reasons),
+        "limitations": tuple(
+            {"limitation": limitation} for limitation in report.limitations
+        ),
+    }
+    tables.update(_prefix_tables("primary", _public_descent_tables(report.primary)))
+    if report.certificate is not None:
+        tables.update(
+            _prefix_tables("certificate", _certificate_tables(report.certificate))
+        )
+    if report.witness is not None:
+        tables.update(_prefix_tables("witness", _witness_tables(report.witness)))
     return tables
 
 

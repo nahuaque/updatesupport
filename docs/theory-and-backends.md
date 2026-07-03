@@ -66,6 +66,9 @@ Tabular and reporting helpers:
 - `AuditRun`
 - `QSpec`
 - `run_audit(...)`
+- `ReportingClaim`
+- `ClaimVerificationReport`
+- `verify_claim(...)`
 - `report_to_json(...)`
 - `report_tables(...)`
 - `report_dataframes(...)`

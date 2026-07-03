@@ -33,6 +33,7 @@ fit. `updatesupport` answers a different review question:
 
 The output is a review-ready Markdown audit with:
 
+- claim-level pass/fail/inconclusive verdicts
 - observed estimate
 - hidden-composition stress interval
 - transport ambiguity, the interval width
@@ -138,7 +139,34 @@ See the full analyst interpretation in
 
 ## Main Workflows
 
-### 1. Audit a Public Report
+### 1. Verify a Reporting Claim
+
+Use `ReportingClaim` when you want one review artifact that certifies the
+claim, breaks it with a hidden-composition witness, or proposes a stable repair.
+
+```python
+claim = us.ReportingClaim(
+    estimate_name="Income-threshold target rate",
+    public=["AGE_BAND", "EDU_BAND", "SEX"],
+    hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND", "RAC1P"],
+    target="income_over_threshold",
+    weight="sample_weight",
+    q_presets=[us.q_tv_budget(0.10), us.q_chi_square_budget(0.25)],
+    candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P"],
+    ambiguity_limit=0.015,
+    bucket_budget=40,
+    statistical_interval=(0.119, 0.128),
+)
+
+verdict = us.verify_claim(rows_or_frame, claim)
+print(verdict.to_markdown())
+```
+
+The verifier separates the reported estimate, statistical uncertainty,
+hidden-composition ambiguity, public-refinement repair, counterexample witness,
+and limitations. See [docs/reporting-claims.md](docs/reporting-claims.md).
+
+### 2. Audit a Public Report
 
 Use `public_descent_report(...)` when you already know the public buckets,
 hidden refinements, and target metric.
@@ -190,7 +218,7 @@ When you need to inspect the actual lower-vs-upper endpoint worlds behind an
 ambiguity result, use `report.witness_report()` or `us.witness_report(...)` to
 see which hidden cells move while the public distribution stays fixed.
 
-### 2. Run Robustness Checks
+### 3. Run Robustness Checks
 
 Use `sensitivity_report(...)` when the conclusion should be checked across Q
 presets, sparse-cell thresholds, or alternate hidden-state definitions.
@@ -210,7 +238,7 @@ See [docs/transport-presets.md](docs/transport-presets.md) for guidance on Q
 presets and [docs/representation-adequacy.md](docs/representation-adequacy.md)
 for interpretation rules.
 
-### 3. Certify a Stable Public Segmentation
+### 4. Certify a Stable Public Segmentation
 
 Use `certify_public_representation(...)` when you want a review-ready decision:
 the smallest evaluated public bucket design that keeps ambiguity below a
@@ -238,7 +266,7 @@ frontier behind the certificate. The frontier compares public-cell count, added
 public columns, and ambiguity across the stress grid. See
 [docs/public-representation-frontier.md](docs/public-representation-frontier.md).
 
-### 4. Audit Causal or Uplift Reports
+### 5. Audit Causal or Uplift Reports
 
 Use a causal inference library such as [EconML](https://www.pywhy.org/EconML/),
 [DoWhy](https://www.pywhy.org/dowhy/),
@@ -266,7 +294,7 @@ hidden-composition ambiguity, and public refinement recommendations.
 
 See [docs/causal-library-integration.md](docs/causal-library-integration.md).
 
-### 5. Financial Model-Risk Plugin
+### 6. Financial Model-Risk Plugin
 
 Financial model-risk use cases live in the separate plugin package:
 

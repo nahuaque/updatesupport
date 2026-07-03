@@ -133,6 +133,16 @@ Representation-stability certificates expose:
 - prefixed frontier evidence such as `frontier_summary`,
   `frontier_candidates`, and `frontier_candidate_scenarios`
 
+Claim verification reports expose:
+
+- `summary`
+- `claim`
+- `reasons`
+- `limitations`
+- prefixed primary evidence such as `primary_summary` and `primary_refinements`
+- prefixed certificate evidence when a repair/certification was run
+- prefixed witness evidence when a counterexample witness was produced
+
 Causal reporting suites prefix the component tables, for example:
 
 - `primary_summary`

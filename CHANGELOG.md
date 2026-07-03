@@ -83,6 +83,10 @@ All notable changes to `updatesupport` are documented here.
   representation under convex Q presets, with support-function oracle
   verification, `minimum_objective` selection, hard bucket constraints, and
   certificate/report trace metadata.
+- Added claim-level verification with `ReportingClaim`,
+  `ClaimVerificationReport`, and `verify_claim(...)`, composing primary
+  public-descent evidence, statistical uncertainty, counterexample witnesses,
+  repair/certification search, Markdown output, and structured exports.
 
 ### Fixed
 
