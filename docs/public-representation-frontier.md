@@ -267,9 +267,10 @@ ambiguity limit, the master receives a no-good cut and proposes the next
 candidate.
 
 `search="mip_oracle"` currently requires `ambiguity_limit`. It supports
-`saturated`, `observed`, `tv_budget`, `chi_square_budget`, `kl_budget`, and
-`wasserstein` presets. The public-cell `bucket_budget`, when supplied, is a hard
-master constraint in this mode.
+`saturated`, `observed`, `tv_budget`, `chi_square_budget`, `kl_budget`,
+`l2_budget`, `covariate_balance`, `mahalanobis_budget`, and `wasserstein`
+presets. The public-cell `bucket_budget`, when supplied, is a hard master
+constraint in this mode.
 
 Use `search="mip_minimum"` when the review question is:
 

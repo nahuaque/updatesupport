@@ -85,6 +85,7 @@ Tabular and reporting helpers:
 - `recommend_refinements_sensitivity(...)`
 - `public_representation_frontier(...)`
 - `q_l2_budget(...)`
+- `q_covariate_balance(...)`
 - `q_mahalanobis_budget(...)`
 
 Causal and estimator helpers:
@@ -106,7 +107,11 @@ Built-in Q presets:
 - `tv_budget`
 - `chi_square_budget`
 - `kl_budget`
+- `l2_budget`
+- `covariate_balance`
+- `mahalanobis_budget`
 - `wasserstein`
+- `fiber_support_floor`
 
 ## Finite Linear Backend
 

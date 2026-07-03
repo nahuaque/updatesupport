@@ -36,6 +36,7 @@ _PARAMETERIZED_SENSITIVITY_PRESETS = frozenset(
     {
         "tv_budget",
         "chi_square_budget",
+        "covariate_balance",
         "kl_budget",
         "l2_budget",
         "mahalanobis_budget",
@@ -1966,15 +1967,27 @@ def _can_reuse_parameterized_problem(target: TabularTarget) -> bool:
 def _parameterized_sensitivity_key(preset: QPreset) -> tuple[Any, ...]:
     cost_key = (
         id(preset.cost)
-        if preset.name in {"mahalanobis_budget", "wasserstein"}
+        if preset.name
+        in {
+            "covariate_balance",
+            "mahalanobis_budget",
+            "wasserstein",
+        }
         else None
     )
     return (
         preset.name,
         cost_key,
+        _settings_key(preset.settings),
         preset.solver,
         _solver_options_key(preset.solver_options),
     )
+
+
+def _settings_key(options: Mapping[str, Any] | None) -> tuple[Any, ...] | None:
+    if options is None:
+        return None
+    return tuple(sorted((str(key), repr(value)) for key, value in options.items()))
 
 
 def _solver_options_key(options: Mapping[str, Any] | None) -> tuple[Any, ...] | None:

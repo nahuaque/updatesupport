@@ -383,6 +383,69 @@ segments:
 > If we only report uplift by segment and channel, are hidden region, tenure, or
 > spend differences doing important work?
 
+## Covariate-Balance Stress Tests
+
+For causal model review, the most natural stress set is often a balance
+tolerance rather than a direct mass-movement budget. Use
+`q_covariate_balance(...)` when the question is:
+
+> If the public report preserves the observed public buckets, but hidden
+> covariate balance can drift within an L2 tolerance, how much can the reported
+> effect move?
+
+The preset constrains
+
+```text
+|| standardized_hidden_moment_shift ||_2 <= epsilon
+```
+
+Build hidden-cell moment summaries on the same hidden state space used by the
+audit:
+
+```python
+hidden_cols = [
+    "age_band",
+    "sex",
+    "education_band",
+    "region",
+    "prior_usage_band",
+]
+balance_cols = ["prior_usage_z", "baseline_risk_z", "propensity_logit_z"]
+
+moment_frame = df.groupby(hidden_cols, observed=True)[balance_cols].mean()
+moments = {
+    column: {
+        tuple(hidden_state): float(value)
+        for hidden_state, value in moment_frame[column].items()
+    }
+    for column in balance_cols
+}
+
+suite = us.causal_reporting_stability(
+    df,
+    public=["age_band", "sex"],
+    hidden=hidden_cols,
+    effect="tau_hat",
+    effect_standard_error="tau_se",
+    weight="sample_weight",
+    q=us.q_covariate_balance(0.25, moments),
+    statistical_estimate=ate_hat,
+    statistical_interval=(ci_low, ci_high),
+    statistical_method="estimator bootstrap",
+)
+```
+
+By default, the baseline is the observed hidden-distribution moment vector and
+the scale is the observed weighted standard deviation of each moment across
+hidden cells. Pass `baseline=...` or `scale=...` when a model-review standard
+defines a different balance target or tolerance scale.
+
+This pairs well with [EconML], [DoWhy], [DoubleML], and uplift-model outputs
+because the causal estimator supplies `tau_hat`, while `updatesupport` reports
+how much the aggregate effect could move under hidden balance drift. Keep this
+separate from statistical uncertainty: the balance stress interval is a
+hidden-composition sensitivity result, not a confidence interval.
+
 ## Sensitivity Grid
 
 The suite runs this internally when `sensitivity_*` arguments are supplied. You

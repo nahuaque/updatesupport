@@ -46,6 +46,14 @@ class QEnvironment:
 
 
 @dataclass(frozen=True)
+class _CovariateBalanceArrays:
+    names: tuple[Hashable, ...]
+    matrix: Any
+    baseline: Any
+    inverse_scale: Any
+
+
+@dataclass(frozen=True)
 class CvxpyAdmissibleSetSpec:
     """Reusable CVXPY constraints for one admissible Q preset."""
 
@@ -294,6 +302,40 @@ def q_l2_budget(
         backend=backend,
         solver=solver,
         solver_options=None if solver_options is None else dict(solver_options),
+    )
+
+
+def q_covariate_balance(
+    radius: float,
+    moments: Mapping[Hashable, Mapping[Hashable, float] | Sequence[float]]
+    | Sequence[Sequence[float]],
+    *,
+    baseline: Mapping[Hashable, float] | Sequence[float] | None = None,
+    scale: Mapping[Hashable, float] | Sequence[float] | float | None = None,
+    backend: str = "cvxpy",
+    solver: str | None = None,
+    solver_options: Mapping[str, Any] | None = None,
+) -> QPreset:
+    """Constrain standardized hidden covariate-moment drift.
+
+    ``moments`` maps moment names to values on retained hidden cells, or supplies
+    a row-by-cell matrix in hidden-state order. By default the baseline and
+    scale are computed from the observed hidden distribution.
+    """
+
+    settings: dict[str, Any] = {}
+    if baseline is not None:
+        settings["baseline"] = baseline
+    if scale is not None:
+        settings["scale"] = scale
+    return QPreset(
+        "covariate_balance",
+        radius=float(radius),
+        cost=moments,
+        backend=backend,
+        solver=solver,
+        solver_options=None if solver_options is None else dict(solver_options),
+        settings=settings or None,
     )
 
 
@@ -546,6 +588,19 @@ def resolve_q_environment(
         )
         return _q_environment_from_cvxpy_spec(spec, backend=backend)
 
+    if preset.name == "covariate_balance":
+        _covariate_balance_radius(preset)
+        if preset.cost is None:
+            raise ValueError("q_covariate_balance requires moment values")
+        backend = _backend_name(preset, default="cvxpy")
+        spec = _cvxpy_admissible_set_spec_from_preset(
+            preset,
+            public_law=public_law,
+            public_map=public_map,
+            cell_weights=cell_weights,
+        )
+        return _q_environment_from_cvxpy_spec(spec, backend=backend)
+
     if preset.name == "mahalanobis_budget":
         radius = _mahalanobis_radius(preset)
         if preset.cost is None:
@@ -652,6 +707,39 @@ def _cvxpy_admissible_set_spec_from_preset(
             constraint_builders=(_l2_constraint_builder(cell_weights, radius),),
             parameterized_constraint_builders=(
                 _l2_parameterized_constraint_builder(cell_weights),
+            ),
+            parameter_values={"radius": radius},
+            solver=preset.solver,
+            solver_options=preset.solver_options,
+            name=q_name(preset),
+            description=q_description(preset),
+        )
+
+    if preset.name == "covariate_balance":
+        radius = _covariate_balance_radius(preset)
+        if preset.cost is None:
+            raise ValueError("q_covariate_balance requires moment values")
+        baseline = None if preset.settings is None else preset.settings.get("baseline")
+        scale = None if preset.settings is None else preset.settings.get("scale")
+        return CvxpyAdmissibleSetSpec(
+            preset=preset,
+            fixed_public_law=public_law,
+            constraint_builders=(
+                _covariate_balance_constraint_builder(
+                    cell_weights,
+                    preset.cost,
+                    radius,
+                    baseline=baseline,
+                    scale=scale,
+                ),
+            ),
+            parameterized_constraint_builders=(
+                _covariate_balance_parameterized_constraint_builder(
+                    cell_weights,
+                    preset.cost,
+                    baseline=baseline,
+                    scale=scale,
+                ),
             ),
             parameter_values={"radius": radius},
             solver=preset.solver,
@@ -775,6 +863,7 @@ def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | No
         if preset.name not in {
             "bounded_shift",
             "chi_square_budget",
+            "covariate_balance",
             "kl_budget",
             "l2_budget",
             "mahalanobis_budget",
@@ -783,7 +872,7 @@ def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | No
         }:
             raise ValueError(
                 "q_radius is only valid for bounded, chi-square, KL, L2, "
-                "Mahalanobis, TV, or Wasserstein Q presets"
+                "covariate-balance, Mahalanobis, TV, or Wasserstein Q presets"
             )
         if preset.radius is not None and float(preset.radius) != float(q_radius):
             raise ValueError("q_radius conflicts with the QPreset radius")
@@ -805,6 +894,9 @@ def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | No
         preset = replace(preset, radius=radius)
     elif preset.name == "l2_budget":
         radius = _l2_radius(preset)
+        preset = replace(preset, radius=radius)
+    elif preset.name == "covariate_balance":
+        radius = _covariate_balance_radius(preset)
         preset = replace(preset, radius=radius)
     elif preset.name == "mahalanobis_budget":
         radius = _mahalanobis_radius(preset)
@@ -836,6 +928,8 @@ def q_name(q: Any, *, q_radius: float | None = None) -> str:
         return f"kl_budget(radius={_kl_radius(preset):g})"
     if preset.name == "l2_budget":
         return f"l2_budget(radius={_l2_radius(preset):g})"
+    if preset.name == "covariate_balance":
+        return f"covariate_balance(radius={_covariate_balance_radius(preset):g})"
     if preset.name == "mahalanobis_budget":
         return f"mahalanobis_budget(radius={_mahalanobis_radius(preset):g})"
     if preset.name == "wasserstein":
@@ -894,6 +988,12 @@ def q_description(q: Any, *, q_radius: float | None = None) -> str:
             "fixed observed public law with L2 distance from the observed "
             f"hidden distribution <= {radius:g}"
         )
+    if preset.name == "covariate_balance":
+        radius = _covariate_balance_radius(preset)
+        return (
+            "fixed observed public law with standardized hidden covariate-moment "
+            f"shift <= {radius:g}"
+        )
     if preset.name == "mahalanobis_budget":
         radius = _mahalanobis_radius(preset)
         return (
@@ -946,6 +1046,15 @@ def _canonical_preset(preset: QPreset) -> QPreset:
         "l2_budget": "l2_budget",
         "euclidean": "l2_budget",
         "euclidean_budget": "l2_budget",
+        "balance": "covariate_balance",
+        "balance-budget": "covariate_balance",
+        "balance_budget": "covariate_balance",
+        "covariate-balance": "covariate_balance",
+        "covariate_balance": "covariate_balance",
+        "covariate-balance-budget": "covariate_balance",
+        "covariate_balance_budget": "covariate_balance",
+        "moment-balance": "covariate_balance",
+        "moment_balance": "covariate_balance",
         "mahalanobis": "mahalanobis_budget",
         "mahalanobis-budget": "mahalanobis_budget",
         "mahalanobis_budget": "mahalanobis_budget",
@@ -1062,6 +1171,15 @@ def _l2_radius(preset: QPreset) -> float:
     radius = float(preset.radius)
     if radius < 0:
         raise ValueError("l2_budget radius must be non-negative")
+    return radius
+
+
+def _covariate_balance_radius(preset: QPreset) -> float:
+    if preset.radius is None:
+        raise ValueError("covariate_balance radius is required")
+    radius = float(preset.radius)
+    if radius < 0:
+        raise ValueError("covariate_balance radius must be non-negative")
     return radius
 
 
@@ -1340,6 +1458,75 @@ def _l2_parameterized_constraint_builder(
     return build
 
 
+def _covariate_balance_constraint_builder(
+    cell_weights: Mapping[Hashable, float],
+    moments: Mapping[Hashable, Mapping[Hashable, float] | Sequence[float]]
+    | Sequence[Sequence[float]],
+    radius: float,
+    *,
+    baseline: Mapping[Hashable, float] | Sequence[float] | None,
+    scale: Mapping[Hashable, float] | Sequence[float] | float | None,
+):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index):
+        arrays = _covariate_balance_arrays(
+            moments,
+            states,
+            observed_by_state,
+            baseline=baseline,
+            scale=scale,
+        )
+        shift = arrays.matrix @ q - arrays.baseline
+        standardized_shift = cp.multiply(arrays.inverse_scale, shift)
+        return (
+            cvxpy_constraint(
+                cp.norm(standardized_shift, 2) <= radius,
+                name="covariate-balance budget",
+                kind="covariate_balance",
+                sense="<=",
+                states=states,
+            ),
+        )
+
+    return build
+
+
+def _covariate_balance_parameterized_constraint_builder(
+    cell_weights: Mapping[Hashable, float],
+    moments: Mapping[Hashable, Mapping[Hashable, float] | Sequence[float]]
+    | Sequence[Sequence[float]],
+    *,
+    baseline: Mapping[Hashable, float] | Sequence[float] | None,
+    scale: Mapping[Hashable, float] | Sequence[float] | float | None,
+    parameter_name: str = "radius",
+):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index, parameter):
+        arrays = _covariate_balance_arrays(
+            moments,
+            states,
+            observed_by_state,
+            baseline=baseline,
+            scale=scale,
+        )
+        radius = parameter(parameter_name, nonneg=True)
+        shift = arrays.matrix @ q - arrays.baseline
+        standardized_shift = cp.multiply(arrays.inverse_scale, shift)
+        return (
+            cvxpy_constraint(
+                cp.norm(standardized_shift, 2) <= radius,
+                name="covariate-balance budget",
+                kind="covariate_balance",
+                sense="<=",
+                states=states,
+            ),
+        )
+
+    return build
+
+
 def _mahalanobis_constraint_builder(
     cell_weights: Mapping[Hashable, float],
     covariance: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
@@ -1468,6 +1655,213 @@ def _wasserstein_parameterized_constraint_builder(
         )
 
     return build
+
+
+def _covariate_balance_arrays(
+    moments: Mapping[Hashable, Mapping[Hashable, float] | Sequence[float]]
+    | Sequence[Sequence[float]],
+    states: Sequence[Hashable],
+    observed_by_state: Mapping[Hashable, float],
+    *,
+    baseline: Mapping[Hashable, float] | Sequence[float] | None,
+    scale: Mapping[Hashable, float] | Sequence[float] | float | None,
+) -> _CovariateBalanceArrays:
+    import numpy as np
+
+    names, rows = _coerce_covariate_moment_rows(moments, states)
+    matrix = np.array(rows, dtype=float)
+    observed = np.array([observed_by_state[state] for state in states], dtype=float)
+    baseline_vector = _coerce_covariate_baseline(
+        baseline,
+        names=names,
+        matrix=matrix,
+        observed=observed,
+    )
+    scale_vector = _coerce_covariate_scale(
+        scale,
+        names=names,
+        matrix=matrix,
+        observed=observed,
+    )
+    return _CovariateBalanceArrays(
+        names=names,
+        matrix=matrix,
+        baseline=baseline_vector,
+        inverse_scale=1.0 / scale_vector,
+    )
+
+
+def _coerce_covariate_moment_rows(
+    moments: Mapping[Hashable, Mapping[Hashable, float] | Sequence[float]]
+    | Sequence[Sequence[float]],
+    states: Sequence[Hashable],
+) -> tuple[tuple[Hashable, ...], list[list[float]]]:
+    if isinstance(moments, Mapping):
+        if not moments:
+            raise ValueError("q_covariate_balance requires at least one moment")
+        names = tuple(moments)
+        rows = [
+            _coerce_covariate_moment_values(
+                moments[name],
+                states,
+                moment_name=name,
+            )
+            for name in names
+        ]
+        return names, rows
+
+    if isinstance(moments, str | bytes):
+        raise TypeError("q_covariate_balance moments must be a mapping or matrix")
+
+    rows = []
+    for index, row in enumerate(moments):
+        rows.append(
+            _coerce_covariate_moment_values(
+                row,
+                states,
+                moment_name=f"moment_{index + 1}",
+            )
+        )
+    if not rows:
+        raise ValueError("q_covariate_balance requires at least one moment")
+    names = tuple(f"moment_{index + 1}" for index in range(len(rows)))
+    return names, rows
+
+
+def _coerce_covariate_moment_values(
+    values: Mapping[Hashable, float] | Sequence[float],
+    states: Sequence[Hashable],
+    *,
+    moment_name: Hashable,
+) -> list[float]:
+    if isinstance(values, Mapping):
+        missing = [state for state in states if state not in values]
+        if missing:
+            preview = ", ".join(repr(state) for state in missing[:3])
+            if len(missing) > 3:
+                preview += ", ..."
+            raise ValueError(
+                "q_covariate_balance moment "
+                f"{moment_name!r} is missing hidden states: {preview}"
+            )
+        return [
+            _finite_covariate_value(values[state], label=f"moment {moment_name!r}")
+            for state in states
+        ]
+
+    if isinstance(values, str | bytes):
+        raise TypeError(
+            f"q_covariate_balance moment {moment_name!r} must be numeric values"
+        )
+    if len(values) != len(states):
+        raise ValueError(
+            "q_covariate_balance sequence moments must have one value per hidden "
+            f"state; moment {moment_name!r} has {len(values)} values for "
+            f"{len(states)} states"
+        )
+    return [
+        _finite_covariate_value(value, label=f"moment {moment_name!r}")
+        for value in values
+    ]
+
+
+def _coerce_covariate_baseline(
+    baseline: Mapping[Hashable, float] | Sequence[float] | None,
+    *,
+    names: Sequence[Hashable],
+    matrix: Any,
+    observed: Any,
+):
+    import numpy as np
+
+    if baseline is None:
+        return matrix @ observed
+    if isinstance(baseline, Mapping):
+        missing = [name for name in names if name not in baseline]
+        if missing:
+            raise ValueError(
+                f"q_covariate_balance baseline is missing moments: {missing[:3]!r}"
+            )
+        return np.array(
+            [
+                _finite_covariate_value(
+                    baseline[name],
+                    label=f"baseline {name!r}",
+                )
+                for name in names
+            ],
+            dtype=float,
+        )
+    if isinstance(baseline, str | bytes):
+        raise TypeError("q_covariate_balance baseline must be numeric values")
+    if len(baseline) != len(names):
+        raise ValueError("q_covariate_balance baseline must have one value per moment")
+    return np.array(
+        [_finite_covariate_value(value, label="baseline") for value in baseline],
+        dtype=float,
+    )
+
+
+def _coerce_covariate_scale(
+    scale: Mapping[Hashable, float] | Sequence[float] | float | None,
+    *,
+    names: Sequence[Hashable],
+    matrix: Any,
+    observed: Any,
+):
+    import numpy as np
+
+    if scale is None:
+        total = float(np.sum(observed))
+        if total <= 0.0:
+            raise ValueError("q_covariate_balance observed mass must be positive")
+        mean = (matrix @ observed) / total
+        second_moment = (matrix * matrix) @ observed / total
+        variance = np.maximum(second_moment - mean * mean, 0.0)
+        scale_vector = np.sqrt(variance)
+        scale_vector[scale_vector <= 1e-12] = 1.0
+        return scale_vector
+
+    if isinstance(scale, int | float):
+        scalar = _positive_covariate_scale(scale, label="scale")
+        return np.full(len(names), scalar, dtype=float)
+
+    if isinstance(scale, Mapping):
+        missing = [name for name in names if name not in scale]
+        if missing:
+            raise ValueError(
+                f"q_covariate_balance scale is missing moments: {missing[:3]!r}"
+            )
+        return np.array(
+            [
+                _positive_covariate_scale(scale[name], label=f"scale {name!r}")
+                for name in names
+            ],
+            dtype=float,
+        )
+
+    if isinstance(scale, str | bytes):
+        raise TypeError("q_covariate_balance scale must be numeric values")
+    if len(scale) != len(names):
+        raise ValueError("q_covariate_balance scale must have one value per moment")
+    return np.array(
+        [_positive_covariate_scale(value, label="scale") for value in scale],
+        dtype=float,
+    )
+
+
+def _finite_covariate_value(value: float, *, label: str) -> float:
+    coerced = float(value)
+    if not isfinite(coerced):
+        raise ValueError(f"q_covariate_balance {label} must be finite")
+    return coerced
+
+
+def _positive_covariate_scale(value: float, *, label: str) -> float:
+    scale = _finite_covariate_value(value, label=label)
+    if scale <= 0.0:
+        raise ValueError(f"q_covariate_balance {label} must be positive")
+    return scale
 
 
 def _coerce_cost_matrix(

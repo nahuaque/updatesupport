@@ -550,6 +550,49 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
         self.assertIn("support-function oracle", markdown)
         self.assertIn("Support-function oracle evaluations: 1", markdown)
 
+    def test_public_representation_frontier_mip_oracle_accepts_covariate_balance(
+        self,
+    ):
+        _require_cvxpy_solver("SCIP")
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0, "weight": 30},
+            {"segment": "A", "driver": "high", "target": 1.0, "weight": 30},
+            {"segment": "B", "driver": "flat", "target": 0.5, "weight": 40},
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            q_presets=[
+                us.q_covariate_balance(
+                    0.2,
+                    {
+                        "hidden_balance": {
+                            ("A", "low"): -1.0,
+                            ("A", "high"): 1.0,
+                            ("B", "flat"): 0.0,
+                        }
+                    },
+                )
+            ],
+            ambiguity_limit=0.16,
+            bucket_budget=2,
+            search="mip_oracle",
+            max_added_columns=1,
+        )
+
+        self.assertEqual(report.search_trace.search, "mip_oracle")
+        self.assertEqual(report.minimal_stable.added_columns, ())
+        self.assertAlmostEqual(
+            report.minimal_stable.max_ambiguity,
+            0.15491933,
+            places=5,
+        )
+
     def test_public_representation_frontier_supports_mip_minimum_search(self):
         _require_cvxpy_solver("SCIP")
         rows = [

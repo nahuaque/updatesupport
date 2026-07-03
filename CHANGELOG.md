@@ -55,6 +55,10 @@ All notable changes to `updatesupport` are documented here.
 - Added `q_fiber_support_floor(...)`, the first SCIP-backed mixed-integer Q
   preset, to require each public fiber to keep a minimum number of hidden cells
   active above a minimum share; `QSpec` now carries preset-specific `settings`.
+- Added `q_covariate_balance(...)`, a CVXPY/SOCP-compatible stress preset for
+  causal and model-review workflows that bounds standardized hidden
+  covariate-moment drift while preserving the observed public law, including
+  parameterized sensitivity and support-function frontier support.
 - Added `WitnessReport` and `witness_report(...)` for analyst-facing
   lower-vs-upper adversarial witness reports that show which hidden cells move
   between interval endpoints while the public distribution stays fixed.

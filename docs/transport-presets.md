@@ -19,6 +19,7 @@ different presets.
 | `q=us.q_chi_square_budget(radius)` | Variance-scaled divergence budget | Pearson chi-square divergence from the observed hidden distribution is bounded | Needs CVXPY and penalizes shifts out of small observed cells strongly |
 | `q=us.q_kl_budget(radius)` | Information-divergence budget | KL divergence from the observed hidden distribution is bounded | Needs CVXPY and the radius is less intuitive than direct mass movement |
 | `q=us.q_l2_budget(radius)` | Smooth Euclidean shift budget | L2 distance from the observed hidden distribution is bounded | Needs CVXPY and is scale-sensitive across cells |
+| `q=us.q_covariate_balance(radius, moments)` | Causal/model-review balance stress test | Standardized hidden covariate-moment drift is bounded | Needs CVXPY and a defensible moment map |
 | `q=us.q_mahalanobis_budget(radius, covariance=...)` | Covariance-aware ellipsoidal shifts | Covariance-standardized distance from the observed hidden distribution is bounded | Needs a defensible positive definite covariance matrix and CVXPY |
 | `q=us.q_wasserstein(cost, radius)` | Similarity-aware shifts | Hidden mass can move cheaply between similar cells and expensively between dissimilar cells | Requires a defensible cost matrix and CVXPY |
 | `q=us.q_fiber_support_floor(min_active, min_share=...)` | MIP support-diversity floor | Each public bucket must keep several active hidden cells above a minimum share | Needs SCIP or another MIP-capable CVXPY solver |
@@ -71,8 +72,8 @@ how the retained cells may be reweighted.
 ## CVXPY Solver Choice
 
 CVXPY-backed presets use CVXPY's default solver unless a solver is named
-explicitly. The TV, chi-square, KL, L2, Mahalanobis, and Wasserstein preset
-helpers accept `solver` and `solver_options`:
+explicitly. The TV, chi-square, KL, L2, covariate-balance, Mahalanobis, and
+Wasserstein preset helpers accept `solver` and `solver_options`:
 
 ```python
 q = us.q_tv_budget(0.15, solver="SCIP")
@@ -445,6 +446,74 @@ Interpretation:
 > candidate hidden mix stayed within this Euclidean radius of the observed
 > hidden mix?
 
+## Covariate-Balance Budget
+
+Use:
+
+```python
+moments = {
+    "standardized_prior_spend": {
+        ("young", "low_income", "urban"): -0.40,
+        ("young", "low_income", "rural"): -0.15,
+        ("older", "high_income", "urban"): 0.55,
+    },
+    "standardized_baseline_risk": {
+        ("young", "low_income", "urban"): 0.80,
+        ("young", "low_income", "rural"): 0.30,
+        ("older", "high_income", "urban"): -0.25,
+    },
+}
+
+q = us.q_covariate_balance(0.25, moments)
+```
+
+Install the CVXPY extra first:
+
+```bash
+# with pip
+pip install "updatesupport[cvxpy]"
+
+# with uv
+uv add "updatesupport[cvxpy]"
+```
+
+This constrains hidden covariate balance rather than cellwise distributional
+distance:
+
+```text
+|| standardize(M q - baseline) ||_2 <= radius
+```
+
+Here `M` is a moment-by-hidden-cell matrix. By default, `baseline` is the
+observed hidden-distribution moment vector, and each moment is standardized by
+its weighted observed hidden-cell standard deviation. You can override either
+with `baseline=...` or `scale=...`.
+
+Use `covariate_balance` when:
+
+- You are auditing a causal, uplift, or model-review report and the natural
+  stress condition is balance drift on hidden covariates.
+- You want to preserve the public report while allowing hidden composition to
+  change within an interpretable L2 tolerance on standardized moments.
+- You have hidden-cell summaries from an estimator, causal adapter, or grouped
+  dataframe and want a conic stress test that speaks the language of balance.
+
+Be cautious when:
+
+- The selected moments do not cover the hidden mechanisms that matter for the
+  target.
+- A zero balance radius is misread as no hidden shift. It only means exact
+  balance on the supplied moments; multiple hidden distributions may still be
+  admissible.
+- The default observed standard deviations are not the right scale for the
+  review question. In that case, pass an explicit `scale`.
+
+Interpretation:
+
+> Holding public cell shares fixed, how much could the reported target move if
+> hidden covariate balance were allowed to drift by at most this standardized
+> L2 tolerance?
+
 ## Mahalanobis Budget
 
 Use:
@@ -568,8 +637,8 @@ A practical workflow:
 4. If you have a substantive churn, divergence, norm, covariance, or distance
    scale, add `q_tv_budget(...)`, `q_chi_square_budget(...)`,
    `q_kl_budget(...)`, `q_l2_budget(...)`,
-   `q_mahalanobis_budget(...)`, or `q_wasserstein(...)` as domain-specific
-   robustness checks.
+   `q_covariate_balance(...)`, `q_mahalanobis_budget(...)`, or
+   `q_wasserstein(...)` as domain-specific robustness checks.
 
 Good reports state:
 
@@ -584,8 +653,8 @@ Good reports state:
 
 ## Parameterized CVXPY Sweeps
 
-The CVXPY-backed TV, chi-square, KL, L2, Mahalanobis, and Wasserstein presets
-can use an opt-in parameterized backend:
+The CVXPY-backed TV, chi-square, KL, L2, covariate-balance, Mahalanobis, and
+Wasserstein presets can use an opt-in parameterized backend:
 
 ```python
 grouped = us.from_dataframe(

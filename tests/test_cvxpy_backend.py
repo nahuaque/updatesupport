@@ -233,6 +233,62 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.upper, 0.64142136, places=5)
         self.assertIn("l2_budget", {row.kind for row in interval.duals})
 
+    def test_covariate_balance_budget_limits_standardized_moment_shift(self):
+        _require_cvxpy()
+
+        moments = {
+            "hidden_balance": {
+                ("A", "x"): -1.0,
+                ("A", "y"): 1.0,
+                ("B", "z"): 0.0,
+            }
+        }
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_covariate_balance(0.2, moments),
+        )
+
+        interval = grouped.problem.global_transport_modulus()
+
+        self.assertEqual(grouped.q_name, "covariate_balance(radius=0.2)")
+        self.assertIsInstance(grouped.problem.environments, us.CvxpyEnvironments)
+        self.assertAlmostEqual(interval.lower, 0.42254033, places=5)
+        self.assertAlmostEqual(interval.upper, 0.57745967, places=5)
+        self.assertAlmostEqual(interval.diameter, 0.15491933, places=5)
+        self.assertIn("covariate_balance", {row.kind for row in interval.duals})
+
+    def test_covariate_balance_support_function_backend(self):
+        _require_cvxpy()
+
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_covariate_balance(
+                0.2,
+                {
+                    "hidden_balance": {
+                        ("A", "x"): -1.0,
+                        ("A", "y"): 1.0,
+                        ("B", "z"): 0.0,
+                    }
+                },
+                backend="support_function",
+            ),
+        )
+
+        interval = grouped.problem.global_transport_modulus()
+
+        self.assertIsInstance(grouped.problem.environments, us.SupportFunctionBackend)
+        self.assertAlmostEqual(interval.lower, 0.42254033, places=5)
+        self.assertAlmostEqual(interval.upper, 0.57745967, places=5)
+
     def test_cvxpy_q_preset_exposes_admissible_set_spec(self):
         _require_cvxpy()
 
@@ -523,10 +579,22 @@ class CvxpyBackendTests(unittest.TestCase):
         cost[(("B", "z"), ("A", "x"))] = 100.0
         cost[(("A", "y"), ("B", "z"))] = 100.0
         cost[(("B", "z"), ("A", "y"))] = 100.0
+        moments = {
+            "hidden_balance": {
+                ("A", "x"): -1.0,
+                ("A", "y"): 1.0,
+                ("B", "z"): 0.0,
+            }
+        }
         parameterized = [
             us.q_chi_square_budget(0.15, backend="parameterized_cvxpy"),
             us.q_kl_budget(0.08, backend="parameterized_cvxpy"),
             us.q_l2_budget(0.2, backend="parameterized_cvxpy"),
+            us.q_covariate_balance(
+                0.2,
+                moments,
+                backend="parameterized_cvxpy",
+            ),
             us.q_mahalanobis_budget(
                 0.2,
                 covariance=[
@@ -542,6 +610,7 @@ class CvxpyBackendTests(unittest.TestCase):
             us.q_chi_square_budget(0.15),
             us.q_kl_budget(0.08),
             us.q_l2_budget(0.2),
+            us.q_covariate_balance(0.2, moments),
             us.q_mahalanobis_budget(
                 0.2,
                 covariance=[
@@ -1046,6 +1115,24 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.lower, 0.35, places=6)
         self.assertAlmostEqual(interval.upper, 0.65, places=6)
         self.assertAlmostEqual(interval.diameter, 0.30, places=6)
+
+    def test_covariate_balance_rejects_missing_moment_states(self):
+        _require_cvxpy()
+
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_covariate_balance(
+                0.2,
+                {"hidden_balance": {("A", "x"): -1.0, ("A", "y"): 1.0}},
+            ),
+        )
+
+        with self.assertRaisesRegex(ValueError, "missing hidden states"):
+            grouped.problem.global_transport_modulus()
 
     def test_zero_budget_presets_collapse_to_observed_distribution(self):
         _require_cvxpy()

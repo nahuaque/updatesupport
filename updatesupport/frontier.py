@@ -49,7 +49,10 @@ _MINIMUM_OBJECTIVE_ALIASES = {
 
 _SUPPORT_FUNCTION_ORACLE_Q_PRESETS = {
     "chi_square_budget",
+    "covariate_balance",
     "kl_budget",
+    "l2_budget",
+    "mahalanobis_budget",
     "tv_budget",
     "wasserstein",
 }

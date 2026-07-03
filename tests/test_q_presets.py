@@ -135,6 +135,16 @@ class QPresetTests(unittest.TestCase):
 
     def test_soc_q_presets_name_and_describe_their_budget(self):
         l2 = us.q_l2_budget(0.2)
+        covariate_balance = us.q_covariate_balance(
+            0.2,
+            {
+                "balance": {
+                    ("A", "x"): -1.0,
+                    ("A", "y"): 1.0,
+                    ("B", "z"): 0.0,
+                }
+            },
+        )
         mahalanobis = us.q_mahalanobis_budget(
             0.2,
             covariance=[
@@ -151,6 +161,14 @@ class QPresetTests(unittest.TestCase):
             target="target",
             weight="weight",
             q=l2,
+        )
+        covariate_grouped = us.from_dataframe(
+            _rows(),
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            q=covariate_balance,
         )
         mahalanobis_grouped = us.from_dataframe(
             _rows(),
@@ -172,6 +190,11 @@ class QPresetTests(unittest.TestCase):
 
         self.assertEqual(l2_grouped.q_name, "l2_budget(radius=0.2)")
         self.assertIn("L2 distance", l2_grouped.q_description)
+        self.assertEqual(
+            covariate_grouped.q_name,
+            "covariate_balance(radius=0.2)",
+        )
+        self.assertIn("covariate-moment", covariate_grouped.q_description)
         self.assertEqual(
             mahalanobis_grouped.q_name,
             "mahalanobis_budget(radius=0.2)",

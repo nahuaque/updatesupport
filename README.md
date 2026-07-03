@@ -327,6 +327,10 @@ This keeps causal estimate, statistical uncertainty, hidden-composition
 ambiguity, estimator-uncertainty-aware adjusted ambiguity, and public refinement
 recommendations separate.
 
+For causal/model-review stress tests based on hidden balance drift, use
+`q=us.q_covariate_balance(epsilon, moments)` to bound
+`||standardized_hidden_moment_shift||_2`.
+
 See [docs/causal-library-integration.md](docs/causal-library-integration.md).
 
 ### 6. Financial Model-Risk Plugin
