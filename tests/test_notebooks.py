@@ -12,7 +12,7 @@ class NotebookTests(unittest.TestCase):
 
         self.assertEqual(
             {path.name for path in notebooks},
-            {"econml_downstream_reporting_colab.ipynb"},
+            {"dowhy_downstream_reporting_colab.ipynb"},
         )
         for path in notebooks:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -22,12 +22,11 @@ class NotebookTests(unittest.TestCase):
                 "".join(cell.get("source", ())) for cell in payload["cells"]
             )
             self.assertIn("colab.research.google.com", source)
-            self.assertIn("updatesupport[causal,examples]", source)
-            self.assertIn("CausalForestDML", source)
-            self.assertIn("TwoModelEffectEstimator", source)
-            self.assertIn("ECONML_AVAILABLE", source)
-            self.assertIn("adapt_econml_effects", source)
-            self.assertIn("estimator.effect(X)", source)
+            self.assertIn("updatesupport[dowhy,examples]", source)
+            self.assertIn("DoWhy", source)
+            self.assertIn("CausalModel", source)
+            self.assertIn("adapt_dowhy_effects", source)
+            self.assertIn("audit_dowhy_effects", source)
             self.assertIn("tau_hat", source)
             self.assertIn("public_representation_frontier", source)
             for cell in payload["cells"]:

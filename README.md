@@ -328,7 +328,7 @@ ambiguity, estimator-uncertainty-aware adjusted ambiguity, and public refinement
 recommendations separate.
 
 Try the tutorial notebook:
-[EconML downstream reporting audit](https://colab.research.google.com/github/nahuaque/updatesupport/blob/main/examples/notebooks/econml_downstream_reporting_colab.ipynb).
+[DoWhy downstream reporting audit](https://colab.research.google.com/github/nahuaque/updatesupport/blob/main/examples/notebooks/dowhy_downstream_reporting_colab.ipynb).
 
 For causal/model-review stress tests based on hidden balance drift, use
 `q=us.q_covariate_balance(epsilon, moments)` to bound

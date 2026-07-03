@@ -76,7 +76,6 @@ Colab Notebooks
 ---------------
 
 The core repository includes a tutorial notebook showing how ``updatesupport``
-sits downstream of EconML:
+sits downstream of DoWhy:
 
-* `EconML downstream reporting audit <https://colab.research.google.com/github/nahuaque/updatesupport/blob/main/examples/notebooks/econml_downstream_reporting_colab.ipynb>`_
-
+* `DoWhy downstream reporting audit <https://colab.research.google.com/github/nahuaque/updatesupport/blob/main/examples/notebooks/dowhy_downstream_reporting_colab.ipynb>`_
