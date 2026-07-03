@@ -10,6 +10,27 @@ class PackageMetadataTests(unittest.TestCase):
         self.assertRegex(us.__version__, r"^\d+\.\d+\.\d+")
 
 
+class LinearTargetTests(unittest.TestCase):
+    def test_finite_problem_accepts_linear_target(self):
+        target = us.LinearTarget(
+            {"a": 0.0, "b": 2.0},
+            name="demo_target",
+            description="demo fixed linear target",
+        )
+
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand=target,
+        )
+
+        self.assertIs(problem.target_functional, target)
+        self.assertEqual(problem.estimand_map, {"a": 0.0, "b": 2.0})
+        self.assertEqual(problem.target_contract.kind, "linear")
+        self.assertEqual(problem.target_contract.formula, "psi(q) = sum_d h(d) q(d)")
+        self.assertAlmostEqual(problem.psi({"a": 0.25, "b": 0.75}), 1.5)
+
+
 class SaturatedSupportTests(unittest.TestCase):
     def test_public_descent_succeeds_when_estimand_is_constant_on_fibers(self):
         problem = us.FiniteProblem(

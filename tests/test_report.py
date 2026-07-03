@@ -92,6 +92,13 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertIn("# Demo Report", markdown)
         self.assertIn("- Observed value: 0.5000", markdown)
         self.assertIn("Observed-law partial-ID interval: [0.2000, 0.8000]", markdown)
+        self.assertIn("## Target Contract", markdown)
+        self.assertIn("Type: linear target", markdown)
+        self.assertIn("psi(q) = sum_d h(d) q(d)", markdown)
+        self.assertIn(
+            "Hidden-cell target values fixed after compilation: yes", markdown
+        )
+        self.assertIn("Nonlinear, ratio, or representation-dependent targets", markdown)
         self.assertIn("## Statistical Interpretation", markdown)
         self.assertIn("## What This Report Separates", markdown)
         self.assertIn("Causal estimate / reported value", markdown)

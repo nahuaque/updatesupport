@@ -123,6 +123,12 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
                 "hidden_columns": grouped.hidden_columns,
                 "target": grouped.target_column,
                 "target_description": report.target_description,
+                "target_contract": grouped.problem.target_contract.as_dict(),
+                "target_kind": grouped.problem.target_contract.kind,
+                "target_formula": grouped.problem.target_contract.formula,
+                "target_fixed_after_compilation": (
+                    grouped.problem.target_contract.fixed_after_compilation
+                ),
                 "q_name": grouped.q_name,
                 "q_description": grouped.q_description,
                 "min_cell_weight": report.min_cell_weight,

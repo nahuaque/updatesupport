@@ -19,7 +19,7 @@ It models:
 
 - a finite hidden state space `D`
 - a public projection `pi: D -> O`
-- a linear estimand `psi(q) = <h, q>`
+- a fixed linear target `psi(q) = <h, q>`
 - an admissible environment class `Q`
 
 The library checks whether a public or refined representation is adequate and
@@ -31,6 +31,8 @@ the same public law.
 Core finite objects:
 
 - `FiniteProblem`
+- `LinearTarget`
+- `TargetContract`
 - `Partition`
 - `PublicFiberSaturated`
 - `FiniteEnvironments`

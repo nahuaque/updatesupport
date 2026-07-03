@@ -24,6 +24,9 @@ All notable changes to `updatesupport` are documented here.
   target contract, nonlinear target boundary, finite optimization model, Q
   preset semantics, backend guarantees, statistical assumptions, and
   limitations.
+- Added `LinearTarget` and `TargetContract` as the first internal target
+  functional layer, with target-contract metadata in public-descent structured
+  exports and Markdown reports.
 
 ### Fixed
 

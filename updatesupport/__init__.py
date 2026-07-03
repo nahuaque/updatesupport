@@ -110,6 +110,7 @@ from .results import (
     Witness,
 )
 from .spec import AuditRun, AuditSpec, QSpec, run_audit
+from .targets import LinearTarget, TargetContract
 
 try:
     __version__ = version("updatesupport")
@@ -156,6 +157,7 @@ __all__ = [
     "LeastSupportResult",
     "LinearConstraint",
     "LineSegment",
+    "LinearTarget",
     "linear_constraint",
     "LPError",
     "Partition",
@@ -213,6 +215,7 @@ __all__ = [
     "sensitivity_report",
     "TooManyPartitions",
     "TransportResult",
+    "TargetContract",
     "unregister_plugin",
     "UpdateSupportPlugin",
     "validate_plugin",

@@ -37,6 +37,11 @@ class FromDataFrameTests(unittest.TestCase):
         self.assertEqual(grouped.public_columns, ("public",))
         self.assertEqual(grouped.hidden_columns, ("public", "hidden"))
         self.assertEqual(grouped.target_column, "target")
+        self.assertIsInstance(grouped.target_functional, us.LinearTarget)
+        self.assertIs(grouped.problem.target_functional, grouped.target_functional)
+        self.assertEqual(grouped.problem.target_contract.kind, "linear")
+        self.assertTrue(grouped.problem.target_contract.fixed_after_compilation)
+        self.assertEqual(grouped.problem.target_contract.name, "target")
         self.assertAlmostEqual(grouped.total_weight, 100.0)
         self.assertAlmostEqual(grouped.public_law[("A",)], 0.6)
         self.assertAlmostEqual(grouped.public_law[("B",)], 0.4)
@@ -164,6 +169,10 @@ class FromDataFrameTests(unittest.TestCase):
         )
 
         self.assertIs(grouped.target_column, metric)
+        self.assertEqual(grouped.problem.target_contract.name, "expected_loss_rate")
+        self.assertEqual(
+            grouped.problem.target_contract.description, "expected loss rate"
+        )
         self.assertAlmostEqual(grouped.problem.estimand_map[("A", "x")], 0.01)
         self.assertAlmostEqual(grouped.problem.estimand_map[("A", "y")], 0.02)
         self.assertAlmostEqual(grouped.problem.estimand_map[("B", "z")], 0.004)

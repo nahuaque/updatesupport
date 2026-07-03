@@ -68,6 +68,10 @@ Public-descent reports expose:
 - `data_diagnostics`
 - `dual_diagnostics`
 
+The `summary` table and JSON payload include `target_contract` metadata so
+review systems can tell whether the report used the current fixed linear target
+contract.
+
 Sensitivity reports expose:
 
 - `summary`

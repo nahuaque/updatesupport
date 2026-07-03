@@ -7,9 +7,10 @@ from dataclasses import dataclass, field
 from math import isfinite
 from typing import Any, Hashable, Iterable, Mapping, Sequence
 
-from .metrics import RowMetric, evaluate_target
+from .metrics import RowMetric, evaluate_target, target_description, target_name
 from .problem import FiniteProblem
 from .presets import QPreset, resolve_q_environment
+from .targets import LinearTarget
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,7 @@ class GroupedProblem:
     public_columns: tuple[str, ...]
     hidden_columns: tuple[str, ...]
     target_column: str | RowMetric
+    target_functional: LinearTarget
     total_weight: float
     cell_weights: dict[tuple[Hashable, ...], float]
     q: QPreset | None = None
@@ -213,6 +215,12 @@ def from_dataframe(
     states = tuple(sorted(kept_cells, key=str))
     public_map = {cell: public_by_cell[cell] for cell in states}
     estimand = {cell: cell_target_sum[cell] / cell_weight[cell] for cell in states}
+    target_functional = LinearTarget(
+        estimand,
+        name=target_name(target),
+        description=target_description(target),
+        source="from_dataframe",
+    )
     normalized_cell_weight = {cell: cell_weight[cell] / total_weight for cell in states}
 
     public_law: dict[tuple[Hashable, ...], float] = defaultdict(float)
@@ -242,7 +250,7 @@ def from_dataframe(
     problem = FiniteProblem(
         states=states,
         public=public_map,
-        estimand=estimand,
+        estimand=target_functional,
         environments=q_environment.environment,
     )
     return GroupedProblem(
@@ -251,6 +259,7 @@ def from_dataframe(
         public_columns=public_columns_tuple,
         hidden_columns=hidden_columns_tuple,
         target_column=target,
+        target_functional=target_functional,
         total_weight=total_weight,
         cell_weights=normalized_cell_weight,
         q=q_environment.preset,

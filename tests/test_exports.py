@@ -32,6 +32,7 @@ class StructuredExportTests(unittest.TestCase):
 
         self.assertEqual(payload["title"], "Export Demo")
         self.assertEqual(payload["q_name"], "bounded_shift(radius=0.5)")
+        self.assertEqual(payload["target_contract"]["kind"], "linear")
         self.assertEqual(payload["top_fibers"][0]["public_value"], ["A"])
         self.assertEqual(
             set(tables),
@@ -45,6 +46,11 @@ class StructuredExportTests(unittest.TestCase):
         )
         self.assertEqual(tables["summary"][0]["title"], "Export Demo")
         self.assertAlmostEqual(tables["summary"][0]["ambiguity"], 0.3)
+        self.assertEqual(tables["summary"][0]["target_kind"], "linear")
+        self.assertEqual(
+            tables["summary"][0]["target_formula"],
+            "psi(q) = sum_d h(d) q(d)",
+        )
         self.assertEqual(tables["refinements"][0]["column"], "driver")
         self.assertIn("diagnostic_count", tables["summary"][0])
         self.assertEqual(

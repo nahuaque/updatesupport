@@ -626,6 +626,13 @@ class PublicDescentReport:
                 f"- Observed-law transport ambiguity: {self.interval.diameter:.4f}",
                 f"- Top {len(self.fibers)} fiber contribution share: "
                 f"{_percent(self.top_fiber_contribution_share)}",
+            ]
+        )
+
+        lines.extend(_target_contract_markdown(grouped))
+
+        lines.extend(
+            [
                 "",
                 "## Statistical Interpretation",
                 "",
@@ -2300,6 +2307,35 @@ def _data_diagnostics_markdown(
     return lines
 
 
+def _target_contract_markdown(grouped: GroupedProblem) -> list[str]:
+    contract = grouped.problem.target_contract
+    fixed = "yes" if contract.fixed_after_compilation else "no"
+    fiber_decomposition = "yes" if contract.supports_fiber_decomposition else "no"
+    lines = [
+        "",
+        "## Target Contract",
+        "",
+        f"- Type: {contract.kind} target.",
+        f"- Name: `{contract.name}`.",
+        f"- Formula: `{contract.formula}`.",
+        f"- Description: {contract.description}.",
+        f"- Hidden-cell target values fixed after compilation: {fixed}.",
+        f"- Supports public adequacy checks: "
+        f"{'yes' if contract.supports_adequacy else 'no'}.",
+        f"- Supports interval solving: "
+        f"{'yes' if contract.supports_interval else 'no'}.",
+        f"- Supports public-fiber decomposition: {fiber_decomposition}.",
+        "- Current interpretation: this report transports a fixed linear plug-in "
+        "target over admissible hidden distributions. Public refinements reuse "
+        "the same target contract; they do not refit a model or recompute a "
+        "representation-dependent target inside `updatesupport`.",
+    ]
+    if contract.limitations:
+        lines.append("- Target limitations:")
+        lines.extend(f"  - {limitation}" for limitation in contract.limitations)
+    return lines
+
+
 def _dual_diagnostics_markdown(interval: TransportResult) -> list[str]:
     lines = [
         "",
@@ -2357,6 +2393,7 @@ def _public_descent_summary_dict(report: PublicDescentReport) -> dict[str, Any]:
         "public_adequate": report.public_adequate,
         "q_name": report.grouped.q_name,
         "q_description": report.grouped.q_description,
+        "target_contract": report.grouped.problem.target_contract.as_dict(),
         "public_columns": report.grouped.public_columns,
         "hidden_columns": report.grouped.hidden_columns,
         "hidden_cells": len(report.grouped.problem.states),

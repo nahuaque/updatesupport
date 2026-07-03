@@ -20,6 +20,7 @@ from .results import (
     TransportResult,
     Witness,
 )
+from .targets import LinearTarget, TargetContract, coerce_linear_target
 
 
 class TooManyPartitions(RuntimeError):
@@ -27,7 +28,12 @@ class TooManyPartitions(RuntimeError):
 
 
 StateMap = Mapping[Hashable, Hashable] | Callable[[Hashable], Hashable]
-EstimandMap = Mapping[Hashable, float] | Sequence[float] | Callable[[Hashable], float]
+EstimandMap = (
+    Mapping[Hashable, float]
+    | Sequence[float]
+    | Callable[[Hashable], float]
+    | LinearTarget
+)
 
 
 @dataclass
@@ -38,7 +44,7 @@ class FiniteProblem:
 
     - ``states`` is the hidden state space ``D``.
     - ``public`` is the projection ``pi: D -> O``.
-    - ``estimand`` is a linear contrast ``h: D -> R`` so ``psi(q)=<h,q>``.
+    - ``estimand`` is a linear target ``h: D -> R`` so ``psi(q)=<h,q>``.
     - ``environments`` is the admissible class ``Q``.
     """
 
@@ -56,7 +62,8 @@ class FiniteProblem:
             raise ValueError("states must be unique")
 
         self.public_map = self._coerce_state_map(self.public, name="public")
-        self.estimand_map = self._coerce_estimand_map(self.estimand)
+        self.target_functional = coerce_linear_target(self.states, self.estimand)
+        self.estimand_map = dict(self.target_functional.values)
         self.public_values = tuple(
             dict.fromkeys(self.public_map[state] for state in self.states)
         )
@@ -79,17 +86,9 @@ class FiniteProblem:
             raise ValueError(f"{name} is missing states: {missing!r}")
         return {state: value[state] for state in self.states}
 
-    def _coerce_estimand_map(self, value: EstimandMap) -> dict[Hashable, float]:
-        if callable(value):
-            return {state: float(value(state)) for state in self.states}
-        if isinstance(value, Mapping):
-            missing = [state for state in self.states if state not in value]
-            if missing:
-                raise ValueError(f"estimand is missing states: {missing!r}")
-            return {state: float(value[state]) for state in self.states}
-        if len(value) != len(self.states):
-            raise ValueError("estimand sequence must have one value per state")
-        return {state: float(value[i]) for i, state in enumerate(self.states)}
+    @property
+    def target_contract(self) -> TargetContract:
+        return self.target_functional.contract
 
     def _coerce_vector(
         self, value: Mapping[Hashable, float] | Sequence[float]
@@ -149,9 +148,7 @@ class FiniteProblem:
         return all(abs(item) <= self.tol for item in vector)
 
     def _dot_estimand(self, vector: Sequence[float]) -> float:
-        return sum(
-            self.estimand_map[state] * vector[i] for i, state in enumerate(self.states)
-        )
+        return self.target_functional.dot(self.states, vector)
 
     def _pushforward_vector(
         self, vector: Sequence[float], partition: Partition
