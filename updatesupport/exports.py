@@ -303,6 +303,7 @@ def _frontier_tables(report: PublicRepresentationFrontier) -> ReportTables:
                 "requested_refinements": report.requested_refinements,
                 "ambiguity_limit": report.ambiguity_limit,
                 "bucket_budget": report.bucket_budget,
+                "scalarized_weights": report.scalarized_weights,
                 "candidate_count": len(report.candidates),
                 "frontier_count": len(report.frontier),
                 "dominated_count": len(report.dominated),
@@ -312,6 +313,9 @@ def _frontier_tables(report: PublicRepresentationFrontier) -> ReportTables:
                 "best_under_bucket_budget": None
                 if report.best_under_bucket_budget() is None
                 else report.best_under_bucket_budget().added_columns,
+                "best_scalarized": None
+                if report.best_scalarized is None
+                else report.best_scalarized.added_columns,
             },
         ),
         "search_trace": ()

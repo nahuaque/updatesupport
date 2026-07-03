@@ -98,10 +98,60 @@ The report also exposes two scalar conveniences:
   ambiguity is below `ambiguity_limit`.
 - `frontier.best_under_bucket_budget(...)`: the most stable representation
   with no more than the supplied number of public cells.
+- `frontier.best_scalarized`: the lowest weighted score when
+  `scalarized_weights` is supplied.
 
 `max_ambiguity` is the conservative summary across Q presets. `mean_ambiguity`
 is useful for ranking, but the Pareto test itself compares each stress-test
 scenario.
+
+## Scalarized Selection
+
+Use `scalarized_weights` when the review has an explicit utility tradeoff, such
+as "one extra public bucket is acceptable only if it buys at least this much
+ambiguity reduction." The scalarized score is a weighted sum of named
+candidate-level components:
+
+- `max_ambiguity`
+- `mean_ambiguity`
+- `public_cells`
+- `hidden_cells`
+- `added_columns`
+
+Lower scores are better:
+
+```python
+frontier = us.public_representation_frontier(
+    rows_or_frame,
+    base_public=["product", "region"],
+    hidden=[
+        "product",
+        "region",
+        "credit_score_band",
+        "ltv_band",
+        "broker_channel",
+    ],
+    target="expected_loss",
+    weight="ead",
+    candidate_refinements=[
+        "credit_score_band",
+        "ltv_band",
+        "broker_channel",
+    ],
+    q_presets=["saturated", us.q_bounded_shift(0.5)],
+    scalarized_weights={
+        "max_ambiguity": 1.0,
+        "public_cells": 0.0001,
+        "added_columns": 0.001,
+    },
+)
+
+print(frontier.best_scalarized)
+```
+
+This does not change Pareto dominance. The report still shows the full frontier
+and scenario evidence. The scalar score is an explicit decision aid for choosing
+one representation from the evaluated candidates.
 
 ## Explaining The Selected Representation
 
@@ -146,6 +196,12 @@ Use `search="beam"` when the candidate set is larger. Beam search keeps the
 best `beam_width` partial representations at each depth and expands only those.
 It is heuristic, but it preserves the same representation semantics: every
 evaluated candidate is still a named public-column refinement set.
+
+Use `search="scalarized"` when you want a greedy search guided by
+`scalarized_weights` instead of ambiguity alone. If no weights are supplied,
+the search defaults to `{"max_ambiguity": 1.0}`. This is useful when public-cell
+or added-column penalties should affect the search path, not only the final
+report ranking.
 
 The returned report includes `frontier.search_trace` with:
 

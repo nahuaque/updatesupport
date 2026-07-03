@@ -337,6 +337,98 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
         )
         self.assertIn(("driver",), [row.added_columns for row in report.frontier])
 
+    def test_public_representation_frontier_scores_scalarized_objective(self):
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0, "weight": 30},
+            {"segment": "A", "driver": "high", "target": 1.0, "weight": 30},
+            {"segment": "B", "driver": "flat", "target": 0.5, "weight": 40},
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            q_presets=["saturated"],
+            scalarized_weights={"max_ambiguity": 1.0, "public_cells": 1.0},
+        )
+        baseline = next(row for row in report.candidates if row.added_columns == ())
+        refined = next(
+            row for row in report.candidates if row.added_columns == ("driver",)
+        )
+        markdown = report.to_markdown()
+        tables = report.to_tables()
+
+        self.assertEqual(
+            report.scalarized_weights,
+            {"max_ambiguity": 1.0, "public_cells": 1.0},
+        )
+        self.assertIsNotNone(report.best_scalarized)
+        self.assertEqual(report.best_scalarized.added_columns, ())
+        self.assertAlmostEqual(baseline.scalarized_score, 2.6)
+        self.assertAlmostEqual(refined.scalarized_score, 3.0)
+        self.assertEqual(baseline.scalarized_components["public_cells"], 2.0)
+        self.assertIn("Scalarized objective weights", markdown)
+        self.assertIn("Best scalarized representation", markdown)
+        self.assertEqual(tables["summary"][0]["best_scalarized"], ())
+        self.assertEqual(
+            tables["summary"][0]["scalarized_weights"],
+            {"max_ambiguity": 1.0, "public_cells": 1.0},
+        )
+        self.assertIn("scalarized_score", tables["candidates"][0])
+
+    def test_public_representation_frontier_supports_scalarized_search(self):
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0, "weight": 30},
+            {"segment": "A", "driver": "high", "target": 1.0, "weight": 30},
+            {"segment": "B", "driver": "flat", "target": 0.5, "weight": 40},
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            q_presets=["saturated"],
+            search="scalarized",
+            max_added_columns=1,
+            scalarized_weights={"max_ambiguity": 1.0, "public_cells": 1.0},
+        )
+
+        self.assertFalse(report.search_trace.exact)
+        self.assertEqual(report.search_trace.search, "scalarized")
+        self.assertEqual(
+            report.search_trace.scalarized_weights,
+            {"max_ambiguity": 1.0, "public_cells": 1.0},
+        )
+        self.assertEqual(
+            report.search_trace.stopping_reason,
+            "no scalarized improvement",
+        )
+        self.assertEqual(report.best_scalarized.added_columns, ())
+        self.assertIn((), [row.added_columns for row in report.candidates])
+        self.assertIn(("driver",), [row.added_columns for row in report.candidates])
+
+    def test_public_representation_frontier_rejects_bad_scalarized_weights(self):
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0},
+            {"segment": "A", "driver": "high", "target": 1.0},
+        ]
+
+        with self.assertRaisesRegex(ValueError, "scalarized_weights keys"):
+            us.public_representation_frontier(
+                rows,
+                base_public=["segment"],
+                hidden=["segment", "driver"],
+                target="target",
+                candidate_refinements=["driver"],
+                scalarized_weights={"unknown": 1.0},
+            )
+
     def test_public_representation_frontier_tracks_max_evaluations(self):
         rows = [
             {"segment": "A", "driver": "low", "noise": "n", "target": 0.0},

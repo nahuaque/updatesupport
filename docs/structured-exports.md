@@ -113,6 +113,10 @@ Public-representation frontier reports expose:
 - `candidates`
 - `candidate_scenarios`
 
+When scalarized frontier scoring is requested, `summary` includes
+`scalarized_weights` and `best_scalarized`, while each candidate row includes
+`scalarized_score` and `scalarized_components`.
+
 Representation-stability certificates expose:
 
 - `summary`

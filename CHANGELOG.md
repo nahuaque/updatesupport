@@ -68,6 +68,9 @@ All notable changes to `updatesupport` are documented here.
 - Added `SupportFunctionIntervalResult` and `support_interval(...)` methods for
   direct support-function interval evaluation from a convex admissible set,
   support-function backend, or CVXPY admissible-set spec.
+- Added scalarized public-representation frontier scoring and
+  `search="scalarized"` so reviewers can rank or greedily search candidates by
+  explicit weighted ambiguity/complexity tradeoffs.
 
 ### Fixed
 

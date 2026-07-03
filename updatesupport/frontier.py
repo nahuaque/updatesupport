@@ -2,13 +2,37 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import combinations
 from math import comb
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from .data import TabularTarget, from_dataframe
 from .presets import q_description, q_name
+
+
+_SCALARIZED_COMPONENT_ORDER = (
+    "max_ambiguity",
+    "mean_ambiguity",
+    "public_cells",
+    "hidden_cells",
+    "added_columns",
+)
+
+_SCALARIZED_WEIGHT_ALIASES = {
+    "max_ambiguity": "max_ambiguity",
+    "ambiguity": "max_ambiguity",
+    "worst_ambiguity": "max_ambiguity",
+    "mean_ambiguity": "mean_ambiguity",
+    "average_ambiguity": "mean_ambiguity",
+    "avg_ambiguity": "mean_ambiguity",
+    "public_cells": "public_cells",
+    "public_cell_count": "public_cells",
+    "hidden_cells": "hidden_cells",
+    "hidden_cell_count": "hidden_cells",
+    "added_columns": "added_columns",
+    "added_column_count": "added_columns",
+}
 
 
 @dataclass(frozen=True)
@@ -61,6 +85,7 @@ class FrontierSearchTrace:
     skipped_by_budget: int = 0
     pruned_by_dominance: int = 0
     pruned_by_beam: int = 0
+    scalarized_weights: dict[str, float] | None = None
     stopping_reason: str = "completed"
 
     def as_dict(self) -> dict[str, Any]:
@@ -77,6 +102,7 @@ class FrontierSearchTrace:
             "skipped_by_budget": self.skipped_by_budget,
             "pruned_by_dominance": self.pruned_by_dominance,
             "pruned_by_beam": self.pruned_by_beam,
+            "scalarized_weights": self.scalarized_weights,
             "stopping_reason": self.stopping_reason,
         }
 
@@ -119,6 +145,8 @@ class PublicRepresentationCandidate:
     max_ambiguity: float
     mean_ambiguity: float
     passes_ambiguity_limit: bool | None = None
+    scalarized_score: float | None = None
+    scalarized_components: dict[str, float] = field(default_factory=dict)
 
     @property
     def added_column_count(self) -> int:
@@ -159,6 +187,8 @@ class PublicRepresentationCandidate:
             "mean_ambiguity": self.mean_ambiguity,
             "public_adequate": self.public_adequate,
             "passes_ambiguity_limit": self.passes_ambiguity_limit,
+            "scalarized_score": self.scalarized_score,
+            "scalarized_components": dict(self.scalarized_components),
             "scenarios": [row.as_dict() for row in self.scenarios],
         }
 
@@ -325,6 +355,7 @@ class PublicRepresentationFrontier:
     screened_refinements: tuple[FrontierScreenedRefinement, ...] = ()
     ambiguity_limit: float | None = None
     bucket_budget: int | None = None
+    scalarized_weights: dict[str, float] | None = None
     title: str = "Public Representation Frontier"
     row_count: int | None = None
     search_trace: FrontierSearchTrace | None = None
@@ -370,6 +401,24 @@ class PublicRepresentationFrontier:
             key=lambda row: (
                 row.max_ambiguity,
                 row.mean_ambiguity,
+                row.public_cells,
+                row.added_column_count,
+                row.added_columns,
+            ),
+        )
+
+    @property
+    def best_scalarized(self) -> PublicRepresentationCandidate | None:
+        """Lowest scalarized-score candidate, if scalarization was requested."""
+
+        scored = [row for row in self.candidates if row.scalarized_score is not None]
+        if not scored:
+            return None
+        return min(
+            scored,
+            key=lambda row: (
+                row.scalarized_score,
+                row.max_ambiguity,
                 row.public_cells,
                 row.added_column_count,
                 row.added_columns,
@@ -455,6 +504,7 @@ class PublicRepresentationFrontier:
             ],
             "ambiguity_limit": self.ambiguity_limit,
             "bucket_budget": self.bucket_budget,
+            "scalarized_weights": self.scalarized_weights,
             "search_trace": None
             if self.search_trace is None
             else self.search_trace.as_dict(),
@@ -464,6 +514,9 @@ class PublicRepresentationFrontier:
             "best_under_bucket_budget": None
             if self.best_under_bucket_budget() is None
             else self.best_under_bucket_budget().as_dict(),
+            "best_scalarized": None
+            if self.best_scalarized is None
+            else self.best_scalarized.as_dict(),
             "frontier": [row.as_dict() for row in self.frontier],
             "dominated": [row.as_dict() for row in self.dominated],
             "candidates": [row.as_dict() for row in self.candidates],
@@ -502,6 +555,12 @@ class PublicRepresentationFrontier:
             lines.append(f"- Ambiguity limit: {self.ambiguity_limit:.4f}")
         if self.bucket_budget is not None:
             lines.append(f"- Public-cell budget: {self.bucket_budget}")
+        if self.scalarized_weights is not None:
+            weights = ", ".join(
+                f"{name}={value:g}"
+                for name, value in sorted(self.scalarized_weights.items())
+            )
+            lines.append(f"- Scalarized objective weights: {weights}")
 
         minimal = self.minimal_stable
         if minimal is not None:
@@ -523,6 +582,13 @@ class PublicRepresentationFrontier:
                 f"`{best_budget.label}` with max ambiguity "
                 f"{best_budget.max_ambiguity:.4f}."
             )
+        best_scalarized = self.best_scalarized
+        if best_scalarized is not None:
+            lines.append(
+                "- Best scalarized representation: "
+                f"`{best_scalarized.label}` with score "
+                f"{best_scalarized.scalarized_score:.4f}."
+            )
 
         lines.extend(["", "## Interpretation", ""])
         lines.extend(_frontier_interpretation(self))
@@ -535,10 +601,20 @@ class PublicRepresentationFrontier:
             lines.extend([""])
             lines.extend(_candidate_explanation_markdown(explanation))
         lines.extend(["", "## Pareto Frontier", ""])
-        lines.extend(_candidate_table(self.frontier))
+        lines.extend(
+            _candidate_table(
+                self.frontier,
+                include_scalarized=self.scalarized_weights is not None,
+            )
+        )
         if self.dominated:
             lines.extend(["", "## Dominated Candidates", ""])
-            lines.extend(_candidate_table(self.dominated))
+            lines.extend(
+                _candidate_table(
+                    self.dominated,
+                    include_scalarized=self.scalarized_weights is not None,
+                )
+            )
         lines.extend(["", "## Scenario Details", ""])
         lines.extend(_scenario_table(self.frontier))
         return "\n".join(lines)
@@ -580,6 +656,7 @@ def public_representation_frontier(
     search: str = "exhaustive",
     beam_width: int = 12,
     max_evaluations: int | None = None,
+    scalarized_weights: Mapping[str, float] | None = None,
     must_include: Sequence[str] | None = None,
     must_exclude: Sequence[str] | None = None,
     enforce_bucket_budget: bool = False,
@@ -683,6 +760,10 @@ def public_representation_frontier(
         include_base=include_base,
         required_columns=required_columns,
     )
+    normalized_scalarized_weights = _normalize_scalarized_weights(
+        scalarized_weights,
+        search=search_mode,
+    )
     search_result = _search_candidates(
         repeatable_data,
         base_public=base_public_tuple,
@@ -698,6 +779,7 @@ def public_representation_frontier(
         search=search_mode,
         beam_width=beam_width,
         max_evaluations=max_evaluations,
+        scalarized_weights=normalized_scalarized_weights,
         enforce_bucket_budget=enforce_bucket_budget,
         candidate_space_size=candidate_space_size,
     )
@@ -717,6 +799,7 @@ def public_representation_frontier(
         screened_refinements=screened_refinements,
         ambiguity_limit=ambiguity_limit,
         bucket_budget=bucket_budget,
+        scalarized_weights=normalized_scalarized_weights,
         title=title,
         row_count=row_count,
         search_trace=search_result.trace,
@@ -740,6 +823,7 @@ class _EvaluationState:
     ambiguity_limit: float | None
     bucket_budget: int | None
     max_evaluations: int | None
+    scalarized_weights: dict[str, float] | None
     enforce_bucket_budget: bool
     candidates_by_subset: dict[
         tuple[str, ...],
@@ -782,6 +866,7 @@ class _EvaluationState:
                 scenario_specs=self.scenario_specs,
                 weight=self.weight,
                 ambiguity_limit=self.ambiguity_limit,
+                scalarized_weights=self.scalarized_weights,
             )
             self.candidates_by_subset[subset] = candidate
 
@@ -824,6 +909,7 @@ def _search_candidates(
     search: str,
     beam_width: int,
     max_evaluations: int | None,
+    scalarized_weights: dict[str, float] | None,
     enforce_bucket_budget: bool,
     candidate_space_size: int,
 ) -> _SearchResult:
@@ -837,6 +923,7 @@ def _search_candidates(
         ambiguity_limit=ambiguity_limit,
         bucket_budget=bucket_budget,
         max_evaluations=max_evaluations,
+        scalarized_weights=scalarized_weights,
         enforce_bucket_budget=enforce_bucket_budget,
         candidates_by_subset={},
         result_subsets=[],
@@ -857,6 +944,15 @@ def _search_candidates(
             required_columns=required_columns,
             max_added_columns=max_added_columns,
             include_base=include_base,
+            scalarized_weights=None,
+        )
+    elif search == "scalarized":
+        stopping_reason = _greedy_search(
+            state,
+            required_columns=required_columns,
+            max_added_columns=max_added_columns,
+            include_base=include_base,
+            scalarized_weights=scalarized_weights,
         )
     else:
         stopping_reason, pruned_by_dominance, pruned_by_beam = _beam_search(
@@ -865,6 +961,7 @@ def _search_candidates(
             max_added_columns=max_added_columns,
             include_base=include_base,
             beam_width=beam_width,
+            scalarized_weights=scalarized_weights,
         )
 
     exact = (
@@ -889,6 +986,7 @@ def _search_candidates(
             skipped_by_budget=state.skipped_by_budget,
             pruned_by_dominance=pruned_by_dominance,
             pruned_by_beam=pruned_by_beam,
+            scalarized_weights=scalarized_weights,
             stopping_reason=stopping_reason,
         ),
     )
@@ -918,6 +1016,7 @@ def _greedy_search(
     required_columns: tuple[str, ...],
     max_added_columns: int,
     include_base: bool,
+    scalarized_weights: dict[str, float] | None,
 ) -> str:
     current = state.evaluate(
         required_columns,
@@ -945,8 +1044,16 @@ def _greedy_search(
         if not proposals:
             return "no candidates"
 
-        best = min(proposals, key=_candidate_search_rank)
-        if not _improves(best, current):
+        best = min(
+            proposals,
+            key=lambda row: _candidate_search_rank(
+                row,
+                scalarized_weights=scalarized_weights,
+            ),
+        )
+        if not _improves(best, current, scalarized_weights=scalarized_weights):
+            if scalarized_weights is not None:
+                return "no scalarized improvement"
             return "no improvement"
         current = best
 
@@ -962,6 +1069,7 @@ def _beam_search(
     max_added_columns: int,
     include_base: bool,
     beam_width: int,
+    scalarized_weights: dict[str, float] | None,
 ) -> tuple[str, int, int]:
     start = state.evaluate(
         required_columns,
@@ -1004,7 +1112,13 @@ def _beam_search(
 
         nondominated = list(_nondominated(level_candidates))
         pruned_by_dominance += len(level_candidates) - len(nondominated)
-        ranked = sorted(nondominated, key=_candidate_search_rank)
+        ranked = sorted(
+            nondominated,
+            key=lambda row: _candidate_search_rank(
+                row,
+                scalarized_weights=scalarized_weights,
+            ),
+        )
         if len(ranked) > beam_width:
             pruned_by_beam += len(ranked) - beam_width
         beam = ranked[:beam_width]
@@ -1021,6 +1135,7 @@ def _evaluate_candidate(
     scenario_specs: tuple[_ScenarioSpec, ...],
     weight: str | None,
     ambiguity_limit: float | None,
+    scalarized_weights: dict[str, float] | None,
 ) -> PublicRepresentationCandidate:
     public_columns = base_public + added_columns
     scenarios = []
@@ -1062,6 +1177,18 @@ def _evaluate_candidate(
     ambiguities = [row.ambiguity for row in scenario_tuple]
     max_ambiguity = max(ambiguities)
     mean_ambiguity = sum(ambiguities) / len(ambiguities)
+    scalarized_components = _scalarized_components(
+        public_cells=max(public_cell_counts),
+        hidden_cells=max(hidden_cell_counts),
+        added_column_count=len(added_columns),
+        max_ambiguity=max_ambiguity,
+        mean_ambiguity=mean_ambiguity,
+    )
+    scalarized_score = (
+        None
+        if scalarized_weights is None
+        else _scalarized_score(scalarized_components, scalarized_weights)
+    )
     return PublicRepresentationCandidate(
         added_columns=added_columns,
         public_columns=public_columns,
@@ -1077,6 +1204,10 @@ def _evaluate_candidate(
         passes_ambiguity_limit=None
         if ambiguity_limit is None
         else max_ambiguity <= ambiguity_limit,
+        scalarized_score=scalarized_score,
+        scalarized_components=scalarized_components
+        if scalarized_weights is not None
+        else {},
     )
 
 
@@ -1130,7 +1261,18 @@ def _nondominated(
 
 def _candidate_search_rank(
     row: PublicRepresentationCandidate,
-) -> tuple[float, float, int, int, tuple[str, ...]]:
+    *,
+    scalarized_weights: dict[str, float] | None = None,
+) -> tuple[Any, ...]:
+    if scalarized_weights is not None and row.scalarized_score is not None:
+        return (
+            row.scalarized_score,
+            row.max_ambiguity,
+            row.mean_ambiguity,
+            row.public_cells,
+            row.added_column_count,
+            row.added_columns,
+        )
     return (
         row.max_ambiguity,
         row.mean_ambiguity,
@@ -1144,8 +1286,15 @@ def _improves(
     candidate: PublicRepresentationCandidate,
     current: PublicRepresentationCandidate,
     *,
+    scalarized_weights: dict[str, float] | None = None,
     tol: float = 1e-12,
 ) -> bool:
+    if (
+        scalarized_weights is not None
+        and candidate.scalarized_score is not None
+        and current.scalarized_score is not None
+    ):
+        return candidate.scalarized_score < current.scalarized_score - tol
     return (
         candidate.max_ambiguity < current.max_ambiguity - tol
         or candidate.mean_ambiguity < current.mean_ambiguity - tol
@@ -1515,9 +1664,65 @@ def _resolve_optional_int_arg(
 
 def _normalize_search(search: str) -> str:
     search_mode = search.strip().lower()
-    if search_mode not in {"exhaustive", "greedy", "beam"}:
-        raise ValueError("search must be one of: 'exhaustive', 'greedy', 'beam'")
+    if search_mode not in {"exhaustive", "greedy", "beam", "scalarized"}:
+        raise ValueError(
+            "search must be one of: 'exhaustive', 'greedy', 'beam', 'scalarized'"
+        )
     return search_mode
+
+
+def _normalize_scalarized_weights(
+    weights: Mapping[str, float] | None,
+    *,
+    search: str,
+) -> dict[str, float] | None:
+    if weights is None:
+        if search == "scalarized":
+            return {"max_ambiguity": 1.0}
+        return None
+
+    normalized = {name: 0.0 for name in _SCALARIZED_COMPONENT_ORDER}
+    for raw_name, raw_weight in weights.items():
+        name = str(raw_name).strip().lower().replace("-", "_")
+        if name not in _SCALARIZED_WEIGHT_ALIASES:
+            allowed = ", ".join(_SCALARIZED_COMPONENT_ORDER)
+            raise ValueError(f"scalarized_weights keys must be among: {allowed}")
+        weight = float(raw_weight)
+        if weight < 0:
+            raise ValueError("scalarized_weights must be non-negative")
+        normalized[_SCALARIZED_WEIGHT_ALIASES[name]] += weight
+
+    normalized = {name: weight for name, weight in normalized.items() if weight != 0.0}
+    if not normalized:
+        raise ValueError("scalarized_weights must contain at least one positive weight")
+    return normalized
+
+
+def _scalarized_components(
+    *,
+    public_cells: int,
+    hidden_cells: int,
+    added_column_count: int,
+    max_ambiguity: float,
+    mean_ambiguity: float,
+) -> dict[str, float]:
+    return {
+        "max_ambiguity": float(max_ambiguity),
+        "mean_ambiguity": float(mean_ambiguity),
+        "public_cells": float(public_cells),
+        "hidden_cells": float(hidden_cells),
+        "added_columns": float(added_column_count),
+    }
+
+
+def _scalarized_score(
+    components: Mapping[str, float],
+    weights: Mapping[str, float],
+) -> float:
+    return sum(
+        float(weights.get(name, 0.0)) * float(components[name])
+        for name in _SCALARIZED_COMPONENT_ORDER
+    )
 
 
 def _unique_tuple(values: Sequence[str]) -> tuple[str, ...]:
@@ -1568,13 +1773,38 @@ def _frontier_interpretation(report: PublicRepresentationFrontier) -> list[str]:
             "ambiguity among representations with no more than the supplied "
             "number of public cells."
         )
+    if report.scalarized_weights is not None:
+        lines.append(
+            "- The scalarized objective is an explicit weighted review score over "
+            "ambiguity and representation complexity. It is useful for choosing "
+            "one candidate from a frontier, but it does not replace the Pareto "
+            "frontier or the scenario-level ambiguity evidence."
+        )
     return lines
 
 
-def _candidate_table(candidates: Sequence[PublicRepresentationCandidate]) -> list[str]:
+def _candidate_table(
+    candidates: Sequence[PublicRepresentationCandidate],
+    *,
+    include_scalarized: bool = False,
+) -> list[str]:
+    headers = [
+        "representation",
+        "public cells",
+        "hidden cells",
+        "added columns",
+        "max ambiguity",
+        "mean ambiguity",
+    ]
+    alignments = ["---", "---", "---", "---:", "---:", "---:"]
+    if include_scalarized:
+        headers.append("scalarized score")
+        alignments.append("---:")
+    headers.extend(["public adequate", "stable"])
+    alignments.extend(["---", "---"])
     lines = [
-        "| representation | public cells | hidden cells | added columns | max ambiguity | mean ambiguity | public adequate | stable |",
-        "| --- | --- | --- | ---: | ---: | ---: | --- | --- |",
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(alignments) + " |",
     ]
     for row in candidates:
         stable = (
@@ -1582,22 +1812,25 @@ def _candidate_table(candidates: Sequence[PublicRepresentationCandidate]) -> lis
             if row.passes_ambiguity_limit is None
             else ("yes" if row.passes_ambiguity_limit else "no")
         )
-        lines.append(
-            "| "
-            + " | ".join(
-                [
-                    _escape_table(row.label),
-                    _format_range(row.min_public_cells, row.max_public_cells),
-                    _format_range(row.min_hidden_cells, row.max_hidden_cells),
-                    str(row.added_column_count),
-                    f"{row.max_ambiguity:.4f}",
-                    f"{row.mean_ambiguity:.4f}",
-                    "yes" if row.public_adequate else "no",
-                    stable,
-                ]
+        cells = [
+            _escape_table(row.label),
+            _format_range(row.min_public_cells, row.max_public_cells),
+            _format_range(row.min_hidden_cells, row.max_hidden_cells),
+            str(row.added_column_count),
+            f"{row.max_ambiguity:.4f}",
+            f"{row.mean_ambiguity:.4f}",
+        ]
+        if include_scalarized:
+            cells.append(
+                "" if row.scalarized_score is None else f"{row.scalarized_score:.4f}"
             )
-            + " |"
+        cells.extend(
+            [
+                "yes" if row.public_adequate else "no",
+                stable,
+            ]
         )
+        lines.append("| " + " | ".join(cells) + " |")
     return lines
 
 
