@@ -5,6 +5,49 @@ import unittest
 import updatesupport as us
 
 
+def _ratio_grouped_problem() -> us.GroupedProblem:
+    states = (("A", "low"), ("A", "high"), ("B", "anchor"))
+    public_map = {state: (state[0],) for state in states}
+    target = us.RatioTarget(
+        numerator={
+            ("A", "low"): 1.0,
+            ("A", "high"): 4.0,
+            ("B", "anchor"): 10.0,
+        },
+        denominator={
+            ("A", "low"): 1.0,
+            ("A", "high"): 2.0,
+            ("B", "anchor"): 5.0,
+        },
+        name="loss_ratio",
+        description="loss divided by exposure",
+    )
+    public_law = {("A",): 0.5, ("B",): 0.5}
+    cell_weights = {
+        ("A", "low"): 0.25,
+        ("A", "high"): 0.25,
+        ("B", "anchor"): 0.5,
+    }
+    problem = us.FiniteProblem(
+        states=states,
+        public=public_map,
+        estimand=target,
+        environments=us.PublicFiberSaturated.fixed(public_law),
+    )
+    return us.GroupedProblem(
+        problem=problem,
+        public_law=public_law,
+        public_columns=("segment",),
+        hidden_columns=("segment", "risk"),
+        target_column="loss_ratio",
+        target_functional=target,
+        total_weight=1.0,
+        cell_weights=cell_weights,
+        q_name="saturated",
+        q_description="fixed public-law saturated ratio stress test",
+    )
+
+
 class PublicDescentReportTests(unittest.TestCase):
     def test_public_descent_report_summarizes_observed_law_ambiguity(self):
         rows = [
@@ -116,6 +159,29 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertIn("before=0.6000, after=0.0000", markdown)
         self.assertIn("reduction_pct=100.0%", markdown)
         self.assertIn("## Analyst Notes", markdown)
+
+    def test_ratio_report_gates_nonadditive_decomposition(self):
+        report = us.public_descent_report(_ratio_grouped_problem(), top=2)
+        markdown = report.to_markdown()
+        payload = report.as_dict()
+
+        self.assertFalse(report.fiber_decomposition_available)
+        self.assertEqual(report.fiber_diagnostic_kind, "point_range")
+        self.assertIsNone(report.top_fiber_contribution)
+        self.assertIsNone(report.top_fiber_contribution_share)
+        self.assertIsNone(report.fibers[0].contribution)
+        self.assertFalse(report.fibers[0].contribution_available)
+        self.assertEqual(report.fibers[0].diagnostic_kind, "point_range")
+        self.assertAlmostEqual(report.observed_value, 25 / 13)
+        self.assertIn("Public-fiber contribution decomposition: not additive", markdown)
+        self.assertIn("## Public Fiber Point Ranges", markdown)
+        self.assertIn("point_range=", markdown)
+        self.assertNotIn("contribution=0.0000", markdown)
+        self.assertFalse(payload["fiber_decomposition_available"])
+        self.assertEqual(payload["fiber_diagnostic_kind"], "point_range")
+        self.assertIsNone(payload["top_fiber_contribution"])
+        self.assertIsNone(payload["top_fiber_contribution_share"])
+        self.assertIsNone(payload["top_fibers"][0]["contribution"])
 
     def test_causal_reporting_stability_suite_packages_standard_outputs(self):
         rows = [

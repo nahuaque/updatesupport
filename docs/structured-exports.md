@@ -72,6 +72,11 @@ The `summary` table and JSON payload include `target_contract` metadata so
 review systems can tell whether the report used a linear target, a supported
 ratio target, or a future/unsupported target contract.
 
+Public-descent exports also include `fiber_decomposition_available` and
+`fiber_diagnostic_kind`. When decomposition is unavailable, for example for a
+variable-denominator ratio target, fiber rows report point ranges and set
+`contribution` to `null` instead of emitting a misleading zero contribution.
+
 Sensitivity reports expose:
 
 - `summary`

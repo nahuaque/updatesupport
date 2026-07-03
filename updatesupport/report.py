@@ -24,17 +24,28 @@ _PARAMETERIZED_SENSITIVITY_PRESETS = frozenset(
 
 @dataclass(frozen=True)
 class PublicFiberDiagnostic:
-    """Contribution of one public fiber to transport ambiguity."""
+    """Public-fiber contribution or point-range diagnostic."""
 
     public_value: tuple[Hashable, ...]
     public_mass: float
     hidden_cells: int
     fiber_range: float
-    contribution: float
+    contribution: float | None
     min_state: tuple[Hashable, ...]
     min_value: float
     max_state: tuple[Hashable, ...]
     max_value: float
+    decomposition_available: bool = True
+
+    @property
+    def contribution_available(self) -> bool:
+        return self.contribution is not None
+
+    @property
+    def diagnostic_kind(self) -> str:
+        if self.decomposition_available:
+            return "additive_contribution"
+        return "point_range"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -43,6 +54,9 @@ class PublicFiberDiagnostic:
             "hidden_cells": self.hidden_cells,
             "range": self.fiber_range,
             "contribution": self.contribution,
+            "contribution_available": self.contribution_available,
+            "decomposition_available": self.decomposition_available,
+            "diagnostic_kind": self.diagnostic_kind,
             "min_state": self.min_state,
             "min_value": self.min_value,
             "max_state": self.max_state,
@@ -562,15 +576,31 @@ class PublicDescentReport:
     diagnostics: tuple[DataDiagnostic, ...] = ()
 
     @property
-    def top_fiber_contribution(self) -> float:
-        return sum(row.contribution for row in self.fibers)
+    def fiber_decomposition_available(self) -> bool:
+        return self.grouped.problem.target_contract.supports_fiber_decomposition
 
     @property
-    def top_fiber_contribution_share(self) -> float:
-        if not self.grouped.problem.target_contract.supports_fiber_decomposition:
-            return 0.0
+    def fiber_diagnostic_kind(self) -> str:
+        if self.fiber_decomposition_available:
+            return "additive_contribution"
+        return "point_range"
+
+    @property
+    def top_fiber_contribution(self) -> float | None:
+        if not self.fiber_decomposition_available:
+            return None
+        return sum(
+            row.contribution for row in self.fibers if row.contribution is not None
+        )
+
+    @property
+    def top_fiber_contribution_share(self) -> float | None:
+        if not self.fiber_decomposition_available:
+            return None
         if self.interval.diameter <= self.grouped.problem.tol:
             return 0.0
+        if self.top_fiber_contribution is None:
+            return None
         return self.top_fiber_contribution / self.interval.diameter
 
     @property
@@ -628,7 +658,7 @@ class PublicDescentReport:
                 f"- Observed-law transport ambiguity: {self.interval.diameter:.4f}",
             ]
         )
-        if problem.target_contract.supports_fiber_decomposition:
+        if self.fiber_decomposition_available:
             lines.append(
                 f"- Top {len(self.fibers)} fiber contribution share: "
                 f"{_percent(self.top_fiber_contribution_share)}"
@@ -670,7 +700,7 @@ class PublicDescentReport:
                 "public cell shares are held fixed.",
             ]
         )
-        if problem.target_contract.supports_fiber_decomposition:
+        if self.fiber_decomposition_available:
             lines.extend(
                 [
                     "",
@@ -724,14 +754,25 @@ class PublicDescentReport:
 
         lines.extend(_dual_diagnostics_markdown(self.interval))
 
-        lines.extend(["", "## Worst Public Fibers"])
+        if self.fiber_decomposition_available:
+            lines.extend(["", "## Worst Public Fibers"])
+        else:
+            lines.extend(["", "## Public Fiber Point Ranges"])
 
         for row in self.fibers:
+            lines.append(f"- {_format_key(grouped.public_columns, row.public_value)}")
+            if row.contribution is None:
+                lines.append(
+                    f"  mass={row.public_mass:.4f}, hidden_cells={row.hidden_cells}, "
+                    f"point_range={row.fiber_range:.4f}"
+                )
+            else:
+                lines.append(
+                    f"  mass={row.public_mass:.4f}, hidden_cells={row.hidden_cells}, "
+                    f"range={row.fiber_range:.4f}, contribution={row.contribution:.4f}"
+                )
             lines.extend(
                 [
-                    f"- {_format_key(grouped.public_columns, row.public_value)}",
-                    f"  mass={row.public_mass:.4f}, hidden_cells={row.hidden_cells}, "
-                    f"range={row.fiber_range:.4f}, contribution={row.contribution:.4f}",
                     f"  min: {row.min_value:.4f} at "
                     f"{_format_key(grouped.hidden_columns, row.min_state)}",
                     f"  max: {row.max_value:.4f} at "
@@ -1132,13 +1173,13 @@ def causal_reporting_stability(
 def public_fiber_diagnostics(
     grouped: GroupedProblem, *, top: int | None = 10
 ) -> tuple[PublicFiberDiagnostic, ...]:
-    """Return public fibers ranked by ambiguity contribution."""
+    """Return public-fiber contribution or point-range diagnostics."""
 
     if top is not None and top < 0:
         raise ValueError("top must be non-negative")
     problem = grouped.problem
-    interval = problem.global_transport_modulus()
     additive = problem.target_contract.supports_fiber_decomposition
+    interval = problem.global_transport_modulus() if additive else None
     rows = []
     for public_value in problem.public_values:
         states = problem.public_fibers[public_value]
@@ -1147,8 +1188,13 @@ def public_fiber_diagnostics(
         max_state = ordered_states[-1]
         fiber_range = problem.estimand_map[max_state] - problem.estimand_map[min_state]
         public_mass = grouped.public_law[public_value]
-        contribution = 0.0 if not additive else public_mass * fiber_range
-        if additive and interval.q_lower is not None and interval.q_upper is not None:
+        contribution = public_mass * fiber_range if additive else None
+        if (
+            additive
+            and interval is not None
+            and interval.q_lower is not None
+            and interval.q_upper is not None
+        ):
             lower_value = sum(
                 interval.q_lower[state] * problem.estimand_map[state]
                 for state in states
@@ -1169,9 +1215,19 @@ def public_fiber_diagnostics(
                 min_value=problem.estimand_map[min_state],
                 max_state=max_state,
                 max_value=problem.estimand_map[max_state],
+                decomposition_available=additive,
             )
         )
-    rows.sort(key=lambda row: (row.contribution, row.fiber_range), reverse=True)
+    if additive:
+        rows.sort(
+            key=lambda row: (
+                0.0 if row.contribution is None else row.contribution,
+                row.fiber_range,
+            ),
+            reverse=True,
+        )
+    else:
+        rows.sort(key=lambda row: (row.fiber_range, row.public_mass), reverse=True)
     return tuple(rows if top is None else rows[:top])
 
 
@@ -2118,11 +2174,7 @@ def _scenario_label(row: SensitivityRow | None) -> str:
 
 
 def _observed_value(grouped: GroupedProblem) -> float:
-    problem = grouped.problem
-    return sum(
-        grouped.cell_weights[state] * problem.estimand_map[state]
-        for state in problem.states
-    )
+    return grouped.problem.psi(grouped.cell_weights)
 
 
 def _build_statistical_uncertainty(
@@ -2202,11 +2254,19 @@ def _suite_hidden_ambiguity_markdown(report: PublicDescentReport) -> list[str]:
     ]
     if report.fibers:
         top = report.fibers[0]
-        lines.append(
-            "- Largest listed public-fiber contributor: "
-            f"`{_format_key(report.grouped.public_columns, top.public_value)}` "
-            f"with contribution {top.contribution:.4f}."
-        )
+        if report.fiber_decomposition_available and top.contribution is not None:
+            lines.append(
+                "- Largest listed public-fiber contributor: "
+                f"`{_format_key(report.grouped.public_columns, top.public_value)}` "
+                f"with contribution {top.contribution:.4f}."
+            )
+        else:
+            lines.append(
+                "- Largest listed public-fiber point range: "
+                f"`{_format_key(report.grouped.public_columns, top.public_value)}` "
+                f"with range {top.fiber_range:.4f}; contributions are not "
+                "additively decomposable for this target."
+            )
     return lines
 
 
@@ -2423,6 +2483,10 @@ def _public_descent_summary_dict(report: PublicDescentReport) -> dict[str, Any]:
         "q_name": report.grouped.q_name,
         "q_description": report.grouped.q_description,
         "target_contract": report.grouped.problem.target_contract.as_dict(),
+        "fiber_decomposition_available": report.fiber_decomposition_available,
+        "fiber_diagnostic_kind": report.fiber_diagnostic_kind,
+        "top_fiber_contribution": report.top_fiber_contribution,
+        "top_fiber_contribution_share": report.top_fiber_contribution_share,
         "public_columns": report.grouped.public_columns,
         "hidden_columns": report.grouped.hidden_columns,
         "hidden_cells": len(report.grouped.problem.states),

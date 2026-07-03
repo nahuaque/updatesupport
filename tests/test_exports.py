@@ -14,6 +14,47 @@ def _rows() -> list[dict[str, object]]:
     ]
 
 
+def _ratio_grouped_problem() -> us.GroupedProblem:
+    states = (("A", "low"), ("A", "high"), ("B", "anchor"))
+    public_map = {state: (state[0],) for state in states}
+    target = us.RatioTarget(
+        numerator={
+            ("A", "low"): 1.0,
+            ("A", "high"): 4.0,
+            ("B", "anchor"): 10.0,
+        },
+        denominator={
+            ("A", "low"): 1.0,
+            ("A", "high"): 2.0,
+            ("B", "anchor"): 5.0,
+        },
+        name="loss_ratio",
+    )
+    public_law = {("A",): 0.5, ("B",): 0.5}
+    problem = us.FiniteProblem(
+        states=states,
+        public=public_map,
+        estimand=target,
+        environments=us.PublicFiberSaturated.fixed(public_law),
+    )
+    return us.GroupedProblem(
+        problem=problem,
+        public_law=public_law,
+        public_columns=("segment",),
+        hidden_columns=("segment", "risk"),
+        target_column="loss_ratio",
+        target_functional=target,
+        total_weight=1.0,
+        cell_weights={
+            ("A", "low"): 0.25,
+            ("A", "high"): 0.25,
+            ("B", "anchor"): 0.5,
+        },
+        q_name="saturated",
+        q_description="fixed public-law saturated ratio stress test",
+    )
+
+
 class StructuredExportTests(unittest.TestCase):
     def test_public_descent_report_exports_json_and_tables(self):
         report = us.public_descent_report(
@@ -57,6 +98,24 @@ class StructuredExportTests(unittest.TestCase):
             json.loads(us.report_to_json(report))["q_name"],
             "bounded_shift(radius=0.5)",
         )
+
+    def test_public_descent_exports_gate_nonadditive_decomposition(self):
+        report = us.public_descent_report(_ratio_grouped_problem(), top=2)
+
+        payload = json.loads(report.to_json())
+        tables = report.to_tables()
+
+        self.assertEqual(payload["target_contract"]["kind"], "ratio")
+        self.assertFalse(payload["fiber_decomposition_available"])
+        self.assertEqual(payload["fiber_diagnostic_kind"], "point_range")
+        self.assertIsNone(payload["top_fiber_contribution"])
+        self.assertIsNone(tables["summary"][0]["top_fiber_contribution"])
+        self.assertIsNone(tables["summary"][0]["top_fiber_contribution_share"])
+        self.assertFalse(tables["summary"][0]["fiber_decomposition_available"])
+        self.assertEqual(tables["summary"][0]["fiber_diagnostic_kind"], "point_range")
+        self.assertIsNone(tables["worst_fibers"][0]["contribution"])
+        self.assertFalse(tables["worst_fibers"][0]["contribution_available"])
+        self.assertEqual(tables["worst_fibers"][0]["diagnostic_kind"], "point_range")
 
     def test_audit_run_exports_spec_and_prefixed_report_tables(self):
         run = us.AuditSpec(

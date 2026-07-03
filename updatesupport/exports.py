@@ -139,6 +139,8 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
                 "ambiguity": report.interval.diameter,
                 "public_adequate": report.public_adequate,
                 "interval_contains_observed": report.interval_contains_observed,
+                "fiber_decomposition_available": (report.fiber_decomposition_available),
+                "fiber_diagnostic_kind": report.fiber_diagnostic_kind,
                 "top_fiber_contribution": report.top_fiber_contribution,
                 "top_fiber_contribution_share": report.top_fiber_contribution_share,
                 "diagnostic_count": len(report.diagnostics),
