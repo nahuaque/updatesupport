@@ -14,6 +14,7 @@ module pages below document the core implementation areas directly.
    targets
    frontier
    breakdown
+   comparison
    adapters
    claims
    model_assisted

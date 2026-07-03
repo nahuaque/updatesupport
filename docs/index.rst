@@ -38,6 +38,7 @@ This documentation has three layers:
    structured-exports
    model-assisted-joint-analysis
    breakdown-point-analysis
+   robust-comparison-ranking
 
 .. toctree::
    :maxdepth: 1

@@ -28,6 +28,13 @@ from .claim import (
     threshold_decision,
     verify_claim,
 )
+from .comparison import (
+    ComparisonItemResult,
+    PairwiseComparisonResult,
+    RobustComparisonReport,
+    robust_comparison_report,
+    robust_ranking_report,
+)
 from .data import DataDiagnostic, DataDiagnostics, GroupedProblem, from_dataframe
 from .dowhy import (
     DoWhyRepresentationAudit,
@@ -188,6 +195,7 @@ __all__ = [
     "CausalReportingStabilitySuite",
     "certify_public_representation",
     "ClaimVerificationReport",
+    "ComparisonItemResult",
     "ConstraintDual",
     "CvxpyEnvironments",
     "CvxpyConstraintMetadata",
@@ -243,6 +251,7 @@ __all__ = [
     "NonparametricJointDistribution",
     "Partition",
     "PartitionError",
+    "PairwiseComparisonResult",
     "ParameterizedCvxpyEnvironments",
     "PluginMetadata",
     "PluginRegistry",
@@ -278,6 +287,9 @@ __all__ = [
     "report_dataframes",
     "report_tables",
     "report_to_json",
+    "RobustComparisonReport",
+    "robust_comparison_report",
+    "robust_ranking_report",
     "tables_to_dataframes",
     "assert_valid_plugin",
     "discover_plugins",

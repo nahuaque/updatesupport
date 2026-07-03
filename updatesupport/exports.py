@@ -9,6 +9,7 @@ from typing import Any, Mapping
 from .certificate import RepresentationStabilityCertificate
 from .breakdown import BreakdownPointReport
 from .claim import ClaimVerificationReport
+from .comparison import RobustComparisonReport
 from .frontier import (
     FrontierCandidateExplanation,
     PublicRepresentationCandidate,
@@ -62,6 +63,9 @@ def report_tables(report: Any) -> ReportTables:
         return _frontier_tables(report)
 
     if isinstance(report, BreakdownPointReport):
+        return report.to_tables()
+
+    if isinstance(report, RobustComparisonReport):
         return report.to_tables()
 
     if isinstance(report, FrontierCandidateExplanation):
