@@ -108,6 +108,62 @@ class ReportingClaimTests(unittest.TestCase):
         self.assertIn("reasons", tables)
         self.assertIn("primary_refinements", tables)
 
+    def test_verify_claim_supports_model_assisted_joint_draws(self):
+        claim = us.ReportingClaim(
+            estimate_name="Model-assisted claim",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            ambiguity_limit=0.05,
+            min_cell_weight=0,
+        )
+        joint = us.fit_joint_distribution(
+            _rows(),
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            effective_sample_size=10,
+        )
+
+        report = us.verify_claim(
+            _rows(),
+            claim,
+            joint_model=joint,
+            joint_draws=5,
+            joint_seed=123,
+        )
+        markdown = report.to_markdown()
+        tables = report.to_tables()
+
+        self.assertIsInstance(report.model_assisted, us.ModelAssistedStabilitySummary)
+        self.assertEqual(report.model_assisted.draw_count, 5)
+        self.assertEqual(report.model_assisted.successful_draws, 5)
+        self.assertEqual(report.model_assisted.failed_draws, 5)
+        self.assertEqual(report.model_assisted.failure_rate, 1.0)
+        self.assertIn("Model-Assisted Joint Analysis", markdown)
+        self.assertIn("model_assisted_summary", tables)
+        self.assertIn("model_assisted_draws", tables)
+        self.assertEqual(len(tables["model_assisted_draws"]), 5)
+
+    def test_verify_claim_can_fit_model_assisted_joint_model_implicitly(self):
+        claim = us.ReportingClaim(
+            estimate_name="Implicit joint claim",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            ambiguity_limit=0.05,
+            min_cell_weight=0,
+        )
+
+        report = claim.verify(_rows(), joint_draws=3, joint_seed=99)
+
+        self.assertIsNotNone(report.model_assisted)
+        self.assertEqual(report.model_assisted.draw_count, 3)
+        self.assertEqual(report.model_assisted.joint_model.cell_count, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

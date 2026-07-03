@@ -87,3 +87,31 @@ verdict.to_dataframes()
 The tables include a top-level `summary`, the serialized `claim`, decision
 `reasons`, `limitations`, prefixed primary public-descent evidence, and prefixed
 certificate or witness evidence when those components are present.
+
+## Model-Assisted Joint Draws
+
+For plausibility analysis, fit a nonparametric joint distribution and pass it to
+the verifier:
+
+```python
+joint = us.fit_joint_distribution(
+    rows_or_frame,
+    public=claim.public,
+    hidden=claim.hidden,
+    target=claim.target,
+    weight=claim.weight,
+)
+
+verdict = us.verify_claim(
+    rows_or_frame,
+    claim,
+    joint_model=joint,
+    joint_draws=500,
+    joint_seed=123,
+)
+```
+
+The report adds a model-assisted section summarizing ambiguity ranges, public
+adequacy rates, and claim failure rates across fitted-joint draws. This is a
+model-assisted plausibility check, not a replacement for the adversarial Q
+interval. See [Model-assisted joint analysis](model-assisted-joint-analysis.md).

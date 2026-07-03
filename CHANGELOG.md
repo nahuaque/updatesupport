@@ -87,6 +87,9 @@ All notable changes to `updatesupport` are documented here.
   `ClaimVerificationReport`, and `verify_claim(...)`, composing primary
   public-descent evidence, statistical uncertainty, counterexample witnesses,
   repair/certification search, Markdown output, and structured exports.
+- Added model-assisted joint analysis with `fit_joint_distribution(...)`,
+  `NonparametricJointDistribution`, Bayesian-bootstrap joint-cell draws, and
+  `verify_claim(..., joint_model=..., joint_draws=...)` summaries.
 
 ### Fixed
 

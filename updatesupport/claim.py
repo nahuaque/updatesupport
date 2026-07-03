@@ -11,6 +11,7 @@ from .certificate import (
 )
 from .data import TabularTarget
 from .frontier import PublicRepresentationCandidate
+from .joint import NonparametricJointDistribution, fit_joint_distribution
 from .presets import QPreset
 from .report import (
     PublicDescentReport,
@@ -19,6 +20,107 @@ from .report import (
     public_descent_report,
 )
 from .spec import QSpec
+
+
+@dataclass(frozen=True)
+class ModelAssistedDrawResult:
+    """One model-assisted joint-composition draw evaluated for stability."""
+
+    draw_index: int
+    observed_value: float | None
+    lower: float | None
+    upper: float | None
+    ambiguity: float | None
+    public_adequate: bool | None
+    status: str
+    error: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "draw_index": self.draw_index,
+            "observed_value": self.observed_value,
+            "lower": self.lower,
+            "upper": self.upper,
+            "ambiguity": self.ambiguity,
+            "public_adequate": self.public_adequate,
+            "status": self.status,
+            "error": self.error,
+        }
+
+
+@dataclass(frozen=True)
+class ModelAssistedStabilitySummary:
+    """Stability summary over fitted-joint distribution draws."""
+
+    joint_model: NonparametricJointDistribution
+    rows: tuple[ModelAssistedDrawResult, ...]
+    ambiguity_limit: float | None = None
+    seed: int | None = None
+
+    @property
+    def draw_count(self) -> int:
+        return len(self.rows)
+
+    @property
+    def successful_draws(self) -> int:
+        return sum(row.error is None for row in self.rows)
+
+    @property
+    def failed_draws(self) -> int:
+        return sum(row.status == "fail" for row in self.rows)
+
+    @property
+    def error_count(self) -> int:
+        return sum(row.error is not None for row in self.rows)
+
+    @property
+    def failure_rate(self) -> float | None:
+        if self.successful_draws == 0:
+            return None
+        return self.failed_draws / self.successful_draws
+
+    @property
+    def public_adequate_rate(self) -> float | None:
+        evaluated = [row for row in self.rows if row.public_adequate is not None]
+        if not evaluated:
+            return None
+        return sum(bool(row.public_adequate) for row in evaluated) / len(evaluated)
+
+    @property
+    def ambiguities(self) -> tuple[float, ...]:
+        return tuple(row.ambiguity for row in self.rows if row.ambiguity is not None)
+
+    @property
+    def ambiguity_min(self) -> float | None:
+        values = self.ambiguities
+        return None if not values else min(values)
+
+    @property
+    def ambiguity_max(self) -> float | None:
+        values = self.ambiguities
+        return None if not values else max(values)
+
+    @property
+    def ambiguity_mean(self) -> float | None:
+        values = self.ambiguities
+        return None if not values else sum(values) / len(values)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "draw_count": self.draw_count,
+            "successful_draws": self.successful_draws,
+            "failed_draws": self.failed_draws,
+            "error_count": self.error_count,
+            "failure_rate": self.failure_rate,
+            "public_adequate_rate": self.public_adequate_rate,
+            "ambiguity_min": self.ambiguity_min,
+            "ambiguity_max": self.ambiguity_max,
+            "ambiguity_mean": self.ambiguity_mean,
+            "ambiguity_limit": self.ambiguity_limit,
+            "seed": self.seed,
+            "joint_model": self.joint_model.as_dict(),
+            "rows": [row.as_dict() for row in self.rows],
+        }
 
 
 @dataclass(frozen=True)
@@ -189,10 +291,10 @@ class ReportingClaim:
 
         return self.as_dict()
 
-    def verify(self, data: Any) -> "ClaimVerificationReport":
+    def verify(self, data: Any, **kwargs: Any) -> "ClaimVerificationReport":
         """Verify this claim against tabular data."""
 
-        return verify_claim(data, self)
+        return verify_claim(data, self, **kwargs)
 
 
 @dataclass(frozen=True)
@@ -203,6 +305,7 @@ class ClaimVerificationReport:
     primary: PublicDescentReport
     certificate: RepresentationStabilityCertificate | None = None
     witness: WitnessReport | None = None
+    model_assisted: ModelAssistedStabilitySummary | None = None
     status: str = "inconclusive"
     reasons: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
@@ -245,6 +348,9 @@ class ClaimVerificationReport:
             if self.certificate is None
             else self.certificate.as_dict(),
             "witness": None if self.witness is None else self.witness.as_dict(),
+            "model_assisted": None
+            if self.model_assisted is None
+            else self.model_assisted.as_dict(),
             "repair_candidate": None
             if self.repair_candidate is None
             else self.repair_candidate.as_dict(),
@@ -291,6 +397,14 @@ class ClaimVerificationReport:
         if self.certificate is not None:
             lines.append(
                 f"- Representation certificate: {self.certificate.status.upper()}"
+            )
+        if self.model_assisted is not None:
+            failure_rate = _format_optional_rate(self.model_assisted.failure_rate)
+            lines.append(
+                "- Model-assisted joint draws: "
+                f"{self.model_assisted.successful_draws}/"
+                f"{self.model_assisted.draw_count} successful"
+                f"; failure rate {failure_rate}"
             )
 
         lines.extend(["", "## Decision Basis", ""])
@@ -371,6 +485,10 @@ class ClaimVerificationReport:
             lines.extend(["", "### Largest Hidden-Cell Shifts", ""])
             lines.extend(_witness_shift_table(self.witness))
 
+        if self.model_assisted is not None:
+            lines.extend(["", "## Model-Assisted Joint Analysis", ""])
+            lines.extend(_model_assisted_markdown(self.model_assisted))
+
         lines.extend(["", "## Refinement Recommendations", ""])
         lines.extend(_refinement_markdown(self))
 
@@ -383,6 +501,10 @@ class ClaimVerificationReport:
 def verify_claim(
     data: Any,
     claim: ReportingClaim | Mapping[str, Any],
+    *,
+    joint_model: NonparametricJointDistribution | None = None,
+    joint_draws: int = 0,
+    joint_seed: int | None = None,
     **overrides: Any,
 ) -> ClaimVerificationReport:
     """Verify a declared reporting claim against tabular data."""
@@ -391,6 +513,8 @@ def verify_claim(
         claim = ReportingClaim.from_dict(claim)
     if overrides:
         claim = replace(claim, **overrides)
+    if joint_draws < 0:
+        raise ValueError("joint_draws must be non-negative")
 
     primary = public_descent_report(
         data,
@@ -449,12 +573,22 @@ def verify_claim(
             title=f"{claim.estimate_name} Counterexample Witness",
             top=claim.witness_top,
         )
+    model_assisted = None
+    if joint_draws:
+        model_assisted = _model_assisted_summary(
+            data,
+            claim=claim,
+            joint_model=joint_model,
+            draw_count=joint_draws,
+            seed=joint_seed,
+        )
 
     return ClaimVerificationReport(
         claim=claim,
         primary=primary,
         certificate=certificate,
         witness=witness,
+        model_assisted=model_assisted,
         status=status,
         reasons=reasons,
         limitations=_claim_limitations(claim, primary, certificate),
@@ -555,7 +689,82 @@ def _claim_limitations(
             "The repair/certificate search was not exact over the full declared "
             "candidate space."
         )
+    limitations.append(
+        "Model-assisted joint analysis, when supplied, is conditional on the "
+        "fitted joint-cell model and should be read separately from adversarial "
+        "Q-based hidden-composition ambiguity."
+    )
     return tuple(limitations)
+
+
+def _model_assisted_summary(
+    data: Any,
+    *,
+    claim: ReportingClaim,
+    joint_model: NonparametricJointDistribution | None,
+    draw_count: int,
+    seed: int | None,
+) -> ModelAssistedStabilitySummary:
+    model = joint_model
+    if model is None:
+        model = fit_joint_distribution(
+            data,
+            public=claim.public,
+            hidden=claim.hidden,
+            target=claim.target,
+            weight=claim.weight,
+            min_cell_weight=claim.min_cell_weight,
+        )
+    rows = []
+    for draw in model.iter_draws(draw_count, seed=seed):
+        try:
+            report = public_descent_report(
+                draw.records(),
+                public=claim.public,
+                hidden=claim.hidden,
+                target=draw.target_column,
+                weight=draw.weight_column,
+                min_cell_weight=claim.min_cell_weight,
+                q=claim.primary_q,
+                top=0,
+                title=f"{claim.estimate_name} Model-Assisted Draw {draw.draw_index}",
+            )
+        except Exception as exc:  # pragma: no cover - exercised by user data shapes
+            rows.append(
+                ModelAssistedDrawResult(
+                    draw_index=draw.draw_index,
+                    observed_value=None,
+                    lower=None,
+                    upper=None,
+                    ambiguity=None,
+                    public_adequate=None,
+                    status="error",
+                    error=str(exc),
+                )
+            )
+            continue
+        status = "inconclusive"
+        if claim.ambiguity_limit is not None:
+            status = (
+                "pass" if report.interval.diameter <= claim.ambiguity_limit else "fail"
+            )
+        rows.append(
+            ModelAssistedDrawResult(
+                draw_index=draw.draw_index,
+                observed_value=report.observed_value,
+                lower=report.interval.lower,
+                upper=report.interval.upper,
+                ambiguity=report.interval.diameter,
+                public_adequate=report.public_adequate,
+                status=status,
+            )
+        )
+    return ModelAssistedStabilitySummary(
+        joint_model=model,
+        rows=tuple(rows),
+        ambiguity_limit=claim.ambiguity_limit,
+        seed=seed,
+    )
 
 
 def _normalize_statistical_uncertainty(
@@ -649,6 +858,59 @@ def _refinement_markdown(report: ClaimVerificationReport) -> list[str]:
     ]
 
 
+def _model_assisted_markdown(
+    summary: ModelAssistedStabilitySummary,
+) -> list[str]:
+    lines = [
+        "This section samples plausible public/hidden joint compositions from "
+        "the fitted nonparametric joint model, then reruns the primary "
+        "hidden-composition ambiguity audit on each sampled composition.",
+        "",
+        f"- Joint model method: {summary.joint_model.method}",
+        f"- Joint cells: {summary.joint_model.cell_count}",
+        f"- Draws: {summary.successful_draws}/{summary.draw_count} successful",
+        f"- Draw failures: {summary.error_count}",
+        f"- Claim failure rate across successful draws: "
+        f"{_format_optional_rate(summary.failure_rate)}",
+        f"- Public adequacy rate: "
+        f"{_format_optional_rate(summary.public_adequate_rate)}",
+    ]
+    if summary.ambiguity_min is not None and summary.ambiguity_max is not None:
+        lines.extend(
+            [
+                f"- Ambiguity range: {summary.ambiguity_min:.4f} to "
+                f"{summary.ambiguity_max:.4f}",
+                f"- Mean ambiguity: {summary.ambiguity_mean:.4f}",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "| draw | status | observed | ambiguity | lower | upper | adequate |",
+            "| ---: | --- | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for row in summary.rows[:20]:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(row.draw_index),
+                    row.status,
+                    _format_optional_float(row.observed_value),
+                    _format_optional_float(row.ambiguity),
+                    _format_optional_float(row.lower),
+                    _format_optional_float(row.upper),
+                    ""
+                    if row.public_adequate is None
+                    else ("yes" if row.public_adequate else "no"),
+                ]
+            )
+            + " |"
+        )
+    return lines
+
+
 def _witness_shift_table(witness: WitnessReport) -> list[str]:
     rows = [
         "| hidden cell | public cell | target | lower mass | upper mass | shift |",
@@ -688,6 +950,14 @@ def _format_statistical_uncertainty(value: StatisticalUncertainty) -> str:
     if value.method:
         parts.append(value.method)
     return "; ".join(parts) if parts else value.label
+
+
+def _format_optional_float(value: float | None) -> str:
+    return "" if value is None else f"{value:.4f}"
+
+
+def _format_optional_rate(value: float | None) -> str:
+    return "" if value is None else f"{100.0 * value:.1f}%"
 
 
 def _q_payload(value: Any) -> Any:
@@ -741,6 +1011,8 @@ def _float_tuple(values: Sequence[float], name: str) -> tuple[float, ...]:
 
 __all__ = [
     "ClaimVerificationReport",
+    "ModelAssistedDrawResult",
+    "ModelAssistedStabilitySummary",
     "ReportingClaim",
     "verify_claim",
 ]

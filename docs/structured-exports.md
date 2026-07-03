@@ -142,6 +142,8 @@ Claim verification reports expose:
 - prefixed primary evidence such as `primary_summary` and `primary_refinements`
 - prefixed certificate evidence when a repair/certification was run
 - prefixed witness evidence when a counterexample witness was produced
+- model-assisted tables, when requested: `model_assisted_summary`,
+  `model_assisted_draws`, and `model_assisted_cells`
 
 Causal reporting suites prefix the component tables, for example:
 

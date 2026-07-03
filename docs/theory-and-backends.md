@@ -69,6 +69,8 @@ Tabular and reporting helpers:
 - `ReportingClaim`
 - `ClaimVerificationReport`
 - `verify_claim(...)`
+- `fit_joint_distribution(...)`
+- `NonparametricJointDistribution`
 - `report_to_json(...)`
 - `report_tables(...)`
 - `report_dataframes(...)`

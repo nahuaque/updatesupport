@@ -13,7 +13,13 @@ from .certificate import (
     RepresentationStabilityCertificate,
     certify_public_representation,
 )
-from .claim import ClaimVerificationReport, ReportingClaim, verify_claim
+from .claim import (
+    ClaimVerificationReport,
+    ModelAssistedDrawResult,
+    ModelAssistedStabilitySummary,
+    ReportingClaim,
+    verify_claim,
+)
 from .data import DataDiagnostic, DataDiagnostics, GroupedProblem, from_dataframe
 from .dowhy import (
     DoWhyRepresentationAudit,
@@ -58,6 +64,13 @@ from .frontier import (
     PublicRepresentationCandidate,
     PublicRepresentationFrontier,
     public_representation_frontier,
+)
+from .joint import (
+    JointCell,
+    JointDistributionDraw,
+    NonparametricJointDistribution,
+    fit_joint_distribution,
+    joint_draw_records,
 )
 from .metrics import RowMetric, row_metric
 from .partition import Partition, PartitionError
@@ -177,6 +190,7 @@ __all__ = [
     "dowhy_refutation_from_report",
     "FiniteEnvironments",
     "FiniteProblem",
+    "fit_joint_distribution",
     "FrontierCandidateExplanation",
     "FrontierCloseAlternative",
     "FrontierScenarioResult",
@@ -186,6 +200,9 @@ __all__ = [
     "from_dataframe",
     "geq",
     "GroupedProblem",
+    "JointCell",
+    "JointDistributionDraw",
+    "joint_draw_records",
     "leq",
     "LeastSupportResult",
     "LinearConstraint",
@@ -194,6 +211,9 @@ __all__ = [
     "linear_constraint",
     "LPError",
     "MomentTransformTarget",
+    "ModelAssistedDrawResult",
+    "ModelAssistedStabilitySummary",
+    "NonparametricJointDistribution",
     "Partition",
     "PartitionError",
     "ParameterizedCvxpyEnvironments",

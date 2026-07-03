@@ -166,6 +166,29 @@ The verifier separates the reported estimate, statistical uncertainty,
 hidden-composition ambiguity, public-refinement repair, counterexample witness,
 and limitations. See [docs/reporting-claims.md](docs/reporting-claims.md).
 
+For model-assisted plausibility checks, fit a nonparametric public/hidden joint
+distribution and run the claim across sampled joint compositions:
+
+```python
+joint = us.fit_joint_distribution(
+    rows_or_frame,
+    public=claim.public,
+    hidden=claim.hidden,
+    target=claim.target,
+    weight=claim.weight,
+)
+
+verdict = us.verify_claim(
+    rows_or_frame,
+    claim,
+    joint_model=joint,
+    joint_draws=500,
+    joint_seed=123,
+)
+```
+
+See [docs/model-assisted-joint-analysis.md](docs/model-assisted-joint-analysis.md).
+
 ### 2. Audit a Public Report
 
 Use `public_descent_report(...)` when you already know the public buckets,

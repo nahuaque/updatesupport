@@ -441,6 +441,7 @@ def _claim_verification_tables(report: ClaimVerificationReport) -> ReportTables:
                 if report.certificate is None
                 else report.certificate.status,
                 "has_witness": report.witness is not None,
+                "has_model_assisted": report.model_assisted is not None,
                 "repair_label": None if repair is None else repair.label,
                 "repair_public_cells": None if repair is None else repair.public_cells,
                 "repair_max_ambiguity": None
@@ -461,6 +462,20 @@ def _claim_verification_tables(report: ClaimVerificationReport) -> ReportTables:
         )
     if report.witness is not None:
         tables.update(_prefix_tables("witness", _witness_tables(report.witness)))
+    if report.model_assisted is not None:
+        tables["model_assisted_summary"] = (
+            {
+                key: value
+                for key, value in report.model_assisted.as_dict().items()
+                if key not in {"rows", "joint_model"}
+            },
+        )
+        tables["model_assisted_draws"] = tuple(
+            row.as_dict() for row in report.model_assisted.rows
+        )
+        tables["model_assisted_cells"] = tuple(
+            cell.as_dict() for cell in report.model_assisted.joint_model.cells
+        )
     return tables
 
 
