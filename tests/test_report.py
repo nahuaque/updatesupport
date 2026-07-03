@@ -160,6 +160,56 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertIn("reduction_pct=100.0%", markdown)
         self.assertIn("## Analyst Notes", markdown)
 
+    def test_public_descent_report_includes_procedure_target_metadata(self):
+        rows = [
+            {"public": "A", "hidden": "x", "base": 0.0, "weight": 30},
+            {"public": "A", "hidden": "y", "base": 1.0, "weight": 30},
+            {"public": "B", "hidden": "z", "base": 0.5, "weight": 40},
+        ]
+        compiled_public = []
+
+        def compiler(context):
+            scale = len(context.public)
+            compiled_public.append(context.public)
+            return us.row_metric(
+                f"procedure_value_x{scale}",
+                lambda row, scale=scale: scale * float(row["base"]),
+                columns=("base",),
+                description=f"procedure value scaled by {scale}",
+            )
+
+        target = us.ProcedureTarget(
+            "reporting_procedure",
+            compiler,
+            description="representation-dependent reporting target",
+        )
+
+        report = us.public_descent_report(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            target=target,
+            weight="weight",
+            candidate_refinements=["hidden"],
+            top=1,
+        )
+        markdown = report.to_markdown()
+        payload = report.as_dict()
+
+        self.assertIs(report.grouped.target_procedure, target)
+        self.assertEqual(report.grouped.target_column.name, "procedure_value_x1")
+        self.assertEqual(report.refinements[0].column, "hidden")
+        self.assertEqual(
+            compiled_public,
+            [("public",), ("public",), ("public", "hidden")],
+        )
+        self.assertIn("## Procedure Target", markdown)
+        self.assertIn("Procedure: `reporting_procedure`", markdown)
+        self.assertIn("Compiled target: `procedure_value_x1`", markdown)
+        self.assertIn("procedure-comparison sensitivity analyses", markdown)
+        self.assertEqual(payload["target_procedure"]["name"], "reporting_procedure")
+        self.assertEqual(payload["target"], "procedure_value_x1")
+
     def test_ratio_report_gates_nonadditive_decomposition(self):
         report = us.public_descent_report(_ratio_grouped_problem(), top=2)
         markdown = report.to_markdown()

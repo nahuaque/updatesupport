@@ -10,7 +10,16 @@ from typing import Any, Hashable, Iterable, Mapping, Sequence
 from .metrics import RowMetric, evaluate_target, target_description, target_name
 from .problem import FiniteProblem
 from .presets import QPreset, resolve_q_environment
-from .targets import LinearTarget, RatioTarget
+from .targets import (
+    LinearTarget,
+    ProcedureTarget,
+    ProcedureTargetContext,
+    RatioTarget,
+    UnsupportedTargetError,
+    raise_if_unsupported_target,
+)
+
+TabularTarget = str | RowMetric | ProcedureTarget
 
 
 @dataclass(frozen=True)
@@ -107,6 +116,8 @@ class GroupedProblem:
         "public cell"
     )
     diagnostics: DataDiagnostics | None = None
+    target_procedure: ProcedureTarget | None = None
+    target_procedure_context: ProcedureTargetContext | None = None
 
 
 def from_dataframe(
@@ -114,11 +125,11 @@ def from_dataframe(
     *,
     public: Sequence[str] | None = None,
     hidden: Sequence[str] | None = None,
-    target: str | RowMetric | None = None,
+    target: TabularTarget | None = None,
     weight: str | None = None,
     public_columns: Sequence[str] | None = None,
     hidden_columns: Sequence[str] | None = None,
-    target_column: str | RowMetric | None = None,
+    target_column: TabularTarget | None = None,
     weight_column: str | None = None,
     min_cell_weight: float = 1.0,
     q: Any = "saturated",
@@ -128,8 +139,11 @@ def from_dataframe(
 
     ``data`` may be a pandas-like dataframe with ``to_dict("records")`` or an
     iterable of row mappings. Each hidden cell receives the weighted empirical
-    mean of ``target`` as its estimand value. The returned problem uses a
-    environment built from the selected ``q`` preset. The default is
+    mean of ``target`` as its estimand value. If ``target`` is a
+    :class:`ProcedureTarget`, the procedure is compiled once for the selected
+    public representation and must return a column name or ``RowMetric``. The
+    returned problem uses an environment built from the selected ``q`` preset.
+    The default is
     ``q="saturated"``, which fixes the observed public law and allows arbitrary
     reweighting inside retained public fibers.
 
@@ -171,6 +185,24 @@ def from_dataframe(
     if missing_public:
         raise ValueError(
             f"public columns must also be hidden columns: {missing_public!r}"
+        )
+
+    target_procedure = target if isinstance(target, ProcedureTarget) else None
+    target_procedure_context = None
+    if target_procedure is not None:
+        data = _repeatable_data_for_procedure(data)
+        target_procedure_context = ProcedureTargetContext(
+            data=data,
+            public=public_columns_tuple,
+            hidden=hidden_columns_tuple,
+            weight=weight,
+            min_cell_weight=float(min_cell_weight),
+            q=q,
+            q_radius=q_radius,
+        )
+        target = _compile_procedure_target(
+            target_procedure,
+            target_procedure_context,
         )
 
     cell_weight: dict[tuple[Hashable, ...], float] = defaultdict(float)
@@ -260,6 +292,8 @@ def from_dataframe(
         hidden_columns=hidden_columns_tuple,
         target_column=target,
         target_functional=target_functional,
+        target_procedure=target_procedure,
+        target_procedure_context=target_procedure_context,
         total_weight=total_weight,
         cell_weights=normalized_cell_weight,
         q=q_environment.preset,
@@ -412,6 +446,37 @@ def _iter_records(data: Any) -> Iterable[Mapping[str, Any]]:
         yield from records
         return
     yield from data
+
+
+def _repeatable_data_for_procedure(data: Any) -> Any:
+    if hasattr(data, "to_dict"):
+        return data
+    if isinstance(data, Sequence) and not isinstance(data, str | bytes):
+        return data
+    return tuple(data)
+
+
+def _compile_procedure_target(
+    procedure: ProcedureTarget,
+    context: ProcedureTargetContext,
+) -> str | RowMetric:
+    compiled = procedure.compile(context)
+    if isinstance(compiled, ProcedureTarget):
+        raise UnsupportedTargetError(
+            "ProcedureTarget compilers must return a column name string or "
+            "RowMetric, not another ProcedureTarget."
+        )
+    raise_if_unsupported_target(
+        compiled,
+        context=f"ProcedureTarget({procedure.name!r}) compiler",
+    )
+    if isinstance(compiled, RowMetric):
+        return compiled
+    if isinstance(compiled, str):
+        return compiled
+    raise TypeError(
+        "ProcedureTarget compilers must return a column name string or RowMetric"
+    )
 
 
 def _resolve_sequence_arg(

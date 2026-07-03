@@ -3,16 +3,17 @@
 `updatesupport` is mathematically sound for a specific and explicit class of
 audits:
 
-> finite hidden state spaces, fixed public projections, fixed hidden-state
-> target values, and explicit admissible hidden-distribution classes.
+> finite hidden state spaces, fixed public projections, target functionals fixed
+> after workflow compilation, and explicit admissible hidden-distribution
+> classes.
 
 In that setting the reported ambiguity interval is a well-defined
 partial-identification or sensitivity interval. It is not a confidence
 interval, not a causal identification result, and not a generic nonlinear
 functional optimizer.
 
-The most important boundary is the aggregate target. The current core library
-assumes a fixed linear plug-in target:
+The most important boundary is the aggregate target. The primary tabular
+contract compiles to a fixed linear plug-in target:
 
 ```text
 psi(q) = sum_d h(d) q(d)
@@ -21,10 +22,16 @@ psi(q) = sum_d h(d) q(d)
 where `d` ranges over retained hidden cells, `q(d)` is hidden-cell mass, and
 `h(d)` is the supplied target value for hidden cell `d`.
 
-If the aggregate target is nonlinear in `q`, changes when the public
-representation changes, or depends on a model refit under each representation,
-then it is not automatically covered by the current soundness guarantee. Such a
-target needs an explicit reformulation or a future target-functional backend.
+`RatioTarget` adds an explicit fixed linear-fractional contract for supported
+solver backends. `ProcedureTarget` adds a workflow contract for
+representation-dependent reporting procedures: the procedure is compiled to a
+column or row metric for each representation, and the finite problem then
+solves the compiled fixed target.
+
+If the aggregate target is nonlinear in `q` or depends on the transported
+distribution itself, it is not automatically covered by the current soundness
+guarantee. Such a target needs an explicit reformulation or a dedicated
+target-functional backend.
 
 ## Core Object
 
@@ -55,7 +62,7 @@ This is the hidden-composition ambiguity conditional on:
 
 ## Target Contract
 
-The current target contract is:
+The default target contract is:
 
 ```text
 hidden cell d  -> fixed scalar h(d)
@@ -72,10 +79,11 @@ This covers many common review metrics when expressed at the right unit:
 - loss-given-default averages,
 - average treatment effects or uplift scores supplied by an external estimator.
 
-The phrase "fixed scalar" matters. Once `from_dataframe(...)` compiles the
-problem, `updatesupport` treats the hidden-cell target values as inputs. It
-does not update them when `q` changes, when a public bucket is refined, or when
-a model would be refit.
+The phrase "fixed scalar" matters. Once `from_dataframe(...)` compiles one
+finite problem, `updatesupport` treats the hidden-cell target values as inputs.
+It does not update them when `q` changes. If a `ProcedureTarget` is supplied,
+procedure-aware workflows compile a fresh target for each public representation
+or scenario before constructing that finite problem.
 
 ## What Is Not Covered Automatically
 
@@ -149,10 +157,13 @@ Then the object is not one fixed `psi(q)`. It is a reporting procedure:
 public representation -> compiled target values -> reported aggregate
 ```
 
-That can still be useful to audit, but the claim changes. The result is a
-procedure-comparison sensitivity analysis, not the current fixed-target
-transport interval. Reports should say that the target was recomputed under
-each representation.
+`ProcedureTarget` supports this as a workflow-level object. The compiler
+receives a `ProcedureTargetContext` containing the public columns, hidden
+columns, weights, sparse-cell threshold, and Q preset, then returns a concrete
+column name or `RowMetric`. Each compiled finite problem is still a fixed-target
+transport problem. Comparisons across refinements, sensitivity scenarios, or
+frontier candidates are therefore procedure-comparison sensitivity analyses,
+not transport intervals for one unchanged target.
 
 ### Composition-Dependent Structural Targets
 
@@ -348,7 +359,8 @@ include trace metadata so the user can see when a frontier is approximate.
 
 If target values are recomputed for each candidate representation, frontier
 results compare reporting procedures rather than one fixed target transported
-over different public projections. That is a useful but different claim.
+over different public projections. `ProcedureTarget` makes that claim explicit
+in report metadata.
 
 ## Ratio Targets
 
@@ -413,15 +425,14 @@ LinearTarget(h)
 RatioTarget(numerator, denominator)  # supported for finite/saturated Q
 MomentTransformTarget(moments, transform)
 CvxpyTarget(objective_builder)
-ProcedureTarget(compiler_callback)
 ```
 
 Each target type would need its own adequacy condition, interval solver, witness
 construction, report language, and tests. Some nonlinear targets are convex or
 linear-fractional and can be solved cleanly. Some require mixed-integer
-optimization or only admit conservative bounds. Some representation-dependent
-procedures are best treated as scenario comparisons rather than transport
-intervals.
+optimization or only admit conservative bounds. Representation-dependent
+procedures are currently treated as scenario comparisons through
+`ProcedureTarget`, not as a single transported nonlinear functional.
 
 Until a broader target-functional layer exists, unsupported nonlinear targets
 should either be:
@@ -432,10 +443,12 @@ should either be:
 - kept out of the core soundness claim.
 
 The current API includes guardrails for this boundary. `UnsupportedTarget` can
-be used as an explicit marker for quantile, distributional,
-representation-dependent, or other nonlinear target objects that are not
-supported. Passing one into `FiniteProblem` or `from_dataframe(...)` raises
-`UnsupportedTargetError` instead of silently treating it as a linear target.
+be used as an explicit marker for quantile, distributional, or other nonlinear
+target objects that are not supported. Passing one into `FiniteProblem` or
+`from_dataframe(...)` raises `UnsupportedTargetError` instead of silently
+treating it as a linear target. Passing an uncompiled `ProcedureTarget` directly
+to `FiniteProblem` also raises; pass it to `from_dataframe(...)` or a
+procedure-aware workflow instead.
 
 ## Implementation Checks
 
@@ -443,6 +456,8 @@ The test suite exercises the current mathematical contract directly:
 
 - saturated closed-form fiber-range formulas,
 - saturated ratio-target intervals via Charnes-Cooper LP,
+- procedure-target compilation and recompilation across tabular, report, and
+  frontier workflows,
 - fixed public-law saturated witnesses and zero-mass public fibers,
 - finite-environment witness construction,
 - linear-program local and global transport intervals,
@@ -463,8 +478,8 @@ nonnegative divergence radii/costs.
 The reported interval can be misleading if:
 
 - a nonlinear target is silently interpreted as a fixed linear target,
-- a representation-dependent estimator is refit but described as the same
-  transported target,
+- a representation-dependent estimator is refit but described as one unchanged
+  transported target rather than a `ProcedureTarget` workflow,
 - the hidden state space omits important unseen states,
 - hidden-cell target values are noisy but treated as exact without separate
   uncertainty reporting,
@@ -492,5 +507,6 @@ by closed form, linear programming, or convex optimization depending on `Q`, and
 reports the result separately from statistical and causal uncertainty.
 
 If the aggregate target is nonlinear or representation-dependent, the project
-should say so explicitly and either reformulate it as a fixed linear target or
-add a dedicated target-functional solver mode.
+should say so explicitly and either reformulate it as a fixed supported target,
+use `ProcedureTarget` for procedure-comparison workflows, or add a dedicated
+target-functional solver mode.

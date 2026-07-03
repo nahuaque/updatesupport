@@ -22,6 +22,7 @@ from .results import (
 )
 from .targets import (
     LinearTarget,
+    ProcedureTarget,
     RatioTarget,
     TargetContract,
     UnsupportedTargetError,
@@ -39,6 +40,7 @@ EstimandMap = (
     | Sequence[float]
     | Callable[[Hashable], float]
     | LinearTarget
+    | ProcedureTarget
     | RatioTarget
 )
 
@@ -51,7 +53,7 @@ class FiniteProblem:
 
     - ``states`` is the hidden state space ``D``.
     - ``public`` is the projection ``pi: D -> O``.
-    - ``estimand`` is a linear target ``h: D -> R`` so ``psi(q)=<h,q>``.
+    - ``estimand`` is a fixed target functional over hidden distributions.
     - ``environments`` is the admissible class ``Q``.
     """
 

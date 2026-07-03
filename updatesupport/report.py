@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Hashable, Sequence
 
-from .data import DataDiagnostic, GroupedProblem, from_dataframe
-from .metrics import RowMetric, target_description as describe_target
+from .data import DataDiagnostic, GroupedProblem, TabularTarget, from_dataframe
+from .metrics import target_description as describe_target
 from .presets import (
     QPreset,
     normalize_q_preset,
@@ -15,6 +15,7 @@ from .presets import (
     q_name,
 )
 from .results import ConstraintDual, TransportResult
+from .targets import ProcedureTarget
 
 
 _PARAMETERIZED_SENSITIVITY_PRESETS = frozenset(
@@ -669,6 +670,7 @@ class PublicDescentReport:
             )
 
         lines.extend(_target_contract_markdown(grouped))
+        lines.extend(_procedure_target_markdown(grouped))
 
         lines.extend(
             [
@@ -837,11 +839,11 @@ def public_descent_report(
     source_data: Any | None = None,
     public: Sequence[str] | None = None,
     hidden: Sequence[str] | None = None,
-    target: str | RowMetric | None = None,
+    target: TabularTarget | None = None,
     weight: str | None = None,
     public_columns: Sequence[str] | None = None,
     hidden_columns: Sequence[str] | None = None,
-    target_column: str | RowMetric | None = None,
+    target_column: TabularTarget | None = None,
     weight_column: str | None = None,
     candidate_refinements: Sequence[str] | None = None,
     candidate_columns: Sequence[str] | None = None,
@@ -882,15 +884,20 @@ def public_descent_report(
         if row_count is None:
             row_count = inferred_row_count
         effective_q = "saturated" if q is None else q
+        resolved_target = _resolve_scalar_arg(
+            target,
+            target_column,
+            primary_name="target",
+            alias_name="target_column",
+        )
         grouped = from_dataframe(
             compile_data,
             public=public,
             hidden=hidden,
-            target=target,
+            target=resolved_target,
             weight=weight,
             public_columns=public_columns,
             hidden_columns=hidden_columns,
-            target_column=target_column,
             weight_column=weight_column,
             min_cell_weight=min_cell_weight,
             q=effective_q,
@@ -898,7 +905,13 @@ def public_descent_report(
         )
         refinement_data = source_data if source_data is not None else compile_data
 
-    if target_description == "target value" and grouped.target_column is not None:
+    if (
+        target_description == "target value"
+        and grouped.target_procedure is not None
+        and grouped.target_procedure.description
+    ):
+        target_description = grouped.target_procedure.description
+    elif target_description == "target value" and grouped.target_column is not None:
         target_description = describe_target(grouped.target_column)
 
     interval = grouped.problem.global_transport_modulus()
@@ -921,11 +934,16 @@ def public_descent_report(
             raise ValueError(
                 "source_data is required to compute refinements for a GroupedProblem"
             )
+        refinement_target: TabularTarget = (
+            grouped.target_procedure
+            if grouped.target_procedure is not None
+            else grouped.target_column
+        )
         refinements = recommend_refinements(
             refinement_data,
             public=grouped.public_columns,
             hidden=grouped.hidden_columns,
-            target=grouped.target_column,
+            target=refinement_target,
             weight=weight if weight is not None else weight_column,
             candidate_refinements=candidate_refinements,
             min_cell_weight=min_cell_weight,
@@ -1111,7 +1129,13 @@ def causal_reporting_stability(
 
     public_tuple = primary.grouped.public_columns
     hidden_tuple = primary.grouped.hidden_columns
-    effect_name = primary.grouped.target_column if effect is None else effect
+    effect_name: TabularTarget = (
+        primary.grouped.target_procedure
+        if primary.grouped.target_procedure is not None
+        else primary.grouped.target_column
+    )
+    if effect is not None:
+        effect_name = effect
     grid_min_cell_weights = tuple(
         sensitivity_min_cell_weights
         if sensitivity_min_cell_weights is not None
@@ -1236,7 +1260,7 @@ def recommend_refinements(
     *,
     public: Sequence[str],
     hidden: Sequence[str],
-    target: str | RowMetric,
+    target: TabularTarget,
     candidate_refinements: Sequence[str] | None = None,
     candidate_columns: Sequence[str] | None = None,
     weight: str | None = None,
@@ -1328,6 +1352,10 @@ def _parameterized_sensitivity_q(q: Any) -> QPreset | None:
     )
 
 
+def _can_reuse_parameterized_problem(target: TabularTarget) -> bool:
+    return not isinstance(target, ProcedureTarget)
+
+
 def _parameterized_sensitivity_key(preset: QPreset) -> tuple[Any, ...]:
     cost_key = id(preset.cost) if preset.name == "wasserstein" else None
     return (preset.name, cost_key)
@@ -1372,7 +1400,7 @@ def _parameterized_refinement_candidates(
     *,
     public: Sequence[str],
     hidden: Sequence[str],
-    target: str | RowMetric,
+    target: TabularTarget,
     candidate_refinements: Sequence[str],
     weight: str | None,
     min_cell_weight: float,
@@ -1437,7 +1465,7 @@ def recommend_refinements_sensitivity(
     *,
     public: Sequence[str],
     hidden: Sequence[str],
-    target: str | RowMetric,
+    target: TabularTarget,
     candidate_refinements: Sequence[str] | None = None,
     candidate_columns: Sequence[str] | None = None,
     weight: str | None = None,
@@ -1487,7 +1515,9 @@ def recommend_refinements_sensitivity(
                 scenario = f"R{scenario_index}"
                 try:
                     parameterized_q = _parameterized_sensitivity_q(q_preset)
-                    if parameterized_q is None:
+                    if parameterized_q is None or not _can_reuse_parameterized_problem(
+                        target
+                    ):
                         candidates = recommend_refinements(
                             repeatable_data,
                             public=public,
@@ -1752,7 +1782,7 @@ def sensitivity_report(
     *,
     public: Sequence[str],
     hidden: Sequence[str],
-    target: str | RowMetric,
+    target: TabularTarget,
     weight: str | None = None,
     min_cell_weights: Sequence[float] = (1.0,),
     hidden_sets: Sequence[Sequence[str]] | None = None,
@@ -1785,7 +1815,9 @@ def sensitivity_report(
                 scenario = f"S{scenario_index}"
                 try:
                     parameterized_q = _parameterized_sensitivity_q(q_preset)
-                    if parameterized_q is None:
+                    if parameterized_q is None or not _can_reuse_parameterized_problem(
+                        target
+                    ):
                         report = public_descent_report(
                             repeatable_data,
                             public=public,
@@ -2400,6 +2432,23 @@ def _target_contract_markdown(grouped: GroupedProblem) -> list[str]:
     contract = grouped.problem.target_contract
     fixed = "yes" if contract.fixed_after_compilation else "no"
     fiber_decomposition = "yes" if contract.supports_fiber_decomposition else "no"
+    if grouped.target_procedure is None:
+        interpretation = (
+            "- Current interpretation: this report transports the declared fixed "
+            "target functional over admissible hidden distributions. Public "
+            "refinements reuse the same target contract; they do not refit a "
+            "model or recompute a representation-dependent target inside "
+            "`updatesupport`."
+        )
+    else:
+        interpretation = (
+            "- Current interpretation: this report transports the compiled target "
+            "generated by the procedure for the current representation. "
+            "Procedure-aware workflows recompile the target for each public "
+            "representation or sensitivity scenario, so those comparisons are "
+            "procedure-comparison sensitivity analyses rather than transport of "
+            "one unchanged target."
+        )
     lines = [
         "",
         "## Target Contract",
@@ -2414,15 +2463,56 @@ def _target_contract_markdown(grouped: GroupedProblem) -> list[str]:
         f"- Supports interval solving: "
         f"{'yes' if contract.supports_interval else 'no'}.",
         f"- Supports public-fiber decomposition: {fiber_decomposition}.",
-        "- Current interpretation: this report transports the declared fixed "
-        "target functional over admissible hidden distributions. Public "
-        "refinements reuse the same target contract; they do not refit a model "
-        "or recompute a representation-dependent target inside `updatesupport`.",
+        interpretation,
     ]
     if contract.limitations:
         lines.append("- Target limitations:")
         lines.extend(f"  - {limitation}" for limitation in contract.limitations)
     return lines
+
+
+def _procedure_target_markdown(grouped: GroupedProblem) -> list[str]:
+    procedure = grouped.target_procedure
+    if procedure is None:
+        return []
+    context = grouped.target_procedure_context
+    lines = [
+        "",
+        "## Procedure Target",
+        "",
+        f"- Procedure: `{procedure.name}`.",
+        f"- Compiled target: `{_target_label(grouped.target_column)}`.",
+        f"- Formula: `{procedure.formula}`.",
+    ]
+    if procedure.description:
+        lines.append(f"- Description: {procedure.description}.")
+    if context is not None:
+        lines.extend(
+            [
+                f"- Compiled public columns: {', '.join(context.public)}.",
+                f"- Compiled hidden columns: {', '.join(context.hidden)}.",
+            ]
+        )
+    lines.extend(
+        [
+            "- Interpretation: the target values were recomputed or selected by "
+            "the procedure for this representation before solving the finite "
+            "transport problem.",
+            "- Refinement, sensitivity, and frontier workflows that receive this "
+            "ProcedureTarget re-run the compiler for each candidate "
+            "representation or scenario.",
+        ]
+    )
+    if procedure.limitations:
+        lines.append("- Procedure limitations:")
+        lines.extend(f"  - {limitation}" for limitation in procedure.limitations)
+    return lines
+
+
+def _target_label(target: Any) -> str:
+    if isinstance(target, str):
+        return target
+    return str(getattr(target, "name", type(target).__name__))
 
 
 def _dual_diagnostics_markdown(interval: TransportResult) -> list[str]:
@@ -2483,6 +2573,13 @@ def _public_descent_summary_dict(report: PublicDescentReport) -> dict[str, Any]:
         "q_name": report.grouped.q_name,
         "q_description": report.grouped.q_description,
         "target_contract": report.grouped.problem.target_contract.as_dict(),
+        "target": _target_label(report.grouped.target_column),
+        "target_procedure": None
+        if report.grouped.target_procedure is None
+        else report.grouped.target_procedure.as_dict(),
+        "target_procedure_context": None
+        if report.grouped.target_procedure_context is None
+        else report.grouped.target_procedure_context.as_dict(),
         "fiber_decomposition_available": report.fiber_decomposition_available,
         "fiber_diagnostic_kind": report.fiber_diagnostic_kind,
         "top_fiber_contribution": report.top_fiber_contribution,

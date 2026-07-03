@@ -117,6 +117,43 @@ class StructuredExportTests(unittest.TestCase):
         self.assertFalse(tables["worst_fibers"][0]["contribution_available"])
         self.assertEqual(tables["worst_fibers"][0]["diagnostic_kind"], "point_range")
 
+    def test_public_descent_exports_procedure_target_metadata(self):
+        target = us.ProcedureTarget(
+            "export_procedure",
+            lambda context: us.row_metric(
+                f"target_for_{len(context.public)}_public_columns",
+                lambda row: float(row["target"]),
+                columns=("target",),
+                description="compiled export target",
+            ),
+            description="exported procedure target",
+        )
+        report = us.public_descent_report(
+            _rows(),
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target=target,
+            weight="weight",
+        )
+
+        payload = json.loads(report.to_json())
+        tables = report.to_tables()
+
+        self.assertEqual(payload["target_procedure"]["name"], "export_procedure")
+        self.assertEqual(
+            payload["target_procedure_context"]["public"],
+            ["segment"],
+        )
+        self.assertEqual(
+            tables["summary"][0]["compiled_target"],
+            "target_for_1_public_columns",
+        )
+        self.assertEqual(tables["summary"][0]["target_procedure"], "export_procedure")
+        self.assertEqual(
+            tables["summary"][0]["target_procedure_context"]["public"],
+            ("segment",),
+        )
+
     def test_audit_run_exports_spec_and_prefixed_report_tables(self):
         run = us.AuditSpec(
             public=["segment"],

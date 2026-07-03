@@ -34,11 +34,16 @@ All notable changes to `updatesupport` are documented here.
   public-fiber intervals, finite-environment evaluation, CVXPY DQCP support for
   local/fixed-public-law ratio intervals, and explicit guardrails for ratio
   cases that still need dedicated constrained solvers.
+- Added `ProcedureTarget` and `ProcedureTargetContext` for
+  representation-dependent reporting procedures that compile to a column or
+  row metric per public representation before solving.
 
 ### Fixed
 
 - Fixed saturated fixed-public-law adequacy witnesses so zero-mass public fibers
   are ignored and nonzero fixed public masses scale the witness gap correctly.
+- Fixed frontier observed-value calculations to use the compiled target
+  functional directly, preserving ratio/procedure target semantics.
 
 ## 0.1.1 - 2026-07-02
 

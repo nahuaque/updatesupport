@@ -177,6 +177,70 @@ class FromDataFrameTests(unittest.TestCase):
         self.assertAlmostEqual(grouped.problem.estimand_map[("A", "y")], 0.02)
         self.assertAlmostEqual(grouped.problem.estimand_map[("B", "z")], 0.004)
 
+    def test_from_dataframe_compiles_procedure_target_for_representation(self):
+        rows = [
+            {"public": "A", "hidden": "x", "base": 1.0, "weight": 1},
+            {"public": "A", "hidden": "y", "base": 2.0, "weight": 1},
+            {"public": "B", "hidden": "z", "base": 3.0, "weight": 1},
+        ]
+        calls = []
+
+        def compiler(context):
+            scale = len(context.public)
+            calls.append((context.public, context.hidden, context.weight))
+            return us.row_metric(
+                f"scaled_base_x{scale}",
+                lambda row, scale=scale: scale * float(row["base"]),
+                columns=("base",),
+                description=f"base scaled by {scale}",
+            )
+
+        target = us.ProcedureTarget(
+            "scaled_base_procedure",
+            compiler,
+            description="representation-dependent scaled base",
+        )
+
+        grouped = us.from_dataframe(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            target=target,
+            weight="weight",
+        )
+        refined = us.from_dataframe(
+            rows,
+            public=["public", "hidden"],
+            hidden=["public", "hidden"],
+            target=target,
+            weight="weight",
+        )
+
+        self.assertIs(grouped.target_procedure, target)
+        self.assertEqual(grouped.target_procedure_context.public, ("public",))
+        self.assertEqual(grouped.target_column.name, "scaled_base_x1")
+        self.assertEqual(refined.target_column.name, "scaled_base_x2")
+        self.assertAlmostEqual(grouped.problem.estimand_map[("A", "x")], 1.0)
+        self.assertAlmostEqual(refined.problem.estimand_map[("A", "x")], 2.0)
+        self.assertEqual(
+            calls,
+            [
+                (("public",), ("public", "hidden"), "weight"),
+                (("public", "hidden"), ("public", "hidden"), "weight"),
+            ],
+        )
+
+    def test_from_dataframe_rejects_invalid_procedure_target_output(self):
+        target = us.ProcedureTarget("bad_procedure", lambda context: 1.0)
+
+        with self.assertRaisesRegex(TypeError, "must return a column name"):
+            us.from_dataframe(
+                [{"public": "A", "hidden": "x", "base": 1.0}],
+                public=["public"],
+                hidden=["public", "hidden"],
+                target=target,
+            )
+
     def test_from_dataframe_rejects_unsupported_nonlinear_target(self):
         target = us.UnsupportedTarget(
             name="approval_quantile",

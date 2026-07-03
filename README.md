@@ -66,9 +66,13 @@ sensitivity interval conditional on the retained support, target values, and
 chosen `Q`. It is not a confidence interval and does not estimate causal,
 survey-design, or model uncertainty.
 
-The current core target contract is a fixed linear plug-in aggregate,
-`sum_d h(d) q(d)`. Nonlinear or representation-dependent targets need an
-explicit reformulation or a future target-functional backend.
+The core solver target is fixed after compilation. Most tabular reports compile
+to the linear plug-in aggregate `sum_d h(d) q(d)`; `RatioTarget` covers
+supported fixed ratio targets; and `ProcedureTarget` handles
+representation-dependent reporting procedures by recompiling the target for
+each representation before solving. Nonlinear targets that depend directly on
+`q` still need an explicit reformulation or a dedicated target-functional
+backend.
 
 See [docs/mathematical-statistical-soundness.md](docs/mathematical-statistical-soundness.md)
 for the full assumptions, formulas, backend checks, and limitations.

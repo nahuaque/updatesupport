@@ -122,6 +122,19 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
                 "public_columns": grouped.public_columns,
                 "hidden_columns": grouped.hidden_columns,
                 "target": grouped.target_column,
+                "compiled_target": _target_label(grouped.target_column),
+                "target_procedure": None
+                if grouped.target_procedure is None
+                else grouped.target_procedure.name,
+                "target_procedure_description": None
+                if grouped.target_procedure is None
+                else grouped.target_procedure.description,
+                "target_procedure_formula": None
+                if grouped.target_procedure is None
+                else grouped.target_procedure.formula,
+                "target_procedure_context": None
+                if grouped.target_procedure_context is None
+                else grouped.target_procedure_context.as_dict(),
                 "target_description": report.target_description,
                 "target_contract": grouped.problem.target_contract.as_dict(),
                 "target_kind": grouped.problem.target_contract.kind,
@@ -320,6 +333,12 @@ def _candidate_row(candidate: PublicRepresentationCandidate) -> dict[str, Any]:
     row.pop("scenarios", None)
     row["label"] = candidate.label
     return row
+
+
+def _target_label(target: Any) -> str:
+    if isinstance(target, str):
+        return target
+    return str(getattr(target, "name", type(target).__name__))
 
 
 def _prefix_tables(prefix: str, tables: ReportTables) -> ReportTables:

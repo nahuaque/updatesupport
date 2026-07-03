@@ -22,6 +22,8 @@ It models:
 - a fixed target functional, currently either a linear target
   `psi(q) = <h, q>` or a ratio target
   `psi(q) = <n, q> / <w, q>`
+- optional procedure-target workflows that compile a representation-dependent
+  target into one of those fixed target functionals before solving
 - an admissible environment class `Q`
 
 The library checks whether a public or refined representation is adequate and
@@ -34,6 +36,8 @@ Core finite objects:
 
 - `FiniteProblem`
 - `LinearTarget`
+- `ProcedureTarget`
+- `ProcedureTargetContext`
 - `RatioTarget`
 - `TargetContract`
 - `UnsupportedTarget`
@@ -165,6 +169,45 @@ Current ratio limitations:
   ratio denominator is constant over the state space;
 - `CvxpyEnvironments` ratio support does not yet cover pairwise
   same-support-law global optimization without a fixed public law.
+
+## Procedure Targets
+
+`ProcedureTarget` is for reporting procedures whose row-level target depends on
+the chosen public representation. The procedure is not passed directly to
+`FiniteProblem`; `from_dataframe(...)` calls the compiler with a
+`ProcedureTargetContext` and expects a column name or `RowMetric` back.
+
+```python
+import updatesupport as us
+
+def compile_target(context: us.ProcedureTargetContext) -> us.RowMetric:
+    scale = len(context.public)
+    return us.row_metric(
+        f"scaled_score_x{scale}",
+        lambda row: scale * float(row["score"]),
+        columns=("score",),
+        description="score scaled by public representation size",
+    )
+
+target = us.ProcedureTarget(
+    "representation_scaled_score",
+    compile_target,
+    description="representation-dependent score procedure",
+)
+
+report = us.public_descent_report(
+    rows,
+    public=["segment"],
+    hidden=["segment", "driver"],
+    target=target,
+)
+```
+
+Procedure-aware workflows such as `recommend_refinements(...)`,
+`sensitivity_report(...)`, and `public_representation_frontier(...)` re-run the
+compiler for each candidate representation or scenario. Read those results as
+procedure-comparison sensitivity analyses. Inside each solved finite problem,
+the compiled target is still fixed after compilation.
 
 ## Convex CVXPY Backend
 

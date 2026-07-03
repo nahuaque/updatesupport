@@ -275,6 +275,39 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(report.rows[1].lower, 0.20, places=6)
         self.assertAlmostEqual(report.rows[1].upper, 0.80, places=6)
 
+    def test_sensitivity_report_recompiles_procedure_targets_for_radius_grid(self):
+        _require_cvxpy()
+
+        compiled_radii = []
+
+        def compiler(context):
+            compiled_radii.append(context.q.radius)
+            return us.row_metric(
+                f"Y_radius_{context.q.radius}",
+                lambda row: float(row["Y"]),
+                columns=("Y",),
+            )
+
+        with mock.patch(
+            "updatesupport.report.from_dataframe",
+            wraps=report_module.from_dataframe,
+        ) as from_dataframe:
+            report = us.sensitivity_report(
+                _rows(),
+                public=["PUBLIC"],
+                hidden=["PUBLIC", "HIDDEN"],
+                target=us.ProcedureTarget("radius_sensitive_target", compiler),
+                weight="W",
+                q_presets=[
+                    us.q_tv_budget(0.15),
+                    us.q_tv_budget(0.30),
+                ],
+            )
+
+        self.assertEqual(from_dataframe.call_count, 2)
+        self.assertEqual(compiled_radii, [0.15, 0.30])
+        self.assertEqual(len(report.rows), 2)
+
     def test_refinement_sensitivity_reuses_parameterized_backend_for_radius_grid(
         self,
     ):
@@ -308,6 +341,49 @@ class CvxpyBackendTests(unittest.TestCase):
         )
         self.assertEqual(report.scenarios[0].best_column, "HIDDEN")
         self.assertEqual(report.scenarios[1].best_column, "HIDDEN")
+
+    def test_refinement_sensitivity_recompiles_procedure_targets_for_radius_grid(
+        self,
+    ):
+        _require_cvxpy()
+        compiled_contexts = []
+
+        def compiler(context):
+            compiled_contexts.append((context.public, context.q.radius))
+            return us.row_metric(
+                f"Y_radius_{context.q.radius}_public_{len(context.public)}",
+                lambda row: float(row["Y"]),
+                columns=("Y",),
+            )
+
+        with mock.patch(
+            "updatesupport.report.from_dataframe",
+            wraps=report_module.from_dataframe,
+        ) as from_dataframe:
+            report = us.recommend_refinements_sensitivity(
+                _rows(),
+                public=["PUBLIC"],
+                hidden=["PUBLIC", "HIDDEN"],
+                target=us.ProcedureTarget("radius_sensitive_target", compiler),
+                candidate_refinements=["HIDDEN"],
+                weight="W",
+                q_presets=[
+                    us.q_tv_budget(0.15),
+                    us.q_tv_budget(0.30),
+                ],
+            )
+
+        self.assertEqual(from_dataframe.call_count, 4)
+        self.assertEqual(
+            compiled_contexts,
+            [
+                (("PUBLIC",), 0.15),
+                (("PUBLIC", "HIDDEN"), 0.15),
+                (("PUBLIC",), 0.30),
+                (("PUBLIC", "HIDDEN"), 0.30),
+            ],
+        )
+        self.assertEqual(len(report.scenarios), 2)
 
     def test_chi_square_budget_preset_limits_divergence_from_observed(self):
         _require_cvxpy()

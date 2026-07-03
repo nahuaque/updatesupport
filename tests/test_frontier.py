@@ -124,6 +124,44 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
         self.assertIn("max ambiguity", markdown)
         self.assertIn("Pareto-frontier", markdown)
 
+    def test_public_representation_frontier_recompiles_procedure_targets(self):
+        rows = [
+            {"segment": "A", "driver": "low", "base": 0.0, "weight": 30},
+            {"segment": "A", "driver": "high", "base": 1.0, "weight": 30},
+            {"segment": "B", "driver": "flat", "base": 0.5, "weight": 40},
+        ]
+        compiled_public = []
+
+        def compiler(context):
+            scale = len(context.public)
+            compiled_public.append(context.public)
+            return us.row_metric(
+                f"frontier_value_x{scale}",
+                lambda row, scale=scale: scale * float(row["base"]),
+                columns=("base",),
+            )
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver"],
+            target=us.ProcedureTarget("frontier_procedure", compiler),
+            weight="weight",
+            candidate_refinements=["driver"],
+            q_presets=["saturated"],
+            include_base=True,
+        )
+        baseline = next(row for row in report.candidates if not row.added_columns)
+        refined = next(
+            row for row in report.candidates if row.added_columns == ("driver",)
+        )
+
+        self.assertEqual(compiled_public, [("segment",), ("segment", "driver")])
+        self.assertAlmostEqual(baseline.observed_value, 0.5)
+        self.assertAlmostEqual(refined.observed_value, 1.0)
+        self.assertAlmostEqual(baseline.max_ambiguity, 0.6)
+        self.assertAlmostEqual(refined.max_ambiguity, 0.0)
+
     def test_public_representation_frontier_supports_greedy_search(self):
         rows = [
             {"segment": "A", "driver": "low", "noise": "n", "target": 0.0},

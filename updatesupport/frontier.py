@@ -7,8 +7,7 @@ from itertools import combinations
 from math import comb
 from typing import Any, Sequence
 
-from .data import from_dataframe
-from .metrics import RowMetric
+from .data import TabularTarget, from_dataframe
 from .presets import q_description, q_name
 
 
@@ -566,7 +565,7 @@ def public_representation_frontier(
     base_public: Sequence[str] | None = None,
     public: Sequence[str] | None = None,
     hidden: Sequence[str],
-    target: str | RowMetric,
+    target: TabularTarget,
     candidate_refinements: Sequence[str] | None = None,
     candidate_columns: Sequence[str] | None = None,
     weight: str | None = None,
@@ -734,7 +733,7 @@ class _SearchResult:
 class _EvaluationState:
     data: Any
     base_public: tuple[str, ...]
-    target: str | RowMetric
+    target: TabularTarget
     candidate_refinements: tuple[str, ...]
     scenario_specs: tuple[_ScenarioSpec, ...]
     weight: str | None
@@ -813,7 +812,7 @@ def _search_candidates(
     data: Any,
     *,
     base_public: tuple[str, ...],
-    target: str | RowMetric,
+    target: TabularTarget,
     candidate_refinements: tuple[str, ...],
     required_columns: tuple[str, ...],
     scenario_specs: tuple[_ScenarioSpec, ...],
@@ -1017,7 +1016,7 @@ def _evaluate_candidate(
     data: Any,
     *,
     base_public: tuple[str, ...],
-    target: str | RowMetric,
+    target: TabularTarget,
     added_columns: tuple[str, ...],
     scenario_specs: tuple[_ScenarioSpec, ...],
     weight: str | None,
@@ -1475,11 +1474,7 @@ def _candidate_sort_key(
 
 
 def _observed_value(grouped: Any) -> float:
-    problem = grouped.problem
-    return sum(
-        grouped.cell_weights[state] * problem.estimand_map[state]
-        for state in problem.states
-    )
+    return grouped.problem.psi(grouped.cell_weights)
 
 
 def _repeatable_data(data: Any) -> tuple[Any, int | None]:

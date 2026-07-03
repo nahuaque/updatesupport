@@ -73,6 +73,25 @@ class LinearTargetTests(unittest.TestCase):
                 estimand=FutureLinearTarget(),
             )
 
+    def test_finite_problem_rejects_uncompiled_procedure_target(self):
+        target = us.ProcedureTarget(
+            "demo_procedure",
+            lambda context: "target",
+            description="representation-dependent demo target",
+        )
+
+        self.assertEqual(target.contract.kind, "procedure")
+        self.assertFalse(target.contract.supports_interval)
+        with self.assertRaisesRegex(
+            us.UnsupportedTargetError,
+            "must be compiled by `from_dataframe",
+        ):
+            us.FiniteProblem(
+                states=["a", "b"],
+                public={"a": "o", "b": "o"},
+                estimand=target,
+            )
+
 
 class RatioTargetTests(unittest.TestCase):
     def test_fixed_public_saturated_transport_solves_ratio_target(self):

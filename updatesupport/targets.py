@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from math import isfinite
 from numbers import Real
@@ -76,6 +76,104 @@ class UnsupportedTarget:
             "formula": self.formula,
             "description": self.description,
             "reason": self.reason,
+            "contract": self.contract.as_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class ProcedureTargetContext:
+    """Context supplied when compiling a representation-dependent target.
+
+    A procedure target is compiled by tabular workflows before a finite
+    ``FiniteProblem`` is constructed. The compiler should return a column name
+    or row metric for the supplied public representation.
+    """
+
+    data: Any
+    public: tuple[str, ...]
+    hidden: tuple[str, ...]
+    weight: str | None = None
+    min_cell_weight: float = 1.0
+    q: Any = "saturated"
+    q_radius: float | None = None
+
+    @property
+    def row_count(self) -> int | None:
+        try:
+            return len(self.data)
+        except TypeError:
+            return None
+
+    def as_dict(self) -> dict[str, Any]:
+        q_value = self.q if isinstance(self.q, str) else repr(self.q)
+        return {
+            "data_type": type(self.data).__name__,
+            "row_count": self.row_count,
+            "public": self.public,
+            "hidden": self.hidden,
+            "weight": self.weight,
+            "min_cell_weight": self.min_cell_weight,
+            "q": q_value,
+            "q_radius": self.q_radius,
+        }
+
+
+@dataclass(frozen=True)
+class ProcedureTarget:
+    """Representation-dependent target compiled by tabular workflows.
+
+    ``compiler`` receives a :class:`ProcedureTargetContext` and must return the
+    actual column name or row metric to use for that representation. The compiled
+    target is then treated as a fixed hidden-cell target by the finite solver.
+    """
+
+    name: str
+    compiler: Callable[[ProcedureTargetContext], Any]
+    description: str = ""
+    formula: str = (
+        "public representation -> compiled target values -> reported aggregate"
+    )
+    limitations: tuple[str, ...] = ()
+
+    @property
+    def contract(self) -> TargetContract:
+        limitations = (
+            "Procedure targets are not finite-problem estimands until compiled.",
+            "Procedure-aware workflows re-run the compiler for each public "
+            "representation or sensitivity scenario.",
+            "Procedure comparisons should not be interpreted as transporting one "
+            "unchanged target functional across representations.",
+            *self.limitations,
+        )
+        return TargetContract(
+            kind="procedure",
+            name=self.name,
+            formula=self.formula,
+            description=self.description
+            or "representation-dependent reporting procedure",
+            fixed_after_compilation=False,
+            supports_adequacy=False,
+            supports_interval=False,
+            supports_fiber_decomposition=False,
+            limitations=limitations,
+        )
+
+    @property
+    def compiler_name(self) -> str:
+        return getattr(self.compiler, "__name__", type(self.compiler).__name__)
+
+    def compile(self, context: ProcedureTargetContext) -> Any:
+        """Return the column name or row metric for ``context``."""
+
+        return self.compiler(context)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "kind": "procedure",
+            "name": self.name,
+            "description": self.description,
+            "formula": self.formula,
+            "compiler": self.compiler_name,
             "contract": self.contract.as_dict(),
         }
 
@@ -345,6 +443,13 @@ def coerce_target(
 ) -> LinearTarget | RatioTarget:
     """Coerce a supported target functional."""
 
+    if isinstance(value, ProcedureTarget):
+        raise UnsupportedTargetError(
+            "ProcedureTarget must be compiled by `from_dataframe(...)` or another "
+            "procedure-aware workflow before constructing `FiniteProblem`. "
+            "Procedure compilers must return a column name or RowMetric that can "
+            "be converted to a fixed target functional."
+        )
     if isinstance(value, RatioTarget):
         _validate_ratio_target_states(states, value)
         return value
@@ -414,6 +519,13 @@ def raise_if_unsupported_target(value: Any, *, context: str) -> None:
             f"{context} declares a ratio target contract but is not a "
             "`RatioTarget`. The current ratio backend accepts `RatioTarget` "
             "objects with fixed numerator and positive denominator maps."
+        )
+    if contract.kind == "procedure":
+        raise UnsupportedTargetError(
+            f"{context} received procedure target {contract.name!r}. "
+            "ProcedureTarget objects must be compiled by `from_dataframe(...)` "
+            "or another procedure-aware workflow before a finite transport "
+            "problem is constructed."
         )
     limitations = "; ".join(contract.limitations)
     detail = f" {limitations}" if limitations else ""

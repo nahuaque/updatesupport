@@ -70,7 +70,10 @@ Public-descent reports expose:
 
 The `summary` table and JSON payload include `target_contract` metadata so
 review systems can tell whether the report used a linear target, a supported
-ratio target, or a future/unsupported target contract.
+ratio target, or another compiled target contract. Procedure-aware reports also
+include `target_procedure`, `target_procedure_context`, and `compiled_target`
+fields so consumers can tell which reporting procedure produced the compiled
+target values.
 
 Public-descent exports also include `fiber_decomposition_available` and
 `fiber_diagnostic_kind`. When decomposition is unavailable, for example for a

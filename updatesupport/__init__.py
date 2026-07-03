@@ -112,6 +112,8 @@ from .results import (
 from .spec import AuditRun, AuditSpec, QSpec, run_audit
 from .targets import (
     LinearTarget,
+    ProcedureTarget,
+    ProcedureTargetContext,
     RatioTarget,
     TargetContract,
     UnsupportedTarget,
@@ -174,6 +176,8 @@ __all__ = [
     "PluginValidationIssue",
     "PluginValidationReport",
     "PolytopeEnvironments",
+    "ProcedureTarget",
+    "ProcedureTargetContext",
     "PublicFiberSaturated",
     "PublicDescentReport",
     "PublicFiberDiagnostic",
