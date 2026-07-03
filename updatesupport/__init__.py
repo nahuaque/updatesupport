@@ -9,6 +9,11 @@ from .adapters import (
     adapt_dowhy_effects,
     adapt_econml_effects,
 )
+from .breakdown import (
+    BreakdownCurvePoint,
+    BreakdownPointReport,
+    breakdown_point,
+)
 from .certificate import (
     RepresentationStabilityCertificate,
     certify_public_representation,
@@ -203,6 +208,9 @@ __all__ = [
     "audit_effects",
     "audit_dowhy_effects",
     "BatchedCvxpyEnvironments",
+    "BreakdownCurvePoint",
+    "BreakdownPointReport",
+    "breakdown_point",
     "dowhy_refutation_from_report",
     "FiniteEnvironments",
     "FiniteProblem",

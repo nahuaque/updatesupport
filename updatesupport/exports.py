@@ -7,6 +7,7 @@ from dataclasses import is_dataclass
 from typing import Any, Mapping
 
 from .certificate import RepresentationStabilityCertificate
+from .breakdown import BreakdownPointReport
 from .claim import ClaimVerificationReport
 from .frontier import (
     FrontierCandidateExplanation,
@@ -59,6 +60,9 @@ def report_tables(report: Any) -> ReportTables:
 
     if isinstance(report, PublicRepresentationFrontier):
         return _frontier_tables(report)
+
+    if isinstance(report, BreakdownPointReport):
+        return report.to_tables()
 
     if isinstance(report, FrontierCandidateExplanation):
         return _frontier_explanation_tables(report)

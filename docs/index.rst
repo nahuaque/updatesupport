@@ -37,6 +37,7 @@ This documentation has three layers:
    data-diagnostics
    structured-exports
    model-assisted-joint-analysis
+   breakdown-point-analysis
 
 .. toctree::
    :maxdepth: 1
