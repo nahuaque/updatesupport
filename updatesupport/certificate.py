@@ -362,7 +362,7 @@ def _certificate_limitations(
         "drift outside the retained state space.",
     ]
     if frontier.search_trace is not None and not frontier.search_trace.exact:
-        if frontier.search_trace.search in {"mip", "mip_oracle"}:
+        if frontier.search_trace.search in {"mip", "mip_oracle", "mip_minimum"}:
             limitations.append(
                 "The MIP-backed search did not provide an exact guarantee for "
                 "the full certificate constraints; unevaluated representations "
@@ -403,12 +403,12 @@ def _search_guarantee(frontier: PublicRepresentationFrontier) -> str:
     if frontier.search_trace is None:
         return "unknown"
     if frontier.search_trace.exact:
-        if frontier.search_trace.search in {"mip", "mip_oracle"}:
+        if frontier.search_trace.search in {"mip", "mip_oracle", "mip_minimum"}:
             return frontier.search_trace.optimization_guarantee or (
                 "MIP-exact over the declared discrete search objective"
             )
         return "exhaustive over the declared candidate space"
-    if frontier.search_trace.search in {"mip", "mip_oracle"}:
+    if frontier.search_trace.search in {"mip", "mip_oracle", "mip_minimum"}:
         return frontier.search_trace.optimization_guarantee or (
             "MIP-backed search without a full certificate guarantee"
         )

@@ -79,6 +79,10 @@ All notable changes to `updatesupport` are documented here.
   as a discrete public-representation master, compatible convex Q presets are
   evaluated through support-function oracles, and failed proposals receive
   no-good cuts.
+- Added `search="mip_minimum"` / `search="mip_exact"` for exact minimum public
+  representation under convex Q presets, with support-function oracle
+  verification, `minimum_objective` selection, hard bucket constraints, and
+  certificate/report trace metadata.
 
 ### Fixed
 

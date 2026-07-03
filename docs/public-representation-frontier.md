@@ -271,6 +271,48 @@ candidate.
 `wasserstein` presets. The public-cell `bucket_budget`, when supplied, is a hard
 master constraint in this mode.
 
+Use `search="mip_minimum"` when the review question is:
+
+> What is the minimum public representation that satisfies this ambiguity
+> limit under the declared convex Q stress tests?
+
+```python
+frontier = us.public_representation_frontier(
+    rows_or_frame,
+    base_public=["product", "region"],
+    hidden=["product", "region", "score_band", "ltv_band", "channel"],
+    target="expected_loss",
+    weight="ead",
+    candidate_refinements=["score_band", "ltv_band", "channel"],
+    q_presets=[us.q_tv_budget(0.10), us.q_kl_budget(0.05)],
+    ambiguity_limit=0.005,
+    bucket_budget=40,
+    search="mip_minimum",
+    minimum_objective="public_cells",
+    max_added_columns=3,
+)
+```
+
+This mode uses the same SCIP master plus support-function oracle as
+`search="mip_oracle"`, but gives it an exact-minimum contract. SCIP enumerates
+candidate representations in increasing `minimum_objective` order and the
+support-function oracle evaluates each candidate against the declared Q grid.
+The first oracle-stable candidate is the exact minimum under the declared
+objective, search bounds, and hard bucket constraints.
+
+Supported minimum objectives are:
+
+- `minimum_objective="public_cells"`: minimize the maximum public-cell count
+  across the stress grid, tie by added-column count, then by saturated proxy
+  ambiguity.
+- `minimum_objective="added_columns"`: minimize the number of added public
+  columns, tie by maximum public-cell count, then by saturated proxy ambiguity.
+
+`search="mip_minimum"` requires `ambiguity_limit`, does not accept
+`scalarized_weights`, and supports the same named Q presets as
+`search="mip_oracle"`. Use `search="mip_oracle"` if you want a scalarized proxy
+search instead of an exact minimum under one of the supported objectives.
+
 The returned report includes `frontier.search_trace` with:
 
 - `search`: the selected search mode.
@@ -286,6 +328,9 @@ The returned report includes `frontier.search_trace` with:
 - MIP-specific solver metadata, including `solver`, `solver_status`,
   `objective_value`, and `optimization_guarantee`.
 - MIP-oracle counters, including `oracle_iterations` and `oracle_rejections`.
+- Exact-minimum metadata, including `minimum_objective`, when
+  `search="mip_minimum"` or non-scalarized `search="mip_oracle"` uses a declared
+  objective order.
 
 Useful constraints:
 

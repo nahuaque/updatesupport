@@ -482,6 +482,30 @@ convex Q grid. Failing proposals receive no-good cuts. This is useful when a
 saturated master is too conservative, but you still want a solver-guided search
 over public-report designs.
 
+When the design question is the exact minimum representation satisfying an
+ambiguity limit, use `search="mip_minimum"`:
+
+```python
+frontier = us.public_representation_frontier(
+    rows,
+    base_public=["region"],
+    hidden=["region", "occupation", "channel"],
+    target="outcome",
+    candidate_refinements=["occupation", "channel"],
+    q_presets=[us.q_tv_budget(0.10), us.q_chi_square_budget(0.25)],
+    ambiguity_limit=0.02,
+    bucket_budget=20,
+    search="mip_minimum",
+    minimum_objective="public_cells",
+)
+```
+
+This mode keeps the convex Q evaluation in the support-function oracle, while
+the SCIP master enumerates public representations in increasing objective
+order. The first oracle-stable proposal certifies the exact minimum under the
+declared objective (`public_cells` or `added_columns`), search bounds, and hard
+bucket constraints.
+
 ## Parameterized CVXPY Sweeps
 
 For repeated radius sweeps on the same compiled finite problem, use the

@@ -550,6 +550,115 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
         self.assertIn("support-function oracle", markdown)
         self.assertIn("Support-function oracle evaluations: 1", markdown)
 
+    def test_public_representation_frontier_supports_mip_minimum_search(self):
+        _require_cvxpy_solver("SCIP")
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0, "weight": 30},
+            {"segment": "A", "driver": "high", "target": 1.0, "weight": 30},
+            {"segment": "B", "driver": "flat", "target": 0.5, "weight": 40},
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            q_presets=[us.q_tv_budget(0.15)],
+            ambiguity_limit=0.31,
+            bucket_budget=2,
+            search="mip_minimum",
+            max_added_columns=1,
+        )
+        markdown = report.to_markdown()
+
+        self.assertTrue(report.search_trace.exact)
+        self.assertEqual(report.search_trace.search, "mip_minimum")
+        self.assertEqual(report.search_trace.minimum_objective, "public_cells")
+        self.assertTrue(report.search_trace.enforce_bucket_budget)
+        self.assertEqual(report.search_trace.oracle_iterations, 1)
+        self.assertEqual(report.minimal_stable.added_columns, ())
+        self.assertAlmostEqual(report.minimal_stable.max_ambiguity, 0.3, places=4)
+        self.assertIn("exact minimum", report.search_trace.stopping_reason)
+        self.assertIn("certifies the exact minimum", markdown)
+        self.assertIn("Minimum objective: public_cells", markdown)
+        self.assertIn("MIP-minimum search", markdown)
+
+    def test_public_representation_frontier_mip_minimum_supports_added_columns_objective(
+        self,
+    ):
+        _require_cvxpy_solver("SCIP")
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0, "weight": 30},
+            {"segment": "A", "driver": "high", "target": 1.0, "weight": 30},
+            {"segment": "B", "driver": "flat", "target": 0.5, "weight": 40},
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            q_presets=[us.q_tv_budget(0.15)],
+            ambiguity_limit=0.31,
+            bucket_budget=2,
+            search="mip_exact",
+            minimum_objective="added_columns",
+            max_added_columns=1,
+        )
+
+        self.assertTrue(report.search_trace.exact)
+        self.assertEqual(report.search_trace.search, "mip_minimum")
+        self.assertEqual(report.search_trace.minimum_objective, "added_columns")
+        self.assertEqual(report.minimal_stable.added_columns, ())
+        self.assertIn(
+            "increasing added-column count order",
+            report.search_trace.optimization_guarantee,
+        )
+
+    def test_public_representation_frontier_mip_minimum_rejects_scalarized_weights(
+        self,
+    ):
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0},
+            {"segment": "A", "driver": "high", "target": 1.0},
+        ]
+
+        with self.assertRaisesRegex(ValueError, "does not support scalarized_weights"):
+            us.public_representation_frontier(
+                rows,
+                base_public=["segment"],
+                hidden=["segment", "driver"],
+                target="target",
+                candidate_refinements=["driver"],
+                q_presets=["saturated"],
+                ambiguity_limit=0.05,
+                search="mip_minimum",
+                scalarized_weights={"max_ambiguity": 1.0},
+            )
+
+    def test_public_representation_frontier_mip_minimum_rejects_bad_objective(self):
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0},
+            {"segment": "A", "driver": "high", "target": 1.0},
+        ]
+
+        with self.assertRaisesRegex(ValueError, "minimum_objective"):
+            us.public_representation_frontier(
+                rows,
+                base_public=["segment"],
+                hidden=["segment", "driver"],
+                target="target",
+                candidate_refinements=["driver"],
+                q_presets=["saturated"],
+                ambiguity_limit=0.05,
+                search="mip_minimum",
+                minimum_objective="not_real",
+            )
+
     def test_public_representation_frontier_mip_oracle_adds_no_good_cuts(self):
         _require_cvxpy_solver("SCIP")
         rows = [

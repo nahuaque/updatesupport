@@ -36,6 +36,17 @@ _SCALARIZED_WEIGHT_ALIASES = {
     "added_column_count": "added_columns",
 }
 
+_MINIMUM_OBJECTIVE_ALIASES = {
+    "public_cells": "public_cells",
+    "public_cell_count": "public_cells",
+    "buckets": "public_cells",
+    "bucket_count": "public_cells",
+    "added_columns": "added_columns",
+    "added_column_count": "added_columns",
+    "columns": "added_columns",
+    "refinements": "added_columns",
+}
+
 _SUPPORT_FUNCTION_ORACLE_Q_PRESETS = {
     "chi_square_budget",
     "kl_budget",
@@ -101,6 +112,7 @@ class FrontierSearchTrace:
     pruned_by_dominance: int = 0
     pruned_by_beam: int = 0
     scalarized_weights: dict[str, float] | None = None
+    minimum_objective: str | None = None
     solver: str | None = None
     solver_status: str | None = None
     objective_value: float | None = None
@@ -124,6 +136,7 @@ class FrontierSearchTrace:
             "pruned_by_dominance": self.pruned_by_dominance,
             "pruned_by_beam": self.pruned_by_beam,
             "scalarized_weights": self.scalarized_weights,
+            "minimum_objective": self.minimum_objective,
             "solver": self.solver,
             "solver_status": self.solver_status,
             "objective_value": self.objective_value,
@@ -584,6 +597,10 @@ class PublicRepresentationFrontier:
                 lines.append(
                     f"- Search solver status: {self.search_trace.solver_status}"
                 )
+            if self.search_trace.minimum_objective is not None:
+                lines.append(
+                    f"- Minimum objective: {self.search_trace.minimum_objective}"
+                )
             if self.search_trace.optimization_guarantee is not None:
                 lines.append(
                     "- Search optimization guarantee: "
@@ -704,6 +721,7 @@ def public_representation_frontier(
     beam_width: int = 12,
     max_evaluations: int | None = None,
     scalarized_weights: Mapping[str, float] | None = None,
+    minimum_objective: str = "public_cells",
     mip_solver: str | None = "SCIP",
     mip_solver_options: Mapping[str, Any] | None = None,
     must_include: Sequence[str] | None = None,
@@ -801,6 +819,7 @@ def public_representation_frontier(
         raise ValueError("must_include contains more columns than max_added_columns")
 
     search_mode = _normalize_search(search)
+    normalized_minimum_objective = _normalize_minimum_objective(minimum_objective)
     repeatable_data, row_count = _repeatable_data(data)
     q_grid = _resolve_frontier_q_grid(q_presets, search=search_mode)
     scenario_specs = _frontier_scenarios(
@@ -808,9 +827,10 @@ def public_representation_frontier(
         min_cell_weights=min_cell_weight_grid,
         q_presets=q_grid,
     )
-    effective_enforce_bucket_budget = (
-        enforce_bucket_budget or search_mode == "mip_oracle"
-    )
+    effective_enforce_bucket_budget = enforce_bucket_budget or search_mode in {
+        "mip_oracle",
+        "mip_minimum",
+    }
     candidate_space_size = _candidate_space_size(
         candidate_tuple,
         max_added_columns=max_added_columns,
@@ -821,6 +841,11 @@ def public_representation_frontier(
         scalarized_weights,
         search=search_mode,
     )
+    if search_mode == "mip_minimum" and normalized_scalarized_weights is not None:
+        raise ValueError(
+            "search='mip_minimum' does not support scalarized_weights; "
+            "use search='mip_oracle' for proxy scalarized search"
+        )
     search_result = _search_candidates(
         repeatable_data,
         base_public=base_public_tuple,
@@ -840,6 +865,7 @@ def public_representation_frontier(
         mip_solver=mip_solver,
         mip_solver_options=mip_solver_options,
         enforce_bucket_budget=effective_enforce_bucket_budget,
+        minimum_objective=normalized_minimum_objective,
         candidate_space_size=candidate_space_size,
     )
 
@@ -1001,6 +1027,7 @@ def _search_candidates(
     mip_solver: str | None,
     mip_solver_options: Mapping[str, Any] | None,
     enforce_bucket_budget: bool,
+    minimum_objective: str,
     candidate_space_size: int,
 ) -> _SearchResult:
     state = _EvaluationState(
@@ -1056,7 +1083,7 @@ def _search_candidates(
             scalarized_weights=scalarized_weights,
         )
         stopping_reason = mip_outcome.stopping_reason
-    elif search == "mip_oracle":
+    elif search in {"mip_oracle", "mip_minimum"}:
         mip_outcome = _mip_support_function_oracle_search(
             state,
             required_columns=required_columns,
@@ -1065,6 +1092,8 @@ def _search_candidates(
             solver=mip_solver,
             solver_options=mip_solver_options,
             scalarized_weights=scalarized_weights,
+            minimum_objective=minimum_objective,
+            exact_minimum=search == "mip_minimum",
         )
         stopping_reason = mip_outcome.stopping_reason
     else:
@@ -1090,7 +1119,7 @@ def _search_candidates(
             and not state.evaluation_limit_hit
         )
         or (
-            search == "mip_oracle"
+            search in {"mip_oracle", "mip_minimum"}
             and mip_outcome is not None
             and mip_outcome.exact
             and not state.evaluation_limit_hit
@@ -1114,6 +1143,9 @@ def _search_candidates(
             pruned_by_dominance=pruned_by_dominance,
             pruned_by_beam=pruned_by_beam,
             scalarized_weights=scalarized_weights,
+            minimum_objective=minimum_objective
+            if search in {"mip_oracle", "mip_minimum"} and scalarized_weights is None
+            else None,
             solver=None if mip_outcome is None else mip_outcome.solver,
             solver_status=None if mip_outcome is None else mip_outcome.solver_status,
             objective_value=None
@@ -1410,11 +1442,15 @@ def _mip_support_function_oracle_search(
     solver: str | None,
     solver_options: Mapping[str, Any] | None,
     scalarized_weights: dict[str, float] | None,
+    minimum_objective: str,
+    exact_minimum: bool = False,
 ) -> _MipSearchOutcome:
+    search_name = "mip_minimum" if exact_minimum else "mip_oracle"
     _validate_mip_oracle_search(
         state,
         required_columns=required_columns,
         include_base=include_base,
+        search=search_name,
     )
     if not state.candidate_refinements:
         candidate = state.evaluate(
@@ -1422,15 +1458,26 @@ def _mip_support_function_oracle_search(
             include_result=include_base or bool(required_columns),
         )
         stable = candidate is not None and _is_stable(candidate, state.ambiguity_limit)
-        return _MipSearchOutcome(
-            stopping_reason="support-function oracle stable representation found"
+        stopping_reason = (
+            "exact minimum support-function representation found"
+            if stable and exact_minimum
+            else "support-function oracle stable representation found"
             if stable
-            else "no oracle-stable representation",
+            else "no oracle-stable representation"
+        )
+        return _MipSearchOutcome(
+            stopping_reason=stopping_reason,
             exact=candidate is not None,
             solver=None,
             solver_status=None,
             objective_value=None,
-            optimization_guarantee="no candidate refinements required a MIP solve",
+            optimization_guarantee=_mip_oracle_guarantee(
+                state,
+                scalarized_weights=scalarized_weights,
+                exhausted=not stable,
+                minimum_objective=minimum_objective,
+                exact_minimum=exact_minimum,
+            ),
             oracle_iterations=1 if candidate is not None else 0,
             oracle_rejections=0 if stable else int(candidate is not None),
         )
@@ -1469,6 +1516,8 @@ def _mip_support_function_oracle_search(
                     state,
                     scalarized_weights=scalarized_weights,
                     exhausted=False,
+                    minimum_objective=minimum_objective,
+                    exact_minimum=exact_minimum,
                 ),
                 oracle_iterations=oracle_iterations,
                 oracle_rejections=oracle_rejections,
@@ -1486,7 +1535,10 @@ def _mip_support_function_oracle_search(
             solver=solver_name,
             solver_options=solver_options,
             excluded_subsets=tuple(excluded_subsets),
-            objective_mode="budgeted",
+            objective_mode=_mip_objective_mode(
+                minimum_objective,
+                scalarized_weights=scalarized_weights,
+            ),
         )
         last_solve = solve
         if solve.added_columns is None:
@@ -1501,6 +1553,8 @@ def _mip_support_function_oracle_search(
                         state,
                         scalarized_weights=scalarized_weights,
                         exhausted=True,
+                        minimum_objective=minimum_objective,
+                        exact_minimum=exact_minimum,
                     ),
                     oracle_iterations=oracle_iterations,
                     oracle_rejections=oracle_rejections,
@@ -1522,6 +1576,8 @@ def _mip_support_function_oracle_search(
                     state,
                     scalarized_weights=scalarized_weights,
                     exhausted=False,
+                    minimum_objective=minimum_objective,
+                    exact_minimum=exact_minimum,
                 ),
                 oracle_iterations=oracle_iterations,
                 oracle_rejections=oracle_rejections,
@@ -1535,8 +1591,13 @@ def _mip_support_function_oracle_search(
 
         if _is_stable(candidate, state.ambiguity_limit) and state.is_allowed(candidate):
             exact = scalarized_weights is None
+            stopping_reason = (
+                "exact minimum support-function representation found"
+                if exact_minimum
+                else "support-function oracle stable representation found"
+            )
             return _MipSearchOutcome(
-                stopping_reason="support-function oracle stable representation found",
+                stopping_reason=stopping_reason,
                 exact=exact,
                 solver=solver_name,
                 solver_status=solve.status,
@@ -1545,6 +1606,8 @@ def _mip_support_function_oracle_search(
                     state,
                     scalarized_weights=scalarized_weights,
                     exhausted=False,
+                    minimum_objective=minimum_objective,
+                    exact_minimum=exact_minimum,
                 ),
                 oracle_iterations=oracle_iterations,
                 oracle_rejections=oracle_rejections,
@@ -1583,18 +1646,19 @@ def _validate_mip_oracle_search(
     *,
     required_columns: tuple[str, ...],
     include_base: bool,
+    search: str = "mip_oracle",
 ) -> None:
     if state.ambiguity_limit is None:
-        raise ValueError("search='mip_oracle' requires ambiguity_limit")
+        raise ValueError(f"search='{search}' requires ambiguity_limit")
     if isinstance(state.target, ProcedureTarget):
         raise ValueError(
-            "search='mip_oracle' currently supports fixed row/column targets only; "
+            f"search='{search}' currently supports fixed row/column targets only; "
             "ProcedureTarget depends on the public representation and must be "
             "evaluated by exhaustive, greedy, beam, or scalarized search."
         )
     if not include_base and not required_columns and not state.candidate_refinements:
         raise ValueError(
-            "search='mip_oracle' has no candidate representation to evaluate"
+            f"search='{search}' has no candidate representation to evaluate"
         )
 
 
@@ -1860,9 +1924,28 @@ def _mip_objective(
             + scalarized_weights.get("added_columns", 0.0) * selected_count
         )
     scaled_ambiguity = max_ambiguity / max(target_scale, 1.0)
-    if ambiguity_limit is not None or objective_mode == "budgeted":
+    if ambiguity_limit is not None or objective_mode in {
+        "budgeted",
+        "minimum_public_cells",
+    }:
         return max_public_cells + 1e-6 * selected_count + 1e-9 * scaled_ambiguity
+    if objective_mode == "minimum_added_columns":
+        return selected_count + 1e-6 * max_public_cells + 1e-9 * scaled_ambiguity
     return scaled_ambiguity + 1e-6 * max_public_cells + 1e-9 * selected_count
+
+
+def _mip_objective_mode(
+    minimum_objective: str,
+    *,
+    scalarized_weights: dict[str, float] | None,
+) -> str:
+    if scalarized_weights is not None:
+        return "budgeted"
+    if minimum_objective == "public_cells":
+        return "minimum_public_cells"
+    if minimum_objective == "added_columns":
+        return "minimum_added_columns"
+    raise ValueError(f"unsupported minimum objective: {minimum_objective!r}")
 
 
 def _normalized_mip_solver(solver: str | None) -> str | None:
@@ -1920,11 +2003,14 @@ def _mip_oracle_guarantee(
     *,
     scalarized_weights: dict[str, float] | None,
     exhausted: bool,
+    minimum_objective: str,
+    exact_minimum: bool,
 ) -> str:
+    objective_label = _minimum_objective_label(minimum_objective)
     if exhausted:
         return (
             "SCIP exhausted the discrete master problem under the declared "
-            "search bounds and hard bucket budget; the support-function oracle "
+            "search bounds and bucket constraints; the support-function oracle "
             "found no representation satisfying the ambiguity limit."
         )
     if scalarized_weights is not None:
@@ -1934,12 +2020,29 @@ def _mip_oracle_guarantee(
             "grid. The result is oracle-verified for the selected candidate, "
             "but not globally exact for the actual scalarized oracle objective."
         )
+    if exact_minimum:
+        return (
+            "SCIP enumerated candidate representations in increasing "
+            f"{objective_label} order under the declared search bounds and "
+            "bucket constraints; the support-function oracle verified the "
+            "first representation satisfying the ambiguity limit. This "
+            "certifies the exact minimum under the declared objective."
+        )
     return (
-        "SCIP generated candidate representations in budgeted-complexity order; "
+        "SCIP generated candidate representations in increasing "
+        f"{objective_label} order; "
         "the support-function oracle evaluated each candidate against the "
         "declared Q grid until it found a representation satisfying the "
         "ambiguity limit."
     )
+
+
+def _minimum_objective_label(minimum_objective: str) -> str:
+    if minimum_objective == "public_cells":
+        return "public-cell count"
+    if minimum_objective == "added_columns":
+        return "added-column count"
+    return minimum_objective.replace("_", " ")
 
 
 def _oracle_candidate_rank(
@@ -2501,7 +2604,9 @@ def _resolve_optional_int_arg(
 
 
 def _normalize_search(search: str) -> str:
-    search_mode = search.strip().lower()
+    search_mode = search.strip().lower().replace("-", "_")
+    if search_mode in {"mip_exact", "exact_mip"}:
+        search_mode = "mip_minimum"
     if search_mode not in {
         "exhaustive",
         "greedy",
@@ -2509,10 +2614,12 @@ def _normalize_search(search: str) -> str:
         "scalarized",
         "mip",
         "mip_oracle",
+        "mip_minimum",
     }:
         raise ValueError(
             "search must be one of: "
-            "'exhaustive', 'greedy', 'beam', 'scalarized', 'mip', 'mip_oracle'"
+            "'exhaustive', 'greedy', 'beam', 'scalarized', 'mip', "
+            "'mip_oracle', 'mip_minimum'"
         )
     return search_mode
 
@@ -2522,26 +2629,38 @@ def _resolve_frontier_q_grid(
     *,
     search: str,
 ) -> tuple[Any, ...]:
-    if search != "mip_oracle":
+    if search not in {"mip_oracle", "mip_minimum"}:
         return tuple(q_presets)
     resolved = []
     for q in q_presets:
         preset = normalize_q_preset(q)
         if preset is None:
             raise ValueError(
-                "search='mip_oracle' requires named Q presets that expose a "
+                f"search='{search}' requires named Q presets that expose a "
                 "support-function oracle"
             )
         if preset.name not in _MIP_ORACLE_ALLOWED_Q_PRESETS:
             allowed = ", ".join(sorted(_MIP_ORACLE_ALLOWED_Q_PRESETS))
             raise ValueError(
-                "search='mip_oracle' supports only saturated, observed, and "
+                f"search='{search}' supports only saturated, observed, and "
                 f"support-function-compatible convex Q presets: {allowed}"
             )
         if preset.name in _SUPPORT_FUNCTION_ORACLE_Q_PRESETS:
             preset = replace(preset, backend="support_function")
         resolved.append(preset)
     return tuple(resolved)
+
+
+def _normalize_minimum_objective(minimum_objective: str) -> str:
+    if not isinstance(minimum_objective, str):
+        raise TypeError("minimum_objective must be a string")
+    key = minimum_objective.strip().lower().replace("-", "_")
+    try:
+        return _MINIMUM_OBJECTIVE_ALIASES[key]
+    except KeyError as exc:
+        raise ValueError(
+            "minimum_objective must be one of: 'public_cells', 'added_columns'"
+        ) from exc
 
 
 def _normalize_scalarized_weights(
@@ -2659,6 +2778,13 @@ def _frontier_interpretation(report: PublicRepresentationFrontier) -> list[str]:
             "evaluates proposed representations with the declared transport "
             "oracle. Compatible convex Q presets are routed through the "
             "support-function backend."
+        )
+    if report.search_trace is not None and report.search_trace.search == "mip_minimum":
+        lines.append(
+            "- MIP-minimum search uses SCIP to enumerate candidate public "
+            "representations in the declared minimum-objective order, then "
+            "uses support-function oracles to certify the first representation "
+            "that satisfies the ambiguity limit."
         )
     if report.scalarized_weights is not None:
         lines.append(

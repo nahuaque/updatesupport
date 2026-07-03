@@ -120,7 +120,9 @@ When scalarized frontier scoring is requested, `summary` includes
 When MIP frontier search is used, `search_trace` includes solver metadata such
 as `solver`, `solver_status`, `objective_value`, and
 `optimization_guarantee`. MIP-oracle search also includes
-`oracle_iterations` and `oracle_rejections`.
+`oracle_iterations` and `oracle_rejections`. Non-scalarized MIP-oracle and
+MIP-minimum runs also include `minimum_objective`, which records whether the
+solver enumerated candidates by public-cell count or added-column count.
 
 Representation-stability certificates expose:
 
