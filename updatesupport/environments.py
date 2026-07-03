@@ -36,6 +36,22 @@ def _dict_from_public_vector(problem, vector: Sequence[float]) -> dict[Hashable,
     }
 
 
+def _is_nonlinear_ratio_problem(problem) -> bool:
+    return problem.has_ratio_target and not problem.has_linear_target
+
+
+def _same_key(left: Hashable, right: Hashable, *, tol: float) -> bool:
+    if isinstance(left, tuple) and isinstance(right, tuple) and len(left) == len(right):
+        return all(
+            abs(float(left_item) - float(right_item)) <= tol
+            for left_item, right_item in zip(left, right, strict=True)
+        )
+    try:
+        return abs(float(left) - float(right)) <= tol
+    except (TypeError, ValueError):
+        return left == right
+
+
 CvxpyConstraintBuilder = Callable[
     [Any, Any, tuple[Hashable, ...], Mapping[Hashable, int]], Sequence[Any]
 ]
@@ -188,6 +204,37 @@ class PublicFiberSaturated:
 
     def check_support(self, problem, support: Partition) -> AdequacyResult:
         problem._validate_support_over_public(support)
+        if _is_nonlinear_ratio_problem(problem):
+            if support != problem.public_partition():
+                problem._require_linear_target(
+                    "PublicFiberSaturated.check_support for non-public supports"
+                )
+            transport = self.global_transport(problem)
+            if transport.diameter <= problem.tol:
+                return AdequacyResult(adequate=True, support=support)
+            if transport.q_lower is None or transport.q_upper is None:
+                raise RuntimeError("ratio support check did not produce witnesses")
+            witness = Witness(
+                q1=transport.q_lower,
+                q2=transport.q_upper,
+                psi_q1=transport.lower,
+                psi_q2=transport.upper,
+                gap=transport.diameter,
+                public_law=transport.public_law
+                if transport.public_law is not None
+                else problem.public_law(transport.q_lower),
+                support_law=problem.support_law(transport.q_lower, support),
+            )
+            return AdequacyResult(
+                adequate=False,
+                support=support,
+                gap=transport.diameter,
+                witness=witness,
+                reason=(
+                    "public fiber contains hidden cells that can change the "
+                    "ratio target under the selected public law"
+                ),
+            )
         ranges = self._support_block_ranges(problem, support)
         public_law, worst_public, worst_pair, worst_gap = self._worst_support_gap(
             problem,
@@ -233,8 +280,8 @@ class PublicFiberSaturated:
         for state in problem.states:
             public_value = problem.public_map[state]
             h_value = (
-                problem.estimand_map[state]
-                if public_value in relevant_public_values
+                problem._target_support_key(state)
+                if (public_value in relevant_public_values)
                 else None
             )
             for i, (existing_public, existing_h) in enumerate(keys):
@@ -246,7 +293,11 @@ class PublicFiberSaturated:
                 if (
                     h_value is not None
                     and existing_h is not None
-                    and abs(existing_h - h_value) <= problem.tol
+                    and _same_key(
+                        existing_h,
+                        h_value,
+                        tol=problem.tol,
+                    )
                 ):
                     blocks[i].append(state)
                     break
@@ -328,6 +379,9 @@ class PublicFiberSaturated:
     def local_transport(
         self, problem, public_law: Mapping[Hashable, float]
     ) -> TransportResult:
+        if _is_nonlinear_ratio_problem(problem):
+            return self._ratio_local_transport(problem, public_law)
+
         p = problem._coerce_public_law(public_law)
         ranges = problem.fiber_ranges()
         lower = 0.0
@@ -358,6 +412,9 @@ class PublicFiberSaturated:
         )
 
     def global_transport(self, problem) -> TransportResult:
+        if _is_nonlinear_ratio_problem(problem):
+            return self._ratio_global_transport(problem)
+
         ranges = problem.fiber_ranges()
         public_marginals = self.public_marginals
         if public_marginals is None:
@@ -375,6 +432,102 @@ class PublicFiberSaturated:
         if not candidates:
             raise ValueError("public_marginals vertices must be non-empty")
         return max(candidates, key=lambda result: result.diameter)
+
+    def _ratio_local_transport(
+        self,
+        problem,
+        public_law: Mapping[Hashable, float],
+    ) -> TransportResult:
+        p = problem._coerce_public_law(public_law)
+        q_lower, lower = self._solve_ratio_single(problem, p, maximize=False)
+        q_upper, upper = self._solve_ratio_single(problem, p, maximize=True)
+        return TransportResult(
+            lower=lower,
+            upper=upper,
+            diameter=max(0.0, upper - lower),
+            public_law=p,
+            q_lower=problem._distribution_from_vector(q_lower),
+            q_upper=problem._distribution_from_vector(q_upper),
+        )
+
+    def _ratio_global_transport(self, problem) -> TransportResult:
+        public_marginals = self.public_marginals
+        if public_marginals is None:
+            candidates = []
+            for public_value in problem.public_values:
+                public_law = {value: 0.0 for value in problem.public_values}
+                public_law[public_value] = 1.0
+                candidates.append(self._ratio_local_transport(problem, public_law))
+            return max(candidates, key=lambda result: result.diameter)
+
+        if isinstance(public_marginals, Mapping):
+            return self._ratio_local_transport(problem, public_marginals)
+
+        candidates = [
+            self._ratio_local_transport(problem, public_law)
+            for public_law in public_marginals
+        ]
+        if not candidates:
+            raise ValueError("public_marginals vertices must be non-empty")
+        return max(candidates, key=lambda result: result.diameter)
+
+    def _solve_ratio_single(
+        self,
+        problem,
+        public_law: Mapping[Hashable, float],
+        *,
+        maximize: bool,
+    ) -> tuple[tuple[float, ...], float]:
+        import numpy as np
+        from scipy.optimize import linprog
+
+        target = problem.target_functional
+        numerator = np.array(target.numerator_vector(problem.states), dtype=float)
+        denominator = np.array(target.denominator_vector(problem.states), dtype=float)
+        n = len(problem.states)
+        objective = np.concatenate([numerator, np.array([0.0])])
+        c = -objective if maximize else objective
+
+        a_eq = [np.concatenate([denominator, np.array([0.0])])]
+        b_eq = [1.0]
+        for public_value in problem.public_values:
+            indicator = np.array(
+                [
+                    1.0 if problem.public_map[state] == public_value else 0.0
+                    for state in problem.states
+                ],
+                dtype=float,
+            )
+            a_eq.append(
+                np.concatenate(
+                    [indicator, np.array([-float(public_law[public_value])])]
+                )
+            )
+            b_eq.append(0.0)
+
+        result = linprog(
+            c,
+            A_eq=np.array(a_eq, dtype=float),
+            b_eq=np.array(b_eq, dtype=float),
+            bounds=[(0.0, None) for _ in range(n + 1)],
+            method="highs",
+        )
+        if not result.success:
+            raise LPError(result.message)
+
+        y = np.array(result.x[:n], dtype=float)
+        tau = float(result.x[n])
+        if tau <= problem.tol:
+            raise LPError("ratio transform returned a non-positive normalization")
+        q = y / tau
+        q = np.where(np.abs(q) <= problem.tol, 0.0, q)
+        if np.any(q < -1e-7):
+            raise LPError("ratio transform returned a negative probability")
+        q = np.maximum(q, 0.0)
+        total = float(np.sum(q))
+        if abs(total - 1.0) > 1e-7:
+            q = q / total
+        return tuple(float(value) for value in q), float(np.dot(numerator, y))
 
 
 @dataclass(frozen=True)
@@ -489,6 +642,7 @@ class LineSegment:
         return center, direction
 
     def check_support(self, problem, support: Partition) -> AdequacyResult:
+        problem._require_linear_target("LineSegment.check_support")
         problem._validate_support_over_public(support)
         center, direction = self._data(problem)
         support_direction = problem._pushforward_vector(direction, support)
@@ -512,6 +666,7 @@ class LineSegment:
     def local_transport(
         self, problem, public_law: Mapping[Hashable, float]
     ) -> TransportResult:
+        problem._require_linear_target("LineSegment.local_transport")
         center, direction = self._data(problem)
         p_target = tuple(
             problem._coerce_public_law(public_law)[value]
@@ -560,6 +715,7 @@ class LineSegment:
         )
 
     def global_transport(self, problem) -> TransportResult:
+        problem._require_linear_target("LineSegment.global_transport")
         center, direction = self._data(problem)
         p_direction = problem._public_vector_from_distribution_vector(direction)
         if not problem._is_zero_vector(p_direction):
@@ -612,6 +768,7 @@ class PolytopeEnvironments:
     name: str = "polytope"
 
     def check_support(self, problem, support: Partition) -> AdequacyResult:
+        problem._require_linear_target("PolytopeEnvironments.check_support")
         problem._validate_support_over_public(support)
         q1, q2, gap = self._max_support_disagreement(problem, support)
         if gap <= problem.tol:
@@ -629,6 +786,7 @@ class PolytopeEnvironments:
     def local_transport(
         self, problem, public_law: Mapping[Hashable, float]
     ) -> TransportResult:
+        problem._require_linear_target("PolytopeEnvironments.local_transport")
         p = problem._coerce_public_law(public_law)
         public_equalities = self._public_equalities(problem, p)
         h = self._estimand_vector(problem)
@@ -649,6 +807,7 @@ class PolytopeEnvironments:
         )
 
     def global_transport(self, problem) -> TransportResult:
+        problem._require_linear_target("PolytopeEnvironments.global_transport")
         q1, q2, gap = self._max_support_disagreement(
             problem, problem.public_partition()
         )
@@ -879,6 +1038,36 @@ class CvxpyEnvironments:
 
     def check_support(self, problem, support: Partition) -> AdequacyResult:
         problem._validate_support_over_public(support)
+        if _is_nonlinear_ratio_problem(problem):
+            if support != problem.public_partition() or self.fixed_public_law is None:
+                problem._require_linear_target("CvxpyEnvironments.check_support")
+            transport = self.global_transport(problem)
+            if transport.diameter <= problem.tol:
+                return AdequacyResult(adequate=True, support=support)
+            if transport.q_lower is None or transport.q_upper is None:
+                raise RuntimeError("ratio support check did not produce witnesses")
+            witness = Witness(
+                q1=transport.q_lower,
+                q2=transport.q_upper,
+                psi_q1=transport.lower,
+                psi_q2=transport.upper,
+                gap=transport.diameter,
+                public_law=transport.public_law
+                if transport.public_law is not None
+                else problem.public_law(transport.q_lower),
+                support_law=problem.support_law(transport.q_lower, support),
+            )
+            return AdequacyResult(
+                adequate=False,
+                support=support,
+                gap=transport.diameter,
+                witness=witness,
+                reason=(
+                    "convex environment contains same-public-law distributions "
+                    "with different ratio target values"
+                ),
+            )
+        problem._require_linear_target("CvxpyEnvironments.check_support")
         q1, q2, gap = self._max_support_disagreement(problem, support)
         if gap <= problem.tol:
             return AdequacyResult(adequate=True, support=support)
@@ -895,6 +1084,9 @@ class CvxpyEnvironments:
     def local_transport(
         self, problem, public_law: Mapping[Hashable, float]
     ) -> TransportResult:
+        if _is_nonlinear_ratio_problem(problem):
+            return self._ratio_local_transport(problem, public_law)
+        problem._require_linear_target("CvxpyEnvironments.local_transport")
         p = problem._coerce_public_law(public_law)
         h = self._estimand_vector(problem)
 
@@ -915,6 +1107,11 @@ class CvxpyEnvironments:
         )
 
     def global_transport(self, problem) -> TransportResult:
+        if _is_nonlinear_ratio_problem(problem):
+            if self.fixed_public_law is None:
+                problem._require_linear_target("CvxpyEnvironments.global_transport")
+            return self.local_transport(problem, self.fixed_public_law)
+        problem._require_linear_target("CvxpyEnvironments.global_transport")
         if self.fixed_public_law is not None:
             return self.local_transport(problem, self.fixed_public_law)
 
@@ -938,6 +1135,32 @@ class CvxpyEnvironments:
             q_lower=problem._distribution_from_vector(q_lower),
             q_upper=problem._distribution_from_vector(q_upper),
             duals=result.duals,
+        )
+
+    def _ratio_local_transport(
+        self,
+        problem,
+        public_law: Mapping[Hashable, float],
+    ) -> TransportResult:
+        p = problem._coerce_public_law(public_law)
+        lower_result = self._solve_ratio_single_result(
+            problem,
+            maximize=False,
+            public_law=p,
+        )
+        upper_result = self._solve_ratio_single_result(
+            problem,
+            maximize=True,
+            public_law=p,
+        )
+        return TransportResult(
+            lower=lower_result.value,
+            upper=upper_result.value,
+            diameter=max(0.0, upper_result.value - lower_result.value),
+            public_law=p,
+            q_lower=problem._distribution_from_vector(lower_result.vector),
+            q_upper=problem._distribution_from_vector(upper_result.vector),
+            duals=lower_result.duals + upper_result.duals,
         )
 
     def _normalized_constraints(self) -> tuple[LinearConstraint, ...]:
@@ -1001,6 +1224,121 @@ class CvxpyEnvironments:
             value=float(np.dot(objective_vector, vector)),
             duals=self._constraint_duals(records, solve=solve),
         )
+
+    def _solve_ratio_single_result(
+        self,
+        problem,
+        *,
+        maximize: bool,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> _CvxpySolveResult:
+        cp = self._cvxpy()
+        q = cp.Variable(len(problem.states), nonneg=True)
+        target = problem.target_functional
+        numerator = tuple(
+            float(value) for value in target.numerator_vector(problem.states)
+        )
+        denominator = tuple(
+            float(value) for value in target.denominator_vector(problem.states)
+        )
+        numerator_expr = cp.sum(cp.multiply(numerator, q))
+        denominator_expr = cp.sum(cp.multiply(denominator, q))
+        objective_expr = numerator_expr / denominator_expr
+        records = self._ratio_labeled_constraints_for_variable(
+            cp,
+            problem,
+            q,
+            variable="q",
+            public_law=public_law,
+        )
+        cvx_problem = cp.Problem(
+            cp.Maximize(objective_expr) if maximize else cp.Minimize(objective_expr),
+            [record.constraint for record in records],
+        )
+        if not cvx_problem.is_dqcp():
+            raise CvxpyError(
+                "RatioTarget objective is not DQCP under the current CVXPY "
+                "constraints. Use PublicFiberSaturated, FiniteEnvironments, or "
+                "a constant-denominator LinearTarget reformulation."
+            )
+        values = [problem.estimand_map[state] for state in problem.states]
+        span = max(values) - min(values)
+        margin = max(1.0, span) * 0.1
+        self._solve_problem(
+            cvx_problem,
+            qcp=True,
+            low=min(values) - margin,
+            high=max(values) + margin,
+        )
+        vector = self._clean_vector(problem, q.value)
+        solve = "upper" if maximize else "lower"
+        return _CvxpySolveResult(
+            vector=vector,
+            value=problem._dot_estimand(vector),
+            duals=self._constraint_duals(records, solve=solve),
+        )
+
+    def _ratio_labeled_constraints_for_variable(
+        self,
+        cp,
+        problem,
+        q,
+        *,
+        variable: str,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> list[CvxpyConstraintMetadata]:
+        records = [
+            cvxpy_constraint(
+                cp.sum(q) == 1,
+                name="probability normalization",
+                kind="normalization",
+                sense="==",
+                variable=variable,
+            ),
+        ]
+        records.extend(
+            self._linear_constraint_records(cp, problem, q, variable=variable)
+        )
+
+        fixed_public_law = self._fixed_public_law(problem)
+        if fixed_public_law is not None:
+            if public_law is not None and not self._same_public_law(
+                problem, fixed_public_law, public_law
+            ):
+                raise ValueError("requested public law conflicts with fixed_public_law")
+            records.extend(
+                self._public_law_constraint_records(
+                    cp,
+                    problem,
+                    q,
+                    fixed_public_law,
+                    variable=variable,
+                )
+            )
+        elif public_law is not None:
+            records.extend(
+                self._public_law_constraint_records(
+                    cp,
+                    problem,
+                    q,
+                    public_law,
+                    variable=variable,
+                )
+            )
+
+        state_index = {state: i for i, state in enumerate(problem.states)}
+        states = tuple(problem.states)
+        for i, builder in enumerate(self.constraint_builders):
+            built = builder(cp, q, states, state_index)
+            records.extend(
+                self._coerce_constraint_records(
+                    built,
+                    default_name=f"custom constraint builder {i}",
+                    default_kind="custom",
+                    variable=variable,
+                )
+            )
+        return records
 
     def _solve_pair(
         self,
@@ -1395,8 +1733,22 @@ class CvxpyEnvironments:
             tuple(right[value] for value in problem.public_values),
         )
 
-    def _solve_problem(self, problem) -> None:
+    def _solve_problem(
+        self,
+        problem,
+        *,
+        qcp: bool = False,
+        low: float | None = None,
+        high: float | None = None,
+    ) -> None:
         options = dict(self.solver_options or {})
+        if qcp:
+            options.setdefault("qcp", True)
+            options.setdefault("eps", 1e-5)
+            if low is not None:
+                options.setdefault("low", low)
+            if high is not None:
+                options.setdefault("high", high)
         try:
             if self.solver is None:
                 problem.solve(**options)
@@ -1512,6 +1864,29 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
             "single_problems": len(self._single_cache),
             "pair_problems": len(self._pair_cache),
         }
+
+    def check_support(self, problem, support: Partition) -> AdequacyResult:
+        if _is_nonlinear_ratio_problem(problem):
+            problem._require_linear_target(
+                "ParameterizedCvxpyEnvironments.check_support"
+            )
+        return super().check_support(problem, support)
+
+    def local_transport(
+        self, problem, public_law: Mapping[Hashable, float]
+    ) -> TransportResult:
+        if _is_nonlinear_ratio_problem(problem):
+            problem._require_linear_target(
+                "ParameterizedCvxpyEnvironments.local_transport"
+            )
+        return super().local_transport(problem, public_law)
+
+    def global_transport(self, problem) -> TransportResult:
+        if _is_nonlinear_ratio_problem(problem):
+            problem._require_linear_target(
+                "ParameterizedCvxpyEnvironments.global_transport"
+            )
+        return super().global_transport(problem)
 
     def _solve_single(
         self,

@@ -45,6 +45,50 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.upper, 0.75, places=6)
         self.assertAlmostEqual(interval.diameter, 0.75, places=6)
 
+    def test_dqcp_ratio_target_solves_fixed_public_interval(self):
+        _require_cvxpy()
+
+        problem = us.FiniteProblem(
+            states=["a", "b", "c"],
+            public={"a": "x", "b": "x", "c": "y"},
+            estimand=us.RatioTarget(
+                numerator={"a": 1.0, "b": 4.0, "c": 10.0},
+                denominator={"a": 1.0, "b": 2.0, "c": 5.0},
+                name="loss_ratio",
+            ),
+            environments=us.CvxpyEnvironments(
+                fixed_public_law={"x": 0.5, "y": 0.5},
+            ),
+        )
+
+        interval = problem.global_transport_modulus()
+
+        self.assertAlmostEqual(interval.lower, 11 / 6, places=4)
+        self.assertAlmostEqual(interval.upper, 2.0, places=4)
+        self.assertAlmostEqual(interval.diameter, 1 / 6, places=4)
+        self.assertEqual(interval.public_law, {"x": 0.5, "y": 0.5})
+
+    def test_parameterized_cvxpy_rejects_variable_denominator_ratio_target(self):
+        _require_cvxpy()
+
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "x", "b": "x"},
+            estimand=us.RatioTarget(
+                numerator={"a": 1.0, "b": 4.0},
+                denominator={"a": 1.0, "b": 2.0},
+            ),
+            environments=us.ParameterizedCvxpyEnvironments(
+                fixed_public_law={"x": 1.0},
+            ),
+        )
+
+        with self.assertRaisesRegex(
+            us.UnsupportedTargetError,
+            "requires a fixed linear target",
+        ):
+            problem.global_transport_modulus()
+
     def test_tv_budget_preset_limits_hidden_mass_shift(self):
         _require_cvxpy()
 

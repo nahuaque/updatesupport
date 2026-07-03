@@ -567,6 +567,8 @@ class PublicDescentReport:
 
     @property
     def top_fiber_contribution_share(self) -> float:
+        if not self.grouped.problem.target_contract.supports_fiber_decomposition:
+            return 0.0
         if self.interval.diameter <= self.grouped.problem.tol:
             return 0.0
         return self.top_fiber_contribution / self.interval.diameter
@@ -624,10 +626,17 @@ class PublicDescentReport:
                 f"- Public adequate: {'yes' if self.public_adequate else 'no'}",
                 f"- Observed-law partial-ID interval: [{self.interval.lower:.4f}, {self.interval.upper:.4f}]",
                 f"- Observed-law transport ambiguity: {self.interval.diameter:.4f}",
-                f"- Top {len(self.fibers)} fiber contribution share: "
-                f"{_percent(self.top_fiber_contribution_share)}",
             ]
         )
+        if problem.target_contract.supports_fiber_decomposition:
+            lines.append(
+                f"- Top {len(self.fibers)} fiber contribution share: "
+                f"{_percent(self.top_fiber_contribution_share)}"
+            )
+        else:
+            lines.append(
+                "- Public-fiber contribution decomposition: not additive for this target"
+            )
 
         lines.extend(_target_contract_markdown(grouped))
 
@@ -638,7 +647,7 @@ class PublicDescentReport:
                 "",
                 f"The estimand is the aggregate {self.target_description}. Each hidden cell "
                 "gets its own empirical target value, and the current observed value "
-                "is the sample-weighted average over the observed hidden-cell mix.",
+                "is computed over the observed hidden-cell mix.",
                 "",
                 "The partial-ID interval fixes the observed public distribution and "
                 "then applies the selected Q stress test: "
@@ -659,14 +668,33 @@ class PublicDescentReport:
                 "adequacy is `no`, then at least one public cell contains hidden cells "
                 "with different target values, so the aggregate can move even when "
                 "public cell shares are held fixed.",
-                "",
-                "For each public fiber below, `range` is the max-minus-min hidden-cell "
-                "target value inside that public cell. `contribution` is the fiber's "
-                "difference between the upper and lower transport witnesses; under "
-                "the saturated preset this equals `mass * range`. The listed top "
-                "fibers account for "
-                f"{_percent(self.top_fiber_contribution_share)} of total transport "
-                "ambiguity.",
+            ]
+        )
+        if problem.target_contract.supports_fiber_decomposition:
+            lines.extend(
+                [
+                    "",
+                    "For each public fiber below, `range` is the max-minus-min hidden-cell "
+                    "target value inside that public cell. `contribution` is the fiber's "
+                    "difference between the upper and lower transport witnesses; under "
+                    "the saturated preset this equals `mass * range`. The listed top "
+                    "fibers account for "
+                    f"{_percent(self.top_fiber_contribution_share)} of total transport "
+                    "ambiguity.",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "",
+                    "For this target, public-fiber ambiguity is not additively "
+                    "decomposable. The table below reports hidden-cell point-value "
+                    "ranges for orientation, but its `contribution` column should "
+                    "not be read as an additive share of the total interval.",
+                ]
+            )
+        lines.extend(
+            [
                 "",
                 "## What This Report Separates",
                 "",
@@ -1110,6 +1138,7 @@ def public_fiber_diagnostics(
         raise ValueError("top must be non-negative")
     problem = grouped.problem
     interval = problem.global_transport_modulus()
+    additive = problem.target_contract.supports_fiber_decomposition
     rows = []
     for public_value in problem.public_values:
         states = problem.public_fibers[public_value]
@@ -1118,8 +1147,8 @@ def public_fiber_diagnostics(
         max_state = ordered_states[-1]
         fiber_range = problem.estimand_map[max_state] - problem.estimand_map[min_state]
         public_mass = grouped.public_law[public_value]
-        contribution = public_mass * fiber_range
-        if interval.q_lower is not None and interval.q_upper is not None:
+        contribution = 0.0 if not additive else public_mass * fiber_range
+        if additive and interval.q_lower is not None and interval.q_upper is not None:
             lower_value = sum(
                 interval.q_lower[state] * problem.estimand_map[state]
                 for state in states
@@ -1142,7 +1171,7 @@ def public_fiber_diagnostics(
                 max_value=problem.estimand_map[max_state],
             )
         )
-    rows.sort(key=lambda row: row.contribution, reverse=True)
+    rows.sort(key=lambda row: (row.contribution, row.fiber_range), reverse=True)
     return tuple(rows if top is None else rows[:top])
 
 
@@ -2325,10 +2354,10 @@ def _target_contract_markdown(grouped: GroupedProblem) -> list[str]:
         f"- Supports interval solving: "
         f"{'yes' if contract.supports_interval else 'no'}.",
         f"- Supports public-fiber decomposition: {fiber_decomposition}.",
-        "- Current interpretation: this report transports a fixed linear plug-in "
-        "target over admissible hidden distributions. Public refinements reuse "
-        "the same target contract; they do not refit a model or recompute a "
-        "representation-dependent target inside `updatesupport`.",
+        "- Current interpretation: this report transports the declared fixed "
+        "target functional over admissible hidden distributions. Public "
+        "refinements reuse the same target contract; they do not refit a model "
+        "or recompute a representation-dependent target inside `updatesupport`.",
     ]
     if contract.limitations:
         lines.append("- Target limitations:")

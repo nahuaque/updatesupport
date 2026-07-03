@@ -112,6 +112,7 @@ from .results import (
 from .spec import AuditRun, AuditSpec, QSpec, run_audit
 from .targets import (
     LinearTarget,
+    RatioTarget,
     TargetContract,
     UnsupportedTarget,
     UnsupportedTargetError,
@@ -213,6 +214,7 @@ __all__ = [
     "RefinementSensitivityReport",
     "RefinementSensitivityRow",
     "RefinementSensitivityScenario",
+    "RatioTarget",
     "SensitivityReport",
     "SensitivityRow",
     "SensitivitySummary",

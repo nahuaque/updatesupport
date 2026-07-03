@@ -10,7 +10,7 @@ from typing import Any, Hashable, Iterable, Mapping, Sequence
 from .metrics import RowMetric, evaluate_target, target_description, target_name
 from .problem import FiniteProblem
 from .presets import QPreset, resolve_q_environment
-from .targets import LinearTarget
+from .targets import LinearTarget, RatioTarget
 
 
 @dataclass(frozen=True)
@@ -97,7 +97,7 @@ class GroupedProblem:
     public_columns: tuple[str, ...]
     hidden_columns: tuple[str, ...]
     target_column: str | RowMetric
-    target_functional: LinearTarget
+    target_functional: LinearTarget | RatioTarget
     total_weight: float
     cell_weights: dict[tuple[Hashable, ...], float]
     q: QPreset | None = None

@@ -30,6 +30,10 @@ All notable changes to `updatesupport` are documented here.
 - Added `UnsupportedTarget` and `UnsupportedTargetError` guardrails so nonlinear
   or representation-dependent target objects fail explicitly instead of being
   silently interpreted as fixed linear targets.
+- Added `RatioTarget` for fixed linear-fractional targets, with exact saturated
+  public-fiber intervals, finite-environment evaluation, CVXPY DQCP support for
+  local/fixed-public-law ratio intervals, and explicit guardrails for ratio
+  cases that still need dedicated constrained solvers.
 
 ### Fixed
 

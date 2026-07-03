@@ -19,7 +19,9 @@ It models:
 
 - a finite hidden state space `D`
 - a public projection `pi: D -> O`
-- a fixed linear target `psi(q) = <h, q>`
+- a fixed target functional, currently either a linear target
+  `psi(q) = <h, q>` or a ratio target
+  `psi(q) = <n, q> / <w, q>`
 - an admissible environment class `Q`
 
 The library checks whether a public or refined representation is adequate and
@@ -32,6 +34,7 @@ Core finite objects:
 
 - `FiniteProblem`
 - `LinearTarget`
+- `RatioTarget`
 - `TargetContract`
 - `UnsupportedTarget`
 - `UnsupportedTargetError`
@@ -111,6 +114,57 @@ print(result.lower, result.upper, result.diameter)
 The simplex constraints are implicit. Additional constraints can be supplied
 with `us.leq(...)`, `us.geq(...)`, `us.eq(...)`, or
 `us.linear_constraint(...)`.
+
+Ratio targets with a constant denominator over the finite state space reduce to
+linear targets and can use this backend. Variable-denominator `RatioTarget`
+objects intentionally raise `UnsupportedTargetError` here until a
+linear-fractional LP transform is added for general finite-linear constraints.
+
+## Ratio Targets
+
+`RatioTarget` represents a fixed linear-fractional estimand:
+
+```python
+import updatesupport as us
+
+target = us.RatioTarget(
+    numerator={"low": 1.0, "high": 4.0, "anchor": 10.0},
+    denominator={"low": 1.0, "high": 2.0, "anchor": 5.0},
+    name="loss_ratio",
+)
+
+problem = us.FiniteProblem(
+    states=["low", "high", "anchor"],
+    public={"low": "A", "high": "A", "anchor": "B"},
+    estimand=target,
+    environments=us.PublicFiberSaturated.fixed({"A": 0.5, "B": 0.5}),
+)
+
+interval = problem.global_transport_modulus()
+print(interval.lower, interval.upper, interval.diameter)
+```
+
+For `PublicFiberSaturated` with fixed public marginals, ratio intervals are
+solved exactly using a Charnes-Cooper linear-program transform. With unfixed
+public marginals, the global saturated result checks each one-public-fiber law
+and returns the worst ratio diameter. `FiniteEnvironments` also supports ratio
+targets because it evaluates the target directly on enumerated distributions.
+
+`CvxpyEnvironments` supports variable-denominator ratio targets for local
+transport and for global transport when `fixed_public_law` is set. This uses
+CVXPY's disciplined quasiconvex programming path (`solve(qcp=True)`) for
+affine-over-positive-affine ratio objectives.
+
+Current ratio limitations:
+
+- denominator values must be strictly positive on retained states;
+- public-fiber contribution tables are point-range diagnostics, not additive
+  decompositions of the ratio interval;
+- `PolytopeEnvironments`, `LineSegment`, and
+  `ParameterizedCvxpyEnvironments` require a fixed linear target unless the
+  ratio denominator is constant over the state space;
+- `CvxpyEnvironments` ratio support does not yet cover pairwise
+  same-support-law global optimization without a fixed public law.
 
 ## Convex CVXPY Backend
 

@@ -74,6 +74,85 @@ class LinearTargetTests(unittest.TestCase):
             )
 
 
+class RatioTargetTests(unittest.TestCase):
+    def test_fixed_public_saturated_transport_solves_ratio_target(self):
+        target = us.RatioTarget(
+            numerator={"a": 1.0, "b": 4.0, "c": 10.0},
+            denominator={"a": 1.0, "b": 2.0, "c": 5.0},
+            name="loss_ratio",
+            description="loss divided by exposure",
+        )
+        problem = us.FiniteProblem(
+            states=["a", "b", "c"],
+            public={"a": "x", "b": "x", "c": "y"},
+            estimand=target,
+            environments=us.PublicFiberSaturated.fixed({"x": 0.5, "y": 0.5}),
+        )
+
+        interval = problem.global_transport_modulus()
+
+        self.assertEqual(problem.target_contract.kind, "ratio")
+        self.assertFalse(problem.target_contract.supports_fiber_decomposition)
+        self.assertAlmostEqual(problem.psi({"a": 0.5, "c": 0.5}), 11 / 6)
+        self.assertAlmostEqual(interval.lower, 11 / 6)
+        self.assertAlmostEqual(interval.upper, 2.0)
+        self.assertAlmostEqual(interval.diameter, 1 / 6)
+        self.assertEqual(interval.public_law, {"x": 0.5, "y": 0.5})
+        self.assertFalse(problem.is_public_adequate())
+
+    def test_saturated_global_ratio_target_uses_worst_public_fiber(self):
+        target = us.RatioTarget(
+            numerator={"a": 1.0, "b": 4.0, "c": 1.0, "d": 3.0},
+            denominator={"a": 1.0, "b": 2.0, "c": 2.0, "d": 2.0},
+        )
+        problem = us.FiniteProblem(
+            states=["a", "b", "c", "d"],
+            public={"a": "x", "b": "x", "c": "y", "d": "y"},
+            estimand=target,
+        )
+
+        interval = problem.global_transport_modulus()
+
+        self.assertEqual(interval.public_law, {"x": 1.0, "y": 0.0})
+        self.assertAlmostEqual(interval.lower, 1.0)
+        self.assertAlmostEqual(interval.upper, 2.0)
+        self.assertAlmostEqual(interval.diameter, 1.0)
+
+    def test_constrained_backends_reject_variable_denominator_ratio_target(self):
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "x", "b": "x"},
+            estimand=us.RatioTarget(
+                numerator={"a": 1.0, "b": 4.0},
+                denominator={"a": 1.0, "b": 2.0},
+            ),
+            environments=us.PolytopeEnvironments(),
+        )
+
+        with self.assertRaisesRegex(
+            us.UnsupportedTargetError,
+            "requires a fixed linear target",
+        ):
+            problem.global_transport_modulus()
+
+    def test_constant_denominator_ratio_target_uses_linear_backends(self):
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "x", "b": "x"},
+            estimand=us.RatioTarget(
+                numerator={"a": 0.0, "b": 2.0},
+                denominator={"a": 2.0, "b": 2.0},
+            ),
+            environments=us.PolytopeEnvironments(),
+        )
+
+        interval = problem.global_transport_modulus()
+
+        self.assertAlmostEqual(interval.lower, 0.0)
+        self.assertAlmostEqual(interval.upper, 1.0)
+        self.assertAlmostEqual(interval.diameter, 1.0)
+
+
 class SaturatedSupportTests(unittest.TestCase):
     def test_public_descent_succeeds_when_estimand_is_constant_on_fibers(self):
         problem = us.FiniteProblem(

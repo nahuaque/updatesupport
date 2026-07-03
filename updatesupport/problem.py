@@ -20,7 +20,13 @@ from .results import (
     TransportResult,
     Witness,
 )
-from .targets import LinearTarget, TargetContract, coerce_linear_target
+from .targets import (
+    LinearTarget,
+    RatioTarget,
+    TargetContract,
+    UnsupportedTargetError,
+    coerce_target,
+)
 
 
 class TooManyPartitions(RuntimeError):
@@ -33,6 +39,7 @@ EstimandMap = (
     | Sequence[float]
     | Callable[[Hashable], float]
     | LinearTarget
+    | RatioTarget
 )
 
 
@@ -62,7 +69,7 @@ class FiniteProblem:
             raise ValueError("states must be unique")
 
         self.public_map = self._coerce_state_map(self.public, name="public")
-        self.target_functional = coerce_linear_target(self.states, self.estimand)
+        self.target_functional = coerce_target(self.states, self.estimand)
         self.estimand_map = dict(self.target_functional.values)
         self.public_values = tuple(
             dict.fromkeys(self.public_map[state] for state in self.states)
@@ -89,6 +96,31 @@ class FiniteProblem:
     @property
     def target_contract(self) -> TargetContract:
         return self.target_functional.contract
+
+    @property
+    def has_linear_target(self) -> bool:
+        if isinstance(self.target_functional, LinearTarget):
+            return True
+        return isinstance(
+            self.target_functional, RatioTarget
+        ) and self.target_functional.has_constant_denominator(self.states)
+
+    @property
+    def has_ratio_target(self) -> bool:
+        return isinstance(self.target_functional, RatioTarget)
+
+    def _require_linear_target(self, context: str) -> None:
+        if self.has_linear_target:
+            return
+        contract = self.target_contract
+        raise UnsupportedTargetError(
+            f"{context} currently requires a fixed linear target. "
+            f"Received {contract.kind!r} target {contract.name!r}. "
+            "Use PublicFiberSaturated, FiniteEnvironments, or "
+            "CvxpyEnvironments with a fixed public law for RatioTarget; "
+            "otherwise compile the ratio to a LinearTarget when the denominator "
+            "is known to be invariant."
+        )
 
     def _coerce_vector(
         self, value: Mapping[Hashable, float] | Sequence[float]
@@ -149,6 +181,17 @@ class FiniteProblem:
 
     def _dot_estimand(self, vector: Sequence[float]) -> float:
         return self.target_functional.dot(self.states, vector)
+
+    def _target_support_key(self, state: Hashable) -> Hashable:
+        if (
+            isinstance(self.target_functional, RatioTarget)
+            and not self.has_linear_target
+        ):
+            return (
+                self.target_functional.numerator_value(state),
+                self.target_functional.denominator_value(state),
+            )
+        return self.target_functional.point_value(state)
 
     def _pushforward_vector(
         self, vector: Sequence[float], partition: Partition
@@ -238,11 +281,10 @@ class FiniteProblem:
         keys: list[tuple[Hashable, float]] = []
         for state in self.states:
             public_value = self.public_map[state]
-            h_value = self.estimand_map[state]
+            h_value = self._target_support_key(state)
             for i, (existing_public, existing_h) in enumerate(keys):
-                if (
-                    existing_public == public_value
-                    and abs(existing_h - h_value) <= self.tol
+                if existing_public == public_value and _same_support_key(
+                    existing_h, h_value, tol=self.tol
                 ):
                     blocks[i].append(state)
                     break
@@ -325,7 +367,8 @@ class FiniteProblem:
                 common_coarsening=support,
                 reason=(
                     "public-fiber saturation gives the quotient by joint values "
-                    "of (public, h) on public fibers with admissible positive mass"
+                    "of the public projection and target support key on public "
+                    "fibers with admissible positive mass"
                 ),
             )
 
@@ -421,3 +464,15 @@ class ProblemReport:
             ):
                 lines.append(f"- {public_value}: {value:g}")
         return "\n".join(lines)
+
+
+def _same_support_key(left: Hashable, right: Hashable, *, tol: float) -> bool:
+    if isinstance(left, tuple) and isinstance(right, tuple) and len(left) == len(right):
+        return all(
+            abs(float(left_item) - float(right_item)) <= tol
+            for left_item, right_item in zip(left, right, strict=True)
+        )
+    try:
+        return abs(float(left) - float(right)) <= tol
+    except (TypeError, ValueError):
+        return left == right

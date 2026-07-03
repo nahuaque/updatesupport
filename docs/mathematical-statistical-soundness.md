@@ -350,14 +350,67 @@ If target values are recomputed for each candidate representation, frontier
 results compare reporting procedures rather than one fixed target transported
 over different public projections. That is a useful but different claim.
 
+## Ratio Targets
+
+`RatioTarget(numerator, denominator)` represents the fixed linear-fractional
+functional:
+
+```text
+psi(q) = sum_d n(d) q(d) / sum_d w(d) q(d)
+```
+
+The current ratio slice is intentionally narrow and explicit:
+
+- denominator values must be strictly positive on retained hidden states;
+- `FiniteEnvironments` can evaluate ratios directly on enumerated admissible
+  distributions;
+- `PublicFiberSaturated` solves fixed-public-law ratio extrema exactly with a
+  Charnes-Cooper linear-program transform;
+- `CvxpyEnvironments` solves local and fixed-public-law ratio extrema with
+  CVXPY disciplined quasiconvex programming (`solve(qcp=True)`);
+- if the denominator is constant over the state space, the ratio reduces to a
+  fixed linear target and can use the existing linear LP/CVXPY backends;
+- variable-denominator ratios under the finite-linear LP backend,
+  parameterized CVXPY backend, or pairwise same-support-law global CVXPY
+  problems without a fixed public law still raise `UnsupportedTargetError`.
+
+For a fixed public law `p`, the saturated ratio interval solves:
+
+```text
+lower = inf { (n . q) / (w . q) : q in Q_sat, pi#q = p }
+upper = sup { (n . q) / (w . q) : q in Q_sat, pi#q = p }
+```
+
+The Charnes-Cooper transform sets `y = q / (w . q)` and
+`tau = 1 / (w . q)`. The ratio objective becomes linear:
+
+```text
+n . y
+```
+
+and the constraints become:
+
+```text
+w . y = 1
+sum_{d in pi^{-1}(o)} y_d = p_o tau
+y >= 0, tau >= 0
+```
+
+This is a linear program, so the fixed-public saturated ratio interval is an
+exact partial-identification interval for the declared finite problem.
+
+Ratio targets do not have the same additive public-fiber decomposition as
+linear targets. Reports therefore treat public-fiber tables for ratio targets
+as point-range diagnostics, not as additive shares of total ambiguity.
+
 ## What Future Nonlinear Support Would Need
 
 A sound nonlinear extension should make the target contract explicit, for
 example:
 
 ```python
-LinearTarget(h)                    # current behavior
-RatioTarget(numerator, denominator)
+LinearTarget(h)
+RatioTarget(numerator, denominator)  # supported for finite/saturated Q
 MomentTransformTarget(moments, transform)
 CvxpyTarget(objective_builder)
 ProcedureTarget(compiler_callback)
@@ -370,7 +423,8 @@ optimization or only admit conservative bounds. Some representation-dependent
 procedures are best treated as scenario comparisons rather than transport
 intervals.
 
-Until that target-functional layer exists, nonlinear targets should either be:
+Until a broader target-functional layer exists, unsupported nonlinear targets
+should either be:
 
 - reduced explicitly to a fixed linear plug-in target,
 - audited through externally computed scalar hidden-cell values with the
@@ -378,8 +432,8 @@ Until that target-functional layer exists, nonlinear targets should either be:
 - kept out of the core soundness claim.
 
 The current API includes guardrails for this boundary. `UnsupportedTarget` can
-be used as an explicit marker for ratio, quantile, distributional,
-representation-dependent, or other nonlinear target objects that are not yet
+be used as an explicit marker for quantile, distributional,
+representation-dependent, or other nonlinear target objects that are not
 supported. Passing one into `FiniteProblem` or `from_dataframe(...)` raises
 `UnsupportedTargetError` instead of silently treating it as a linear target.
 
@@ -388,10 +442,12 @@ supported. Passing one into `FiniteProblem` or `from_dataframe(...)` raises
 The test suite exercises the current mathematical contract directly:
 
 - saturated closed-form fiber-range formulas,
+- saturated ratio-target intervals via Charnes-Cooper LP,
 - fixed public-law saturated witnesses and zero-mass public fibers,
 - finite-environment witness construction,
 - linear-program local and global transport intervals,
 - the line-segment no-least-support example,
+- CVXPY DQCP local/fixed-public-law ratio intervals,
 - CVXPY custom convex constraints,
 - TV, chi-square, KL, and Wasserstein budget presets,
 - parameterized CVXPY equivalence to standard CVXPY on the preset grid,
