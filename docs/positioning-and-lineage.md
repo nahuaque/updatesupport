@@ -12,6 +12,11 @@ the framing and tooling around an old and defensible object: fixed public
 marginals, retained finer cells, supplied cell-level target values, and lower
 and upper aggregate values over a declared stress set.
 
+For discovery, the project should bridge its own terminology to the words users
+already search for: aggregation bias, ecological fallacy, Simpson's paradox,
+subgroup composition sensitivity, coarsened protected attributes, and partial
+identification for published aggregates.
+
 ## The Actual Mathematical Object
 
 A compiled audit has:
@@ -130,6 +135,13 @@ aggregate stable.
 The strongest product wedge is not "general sensitivity analysis." It is
 representation adequacy for published or reviewed aggregates.
 
+For organic Python users, the most natural front door is the ACS/Folktables and
+fairness-auditing direction. That audience is already used to notebooks,
+auditing libraries, coarsened subgroup metrics, and partial-identification
+language. The finance plugin is valuable as a domain showcase and proof of the
+plugin architecture, but it should not be treated as the main organic adoption
+channel.
+
 Good fits include:
 
 - official statistics and disclosure-avoidance workflows, where an agency has
@@ -167,3 +179,14 @@ The honest claim is narrower and stronger: conditional on a retained refinement,
 target contract, sparse-cell rule, and admissible class `Q`, the package solves
 the declared partial-identification problem and reports what public refinements
 would make the answer more stable.
+
+For a showcase README, make the idea legible before the machinery:
+
+1. State the plain problem: a coarse public aggregate may not be stable to
+   retained subgroup recomposition.
+2. Show one striking output, such as the ACSIncome `12.37%` observed rate with a
+   `11.79%` to `13.44%` compatible interval.
+3. Link to the deep mathematical and plugin docs for readers who want the
+   backend details.
+4. Resist adding surface area that makes the project look broader than the
+   central audit question.

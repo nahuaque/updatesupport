@@ -2,12 +2,31 @@
 
 [![PyPI Version](https://img.shields.io/pypi/v/updatesupport)](https://pypi.org/project/updatesupport/)
 
-**Audit whether the categories in your report are stable enough for the
-estimate you are reporting.**
+**Check whether a reported aggregate is stable to subgroup recomposition.**
 
-`updatesupport` quantifies hidden-composition ambiguity: how much an aggregate
-rate, effect, or risk metric could move if the public buckets in a report stayed
-fixed but the hidden mix inside those buckets changed.
+Reports often publish a number by coarse categories. `updatesupport` asks:
+
+> If those public category counts stayed fixed, could the aggregate still move
+> because the finer subgroup mix inside them changed?
+
+This is a practical audit for aggregation bias, Simpson's paradox risk,
+ecological-fallacy risk, subgroup composition sensitivity, and coarsened
+fairness or disparity reports. It quantifies hidden-composition ambiguity: how
+much an aggregate rate, effect, or risk metric could move under a declared
+recomposition stress test.
+
+**Thirty-second example.** In the Folktables ACSIncome demo, a report grouped by
+age band, education band, and sex observes an income-threshold rate of `12.37%`.
+Holding those public group proportions fixed, retained subgroup composition can
+move the compatible rate to:
+
+```text
+11.79% to 13.44%
+```
+
+That `1.65` percentage-point width is not sampling error. It is the amount of
+aggregation ambiguity left by the public categories. The best one-column
+refinement in that example is occupation major group.
 
 Here, "hidden" means **retained but not publicly reported**, not unobserved or
 unknowable. The ambiguity interval is always relative to the retained
@@ -29,9 +48,9 @@ product x region x FICO band x LTV band
 segment x channel
 ```
 
-Those buckets may hide subgroups with different target rates or effects. A
-confidence interval answers sampling uncertainty. A model metric answers model
-fit. `updatesupport` answers a different review question:
+Those buckets may contain retained subgroups with different target rates or
+effects. A confidence interval answers sampling uncertainty. A model metric
+answers model fit. `updatesupport` answers a different review question:
 
 > Holding the reported public mix fixed, how far could the aggregate move under
 > plausible hidden subgroup shifts?
@@ -138,11 +157,16 @@ The report asks:
 The stress interval is not a confidence interval. It is a
 partial-identification / sensitivity interval for hidden composition.
 
-## A Concrete Result
+## Front-Door Demo
 
-In the Folktables ACSIncome demo, the observed target rate is `12.37%`. When the
-public mix by age band, education band, and sex is held fixed, hidden subgroup
-composition can move the target rate from:
+Start with the Folktables ACSIncome case if you want the shortest path to the
+idea. It is close to fairness and disparity-audit workflows because it asks
+whether a coarse demographic public report survives retained subgroup
+composition changes.
+
+In that demo, the observed target rate is `12.37%`. When the public mix by age
+band, education band, and sex is held fixed, hidden subgroup composition can
+move the target rate from:
 
 ```text
 11.79% to 13.44%
@@ -156,6 +180,11 @@ The transport ambiguity is `1.65` percentage points. In plain English:
 
 See the full analyst interpretation in
 [docs/folktables-acs-income-interpretation.md](docs/folktables-acs-income-interpretation.md).
+
+The finance plugin is useful as a domain showcase and model-risk vocabulary
+layer, but the ACS/Folktables workflow is the best first demo for most Python
+users interested in aggregation bias, ecological fallacy, Simpson's paradox, or
+coarsened subgroup reporting.
 
 ## Main Workflows
 

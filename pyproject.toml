@@ -5,15 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "updatesupport"
 version = "0.1.2"
-description = "Representation adequacy and transport-stability auditing in Python"
+description = "Aggregation-bias and subgroup-composition sensitivity audits in Python"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 keywords = [
+    "aggregation-bias",
     "causal-inference",
+    "ecological-fallacy",
+    "fairness-auditing",
     "partial-identification",
     "representation-adequacy",
     "sensitivity-analysis",
+    "simpsons-paradox",
+    "subgroup-analysis",
     "transport-stability",
 ]
 classifiers = [
