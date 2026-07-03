@@ -607,6 +607,10 @@ class FinancePluginTests(unittest.TestCase):
             self.assertIn("ipywidgets", source)
             self.assertIn("colab.research.google.com", source)
             self.assertNotIn(".legend_.remove()", source)
+            if path.name == "model_risk_portfolio_colab.ipynb":
+                self.assertIn("updatesupport[finance,cvxpy]", source)
+                self.assertIn("q_factor_exposure_shift", source)
+                self.assertIn("dual_summary", source)
             for cell in payload["cells"]:
                 if cell["cell_type"] == "code":
                     self.assertIsNone(cell.get("execution_count"))
