@@ -8,6 +8,7 @@ from .metrics import (
     default_rate,
     expected_loss,
     expected_loss_amount,
+    expected_loss_standard_error,
     loss_given_default,
 )
 from .portfolio import (
@@ -17,6 +18,7 @@ from .portfolio import (
     ReviewThresholds,
     certify_portfolio_segmentation,
     from_portfolio,
+    model_assisted_portfolio_uncertainty,
     model_risk_report,
 )
 from .presets import (
@@ -40,6 +42,7 @@ __all__ = [
     "default_rate",
     "expected_loss",
     "expected_loss_amount",
+    "expected_loss_standard_error",
     "FinanceStabilityCertificate",
     "finance_sensitivity_grid",
     "certify_portfolio_segmentation",
@@ -47,6 +50,7 @@ __all__ = [
     "loss_given_default",
     "ModelRiskMetadata",
     "ModelRiskReport",
+    "model_assisted_portfolio_uncertainty",
     "model_risk_report",
     "plugin",
     "portfolio_concentration_moments",

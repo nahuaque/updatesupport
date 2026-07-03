@@ -236,6 +236,72 @@ class FinancePluginTests(unittest.TestCase):
             "factor-exposure concentration stress",
         )
 
+    def test_model_risk_report_can_include_model_assisted_portfolio_uncertainty(
+        self,
+    ):
+        rows = [row | {"pd_se": 0.02, "lgd_se": 0.05} for row in _factor_rows()]
+        report = usf.model_risk_report(
+            rows,
+            public=["product"],
+            hidden=["product", "channel"],
+            metric=usf.expected_loss(pd="pd", lgd="lgd"),
+            metric_standard_error=usf.expected_loss_standard_error(
+                pd="pd",
+                lgd="lgd",
+                pd_standard_error="pd_se",
+                lgd_standard_error="lgd_se",
+            ),
+            exposure="ead",
+            q=usf.q_portfolio_mix_shift(radius=0.25),
+            ambiguity_limit=1.0,
+            statistical_interval=(0.40, 0.60),
+            statistical_method="external validation interval",
+            composition_uncertainty_draws=8,
+            composition_uncertainty_seed=123,
+            composition_uncertainty_confidence_level=0.8,
+        )
+        markdown = report.to_markdown()
+        payload = report.as_dict()
+        tables = report.to_tables()
+
+        self.assertIsNotNone(report.core.estimator_uncertainty)
+        self.assertIsNotNone(report.composition_uncertainty)
+        self.assertEqual(report.composition_uncertainty.draw_count, 8)
+        self.assertEqual(
+            report.composition_uncertainty.joint_model.method,
+            "bayesian_bootstrap",
+        )
+        self.assertIn("## Model-Assisted Portfolio Uncertainty", markdown)
+        self.assertIn("Posterior/bootstrap ambiguity", markdown)
+        self.assertIn("Supplied statistical/model uncertainty", markdown)
+        self.assertIn("Hidden-cell metric standard errors were supplied", markdown)
+        self.assertIn("Separation: this section resamples hidden composition", markdown)
+        self.assertIn("composition_uncertainty", payload)
+        self.assertEqual(payload["composition_uncertainty"]["draw_count"], 8)
+        self.assertIn("finance_model_assisted_summary", tables)
+        self.assertIn("finance_model_assisted_metric_summaries", tables)
+        self.assertIn("finance_model_assisted_draws", tables)
+        self.assertIn("finance_model_assisted_joint_cells", tables)
+        self.assertIn("finance_estimator_uncertainty", tables)
+
+    def test_model_assisted_portfolio_uncertainty_wraps_core_report(self):
+        uncertainty = usf.model_assisted_portfolio_uncertainty(
+            _factor_rows(),
+            public=["product"],
+            hidden=["product", "channel"],
+            metric=usf.expected_loss(pd="pd", lgd="lgd"),
+            exposure="ead",
+            draws=5,
+            seed=7,
+            q=usf.q_portfolio_mix_shift(radius=0.25),
+            ambiguity_limit=1.0,
+        )
+
+        self.assertIsInstance(uncertainty, us.HiddenCompositionUncertaintyReport)
+        self.assertEqual(uncertainty.draw_count, 5)
+        self.assertEqual(uncertainty.target_name, "expected_loss_rate")
+        self.assertEqual(uncertainty.q_name, "bounded_shift(radius=0.25)")
+
     def test_model_risk_report_structured_exports_are_finance_named(self):
         report = usf.model_risk_report(
             _portfolio_rows(),
@@ -460,6 +526,10 @@ class FinancePluginTests(unittest.TestCase):
         self.assertEqual(usf.plugin.metadata.domain, "financial-model-risk")
         self.assertIs(us.plugin_metric("finance", "expected_loss"), usf.expected_loss)
         self.assertIs(
+            us.plugin_metric("finance", "expected_loss_standard_error"),
+            usf.expected_loss_standard_error,
+        )
+        self.assertIs(
             us.plugin_q_preset("finance", "portfolio_mix_shift"),
             usf.q_portfolio_mix_shift,
         )
@@ -474,6 +544,13 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIs(
             us.plugin_report_profile("finance", "segmentation_certificate"),
             usf.certify_portfolio_segmentation,
+        )
+        self.assertIs(
+            us.plugin_report_profile(
+                "finance",
+                "model_assisted_portfolio_uncertainty",
+            ),
+            usf.model_assisted_portfolio_uncertainty,
         )
         self.assertIs(us.plugin_compiler("finance", "portfolio"), usf.from_portfolio)
 

@@ -95,6 +95,7 @@ class ModelRiskReport:
     metadata: ModelRiskMetadata = ModelRiskMetadata()
     thresholds: ReviewThresholds = ReviewThresholds()
     statistical_uncertainty: us.StatisticalUncertainty | None = None
+    composition_uncertainty: us.HiddenCompositionUncertaintyReport | None = None
     reviewer_notes: tuple[str, ...] = ()
     limitations: tuple[str, ...] = DEFAULT_MODEL_RISK_LIMITATIONS
 
@@ -127,6 +128,9 @@ class ModelRiskReport:
             "statistical_uncertainty": None
             if self.statistical_uncertainty is None
             else self.statistical_uncertainty.as_dict(),
+            "composition_uncertainty": None
+            if self.composition_uncertainty is None
+            else self.composition_uncertainty.as_dict(),
             "estimator_uncertainty": None
             if self.core.estimator_uncertainty is None
             else self.core.estimator_uncertainty.as_dict(),
@@ -176,6 +180,13 @@ class ModelRiskReport:
             tables["finance_statistical_uncertainty"] = (
                 self.statistical_uncertainty.as_dict(),
             )
+        if self.composition_uncertainty is not None:
+            tables.update(
+                {
+                    f"finance_model_assisted_{name}": rows
+                    for name, rows in self.composition_uncertainty.to_tables().items()
+                }
+            )
         if self.core.estimator_uncertainty is not None:
             tables["finance_estimator_uncertainty"] = (
                 self.core.estimator_uncertainty.as_dict(),
@@ -209,6 +220,7 @@ class ModelRiskReport:
         lines.extend(self._finance_interpretation_markdown())
         lines.extend(self._reported_estimate_markdown())
         lines.extend(self._uncertainty_markdown())
+        lines.extend(self._model_assisted_uncertainty_markdown())
         lines.extend(self._hidden_ambiguity_markdown())
         lines.extend(self._concentration_stress_markdown())
         lines.extend(self._refinement_markdown())
@@ -344,6 +356,60 @@ class ModelRiskReport:
                     lines.append(
                         f"- SOCP confidence core: empty by {core.empty_gap:.4f}."
                     )
+        return lines
+
+    def _model_assisted_uncertainty_markdown(self) -> list[str]:
+        lines = ["", "## Model-Assisted Portfolio Uncertainty", ""]
+        report = self.composition_uncertainty
+        if report is None:
+            lines.append(
+                "- No posterior/bootstrap hidden-composition uncertainty report "
+                "was supplied or requested."
+            )
+            lines.append(
+                "- The fixed-public-law ambiguity section below remains a "
+                "worst-case admissible-shift result, not a sampling uncertainty "
+                "summary."
+            )
+            return lines
+
+        ambiguity = report.ambiguity_summary
+        observed = report.observed_summary
+        lines.extend(
+            [
+                f"- Method: `{report.joint_model.method}`.",
+                f"- Draws: {report.successful_draws}/{report.draw_count} successful.",
+                f"- Hidden cells in fitted joint model: {report.joint_model.cell_count}.",
+                "- Public law preserved in draws: "
+                f"{'yes' if report.preserve_public_law else 'no'}.",
+                "- Posterior/bootstrap observed estimate: "
+                f"mean={_format_optional_float(observed.mean)}, "
+                f"{100.0 * report.confidence_level:g}% interval="
+                f"[{_format_optional_float(observed.lower)}, "
+                f"{_format_optional_float(observed.upper)}].",
+                "- Posterior/bootstrap ambiguity: "
+                f"mean={_format_optional_float(ambiguity.mean)}, "
+                f"{100.0 * report.confidence_level:g}% interval="
+                f"[{_format_optional_float(ambiguity.lower)}, "
+                f"{_format_optional_float(ambiguity.upper)}].",
+                "- Public adequacy rate across draws: "
+                f"{_format_optional_rate(report.public_adequate_rate)}.",
+            ]
+        )
+        if report.ambiguity_limit is not None:
+            lines.append(
+                "- Ambiguity-limit failure rate across draws: "
+                f"{_format_optional_rate(report.failure_rate)}."
+            )
+        lines.extend(
+            [
+                "- Separation: this section resamples hidden composition from a "
+                "fitted joint model. Supplied statistical/model uncertainty and "
+                "hidden-cell metric standard errors are reported separately in "
+                "the section above; fixed-public-law hidden-composition ambiguity "
+                "is reported separately below.",
+            ]
+        )
         return lines
 
     def _hidden_ambiguity_markdown(self) -> list[str]:
@@ -650,6 +716,15 @@ def model_risk_report(
     statistical_confidence_level: float | None = None,
     statistical_method: str | None = None,
     statistical_label: str = "Supplied statistical/model uncertainty",
+    composition_uncertainty: us.HiddenCompositionUncertaintyReport | None = None,
+    composition_uncertainty_draws: int | None = None,
+    composition_uncertainty_method: str = "bayesian_bootstrap",
+    composition_uncertainty_seed: int | None = None,
+    composition_uncertainty_confidence_level: float = 0.9,
+    composition_uncertainty_preserve_public_law: bool = True,
+    composition_uncertainty_effective_sample_size: float | None = None,
+    composition_uncertainty_smoothing: float = 1e-9,
+    composition_uncertainty_title: str = "Model-Assisted Portfolio Uncertainty Report",
     reviewer_notes: Sequence[str] = (),
     limitations: Sequence[str] | None = None,
 ) -> ModelRiskReport:
@@ -662,6 +737,14 @@ def model_risk_report(
         metric_standard_error,
         target_standard_error,
     )
+    if (
+        composition_uncertainty is not None
+        and composition_uncertainty_draws is not None
+    ):
+        raise ValueError(
+            "pass either composition_uncertainty or composition_uncertainty_draws, "
+            "not both"
+        )
     if isinstance(data, us.GroupedProblem):
         target_description = "portfolio risk metric"
         if resolved_standard_error is not None:
@@ -669,6 +752,11 @@ def model_risk_report(
                 "metric_standard_error can only be supplied when data contains "
                 "raw portfolio rows; precompiled GroupedProblem inputs must "
                 "already include target standard errors"
+            )
+        if composition_uncertainty_draws is not None:
+            raise ValueError(
+                "composition_uncertainty_draws requires raw portfolio rows; pass a "
+                "precomputed composition_uncertainty for GroupedProblem inputs"
             )
     else:
         if metric is None:
@@ -679,6 +767,34 @@ def model_risk_report(
             metric.description
             if isinstance(metric, us.RowMetric) and metric.description
             else "portfolio risk metric"
+        )
+
+    resolved_composition_uncertainty = composition_uncertainty
+    if composition_uncertainty_draws is not None:
+        if public is None:
+            raise TypeError("public is required for composition_uncertainty_draws")
+        if hidden is None:
+            raise TypeError("hidden is required for composition_uncertainty_draws")
+        if metric is None:
+            raise TypeError("metric is required for composition_uncertainty_draws")
+        resolved_composition_uncertainty = model_assisted_portfolio_uncertainty(
+            data,
+            public=public,
+            hidden=hidden,
+            metric=metric,
+            exposure=exposure,
+            weight=weight,
+            draws=composition_uncertainty_draws,
+            seed=composition_uncertainty_seed,
+            method=composition_uncertainty_method,
+            min_cell_weight=min_cell_weight,
+            q="saturated" if q is None else q,
+            ambiguity_limit=ambiguity_limit,
+            confidence_level=composition_uncertainty_confidence_level,
+            preserve_public_law=composition_uncertainty_preserve_public_law,
+            effective_sample_size=composition_uncertainty_effective_sample_size,
+            smoothing=composition_uncertainty_smoothing,
+            title=composition_uncertainty_title,
         )
 
     core_report = us.public_descent_report(
@@ -724,12 +840,63 @@ def model_risk_report(
             method=statistical_method,
             label=statistical_label,
         ),
+        composition_uncertainty=resolved_composition_uncertainty,
         reviewer_notes=tuple(reviewer_notes),
         limitations=(
             DEFAULT_MODEL_RISK_LIMITATIONS
             if limitations is None
             else tuple(limitations)
         ),
+    )
+
+
+def model_assisted_portfolio_uncertainty(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    metric: str | us.RowMetric,
+    exposure: str | None = None,
+    weight: str | None = None,
+    draws: int = 500,
+    seed: int | None = None,
+    method: str = "bayesian_bootstrap",
+    min_cell_weight: float = 1.0,
+    q: Any = "saturated",
+    ambiguity_limit: float | None = None,
+    confidence_level: float = 0.9,
+    preserve_public_law: bool = True,
+    effective_sample_size: float | None = None,
+    smoothing: float = 1e-9,
+    title: str = "Model-Assisted Portfolio Uncertainty Report",
+) -> us.HiddenCompositionUncertaintyReport:
+    """Bootstrap/posterior uncertainty over portfolio hidden composition.
+
+    This is a finance-facing wrapper around
+    :func:`updatesupport.hidden_composition_uncertainty`. It preserves finance
+    vocabulary such as ``metric`` and ``exposure`` while returning the core
+    model-assisted report object.
+    """
+
+    if exposure is not None and weight is not None and exposure != weight:
+        raise ValueError("use either exposure or weight, not both")
+    return us.hidden_composition_uncertainty(
+        data,
+        public=public,
+        hidden=hidden,
+        target=metric,
+        weight=weight if weight is not None else exposure,
+        draws=draws,
+        seed=seed,
+        method=method,
+        min_cell_weight=min_cell_weight,
+        q=q,
+        ambiguity_limit=ambiguity_limit,
+        confidence_level=confidence_level,
+        preserve_public_law=preserve_public_law,
+        effective_sample_size=effective_sample_size,
+        smoothing=smoothing,
+        title=title,
     )
 
 
@@ -931,6 +1098,14 @@ def _statistical_uncertainty(
         method=method,
         label=label,
     )
+
+
+def _format_optional_float(value: float | None) -> str:
+    return "not available" if value is None else f"{value:.4f}"
+
+
+def _format_optional_rate(value: float | None) -> str:
+    return "not evaluated" if value is None else f"{100.0 * value:.1f}%"
 
 
 def _resolve_public(

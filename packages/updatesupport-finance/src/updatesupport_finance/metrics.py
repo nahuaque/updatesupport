@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from math import isfinite
+from math import isfinite, sqrt
 from typing import Any
 
 import updatesupport as us
@@ -43,6 +43,45 @@ def expected_loss_amount(
         lambda row: _number(row, pd) * _number(row, lgd) * _number(row, ead),
         columns=(pd, lgd, ead),
         description="expected loss amount",
+    )
+
+
+def expected_loss_standard_error(
+    *,
+    pd: str,
+    lgd: str,
+    pd_standard_error: str,
+    lgd_standard_error: str,
+    correlation: float = 0.0,
+    name: str = "expected_loss_standard_error",
+) -> us.RowMetric:
+    """Return a delta-method standard error for ``PD * LGD``.
+
+    Use this as ``metric_standard_error=...`` or ``target_standard_error=...``
+    when a portfolio supplies row-level uncertainty for PD and LGD estimates.
+    """
+
+    rho = float(correlation)
+    if not -1.0 <= rho <= 1.0:
+        raise ValueError("correlation must be between -1 and 1")
+
+    def evaluate(row: Mapping[str, Any]) -> float:
+        pd_value = _number(row, pd)
+        lgd_value = _number(row, lgd)
+        pd_se = _nonnegative_number(row, pd_standard_error)
+        lgd_se = _nonnegative_number(row, lgd_standard_error)
+        variance = (
+            (lgd_value * pd_se) ** 2
+            + (pd_value * lgd_se) ** 2
+            + 2.0 * rho * pd_value * lgd_value * pd_se * lgd_se
+        )
+        return sqrt(max(0.0, variance))
+
+    return us.row_metric(
+        name,
+        evaluate,
+        columns=(pd, lgd, pd_standard_error, lgd_standard_error),
+        description="expected loss rate standard error",
     )
 
 
@@ -90,4 +129,11 @@ def _number(row: Mapping[str, Any], column: str) -> float:
         raise ValueError(f"row is missing required finance column {column!r}") from exc
     if not isfinite(value):
         raise ValueError(f"finance column {column!r} must be finite")
+    return value
+
+
+def _nonnegative_number(row: Mapping[str, Any], column: str) -> float:
+    value = _number(row, column)
+    if value < 0.0:
+        raise ValueError(f"finance column {column!r} must be non-negative")
     return value

@@ -132,7 +132,12 @@ report = usf.model_risk_report(
     ],
     metric=usf.expected_loss(pd="pd", lgd="lgd"),
     exposure="ead",
-    metric_standard_error="expected_loss_se",
+    metric_standard_error=usf.expected_loss_standard_error(
+        pd="pd",
+        lgd="lgd",
+        pd_standard_error="pd_se",
+        lgd_standard_error="lgd_se",
+    ),
     q=usf.q_portfolio_mix_shift(radius=0.25),
     model_id="EL_RETAIL_2026Q2",
     portfolio_name="Retail credit portfolio",
@@ -143,12 +148,56 @@ report = usf.model_risk_report(
     statistical_interval=(0.018, 0.024),
     statistical_confidence_level=0.95,
     statistical_method="validation bootstrap",
+    composition_uncertainty_draws=500,
+    composition_uncertainty_seed=123,
+    composition_uncertainty_confidence_level=0.90,
     reviewer_notes=[
         "Review portfolio-mix stress with the portfolio monitoring owner.",
     ],
 )
 
 print(report.to_markdown())
+```
+
+This keeps four uncertainty notions separate:
+
+- observed estimate: the exposure-weighted portfolio metric from the retained
+  data
+- supplied statistical/model uncertainty: an external interval or standard
+  error from validation, bootstrap, survey, or model-estimation workflows
+- hidden-composition ambiguity: the fixed-public-law transport interval under
+  the selected Q stress test
+- hidden-cell estimation uncertainty: optional hidden-cell metric standard
+  errors, such as delta-method PD/LGD uncertainty from
+  `expected_loss_standard_error(...)`
+
+`composition_uncertainty_draws=...` adds a model-assisted posterior/bootstrap
+summary over hidden composition. It uses the core
+`hidden_composition_uncertainty(...)` layer, preserving public bucket masses by
+default and resampling hidden composition inside each public fiber.
+
+You can also run that layer directly:
+
+```python
+uncertainty = usf.model_assisted_portfolio_uncertainty(
+    portfolio,
+    public=["product", "region", "fico_band", "ltv_band"],
+    hidden=[
+        "product",
+        "region",
+        "fico_band",
+        "ltv_band",
+        "broker_channel",
+        "employment_type",
+        "vintage",
+    ],
+    metric=usf.expected_loss(pd="pd", lgd="lgd"),
+    exposure="ead",
+    draws=500,
+    seed=123,
+    q=usf.q_portfolio_mix_shift(radius=0.25),
+    ambiguity_limit=0.0025,
+)
 ```
 
 Structured exports are available for downstream model-risk systems:
@@ -172,6 +221,11 @@ archives:
   when provided
 - `finance_estimator_uncertainty`: hidden-cell standard-error adjustment, when
   provided
+- `finance_model_assisted_summary`,
+  `finance_model_assisted_metric_summaries`,
+  `finance_model_assisted_draws`, and
+  `finance_model_assisted_joint_cells`: posterior/bootstrap hidden-composition
+  uncertainty outputs, when requested
 - `finance_refinement_recommendations`: candidate public refinements ranked by
   ambiguity reduction
 - `finance_dual_diagnostics`: largest CVXPY dual multipliers, when available

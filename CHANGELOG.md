@@ -122,6 +122,11 @@ All notable changes to `updatesupport` are documented here.
   statistical/model uncertainty, hidden-composition ambiguity,
   concentration-stress ambiguity, refinement recommendations, dual diagnostics,
   data diagnostics, limitations, and reviewer notes.
+- Added finance-plugin model-assisted portfolio uncertainty via
+  `model_assisted_portfolio_uncertainty(...)`, optional
+  `composition_uncertainty_draws=...` on `model_risk_report(...)`, and
+  `expected_loss_standard_error(...)` for PD/LGD delta-method hidden-cell
+  estimator uncertainty.
 
 ### Fixed
 
