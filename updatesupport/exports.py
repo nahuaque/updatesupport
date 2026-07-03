@@ -6,6 +6,7 @@ import json
 from dataclasses import is_dataclass
 from typing import Any, Mapping
 
+from .certificate import RepresentationStabilityCertificate
 from .frontier import (
     FrontierCandidateExplanation,
     PublicRepresentationCandidate,
@@ -55,6 +56,9 @@ def report_tables(report: Any) -> ReportTables:
 
     if isinstance(report, FrontierCandidateExplanation):
         return _frontier_explanation_tables(report)
+
+    if isinstance(report, RepresentationStabilityCertificate):
+        return _certificate_tables(report)
 
     if _is_report_wrapper(report):
         tables = report_tables(report.report)
@@ -326,6 +330,53 @@ def _frontier_explanation_tables(
         if explanation.search_trace is None
         else (explanation.search_trace.as_dict(),),
     }
+
+
+def _certificate_tables(
+    certificate: RepresentationStabilityCertificate,
+) -> ReportTables:
+    selected = certificate.selected_candidate
+    certified = certificate.certified_candidate
+    best = certificate.best_evaluated_candidate
+    tables: ReportTables = {
+        "summary": (
+            {
+                "title": certificate.title,
+                "status": certificate.status,
+                "passed": certificate.passed,
+                "inconclusive": certificate.inconclusive,
+                "failed": certificate.failed,
+                "exact_required": certificate.exact_required,
+                "search_exact": certificate.search_exact,
+                "ambiguity_limit": certificate.frontier.ambiguity_limit,
+                "bucket_budget": certificate.frontier.bucket_budget,
+                "selected_label": None if selected is None else selected.label,
+                "selected_public_columns": None
+                if selected is None
+                else selected.public_columns,
+                "selected_public_cells": None
+                if selected is None
+                else selected.public_cells,
+                "selected_max_ambiguity": None
+                if selected is None
+                else selected.max_ambiguity,
+                "certified_label": None if certified is None else certified.label,
+                "best_evaluated_label": None if best is None else best.label,
+                "best_evaluated_max_ambiguity": None
+                if best is None
+                else best.max_ambiguity,
+            },
+        ),
+        "reasons": tuple({"reason": reason} for reason in certificate.reasons),
+        "limitations": tuple(
+            {"limitation": limitation} for limitation in certificate.limitations
+        ),
+        "selected_scenarios": ()
+        if selected is None
+        else tuple(row.as_dict() for row in selected.scenarios),
+    }
+    tables.update(_prefix_tables("frontier", _frontier_tables(certificate.frontier)))
+    return tables
 
 
 def _candidate_row(candidate: PublicRepresentationCandidate) -> dict[str, Any]:

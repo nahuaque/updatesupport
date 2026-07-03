@@ -81,6 +81,28 @@ spec = us.AuditSpec(
 )
 ```
 
+Use `kind="certificate"` when the same search should produce a pass/fail
+representation-stability certificate:
+
+```python
+spec = us.AuditSpec(
+    kind="certificate",
+    public=["segment"],
+    hidden=["segment", "region", "tenure_band", "channel"],
+    target="outcome_rate",
+    candidate_refinements=["region", "tenure_band", "channel"],
+    q_presets=["saturated", {"name": "bounded_shift", "radius": 0.5}],
+    ambiguity_limit=0.01,
+    bucket_budget=40,
+    search="exhaustive",
+)
+```
+
+Certificate specs require `ambiguity_limit`. By default, heuristic searches
+such as `greedy` or `beam` are marked inconclusive rather than passed; set
+`exact_required=False` when the certificate should cover only evaluated
+candidates.
+
 `run_audit(...)` also accepts a plain mapping, which is useful when loading a
 spec from JSON or YAML:
 

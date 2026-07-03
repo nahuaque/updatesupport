@@ -7,6 +7,107 @@ import updatesupport as us
 
 
 class PublicRepresentationFrontierTests(unittest.TestCase):
+    def test_certify_public_representation_passes_with_exact_stable_candidate(self):
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0, "weight": 30},
+            {"segment": "A", "driver": "high", "target": 1.0, "weight": 30},
+            {"segment": "B", "driver": "flat", "target": 0.5, "weight": 40},
+        ]
+
+        certificate = us.certify_public_representation(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            q_presets=["saturated"],
+            ambiguity_limit=0.05,
+            bucket_budget=3,
+        )
+        payload = certificate.as_dict()
+        markdown = certificate.to_markdown()
+        tables = certificate.to_tables()
+
+        self.assertIsInstance(certificate, us.RepresentationStabilityCertificate)
+        self.assertTrue(certificate.passed)
+        self.assertEqual(certificate.status, "pass")
+        self.assertIsNotNone(certificate.certified_candidate)
+        self.assertEqual(certificate.certified_candidate.added_columns, ("driver",))
+        self.assertEqual(
+            certificate.certified_candidate.public_columns,
+            ("segment", "driver"),
+        )
+        self.assertEqual(payload["status"], "pass")
+        self.assertEqual(payload["certified_candidate"]["added_columns"], ("driver",))
+        self.assertIn("Certification status: **PASS**", markdown)
+        self.assertIn("Certified representation", markdown)
+        self.assertIn("## Certified Scenario Evidence", markdown)
+        self.assertIn("summary", tables)
+        self.assertIn("selected_scenarios", tables)
+        self.assertIn("frontier_candidates", tables)
+
+    def test_certify_public_representation_fails_when_budget_blocks_stable_choice(self):
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0, "weight": 30},
+            {"segment": "A", "driver": "high", "target": 1.0, "weight": 30},
+            {"segment": "B", "driver": "flat", "target": 0.5, "weight": 40},
+        ]
+
+        certificate = us.certify_public_representation(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            q_presets=["saturated"],
+            ambiguity_limit=0.05,
+            bucket_budget=2,
+        )
+
+        self.assertTrue(certificate.failed)
+        self.assertIsNone(certificate.certified_candidate)
+        self.assertEqual(certificate.selected_candidate, None)
+        self.assertIn("No evaluated representation", certificate.reasons[0])
+
+    def test_certify_public_representation_marks_required_heuristic_inconclusive(self):
+        rows = [
+            {"segment": "A", "driver": "low", "noise": "n", "target": 0.0},
+            {"segment": "A", "driver": "high", "noise": "n", "target": 1.0},
+            {"segment": "B", "driver": "flat", "noise": "n", "target": 0.5},
+        ]
+
+        certificate = us.certify_public_representation(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver", "noise"],
+            target="target",
+            candidate_refinements=["noise", "driver"],
+            q_presets=["saturated"],
+            ambiguity_limit=0.05,
+            search="greedy",
+            max_added_columns=2,
+        )
+        relaxed = us.certify_public_representation(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver", "noise"],
+            target="target",
+            candidate_refinements=["noise", "driver"],
+            q_presets=["saturated"],
+            ambiguity_limit=0.05,
+            search="greedy",
+            max_added_columns=2,
+            exact_required=False,
+        )
+
+        self.assertTrue(certificate.inconclusive)
+        self.assertFalse(certificate.search_exact)
+        self.assertIsNotNone(certificate.selected_candidate)
+        self.assertIn("heuristic", certificate.reasons[0])
+        self.assertTrue(relaxed.passed)
+
     def test_public_representation_frontier_finds_nondominated_refinements(self):
         rows = [
             {

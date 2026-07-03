@@ -6,13 +6,22 @@ import json
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from .certificate import (
+    RepresentationStabilityCertificate,
+    certify_public_representation,
+)
 from .frontier import PublicRepresentationFrontier, public_representation_frontier
 from .presets import QPreset, normalize_q_preset
 from .report import PublicDescentReport, SensitivityReport
 from .report import public_descent_report, sensitivity_report
 
 
-AuditReport = PublicDescentReport | SensitivityReport | PublicRepresentationFrontier
+AuditReport = (
+    PublicDescentReport
+    | SensitivityReport
+    | PublicRepresentationFrontier
+    | RepresentationStabilityCertificate
+)
 
 
 @dataclass(frozen=True)
@@ -132,6 +141,7 @@ class AuditSpec:
     must_exclude: Sequence[str] = ()
     enforce_bucket_budget: bool = False
     include_base: bool = True
+    exact_required: bool = True
 
     def __post_init__(self) -> None:
         kind = _normalize_kind(self.kind)
@@ -254,6 +264,7 @@ class AuditSpec:
             "must_exclude": list(self.must_exclude),
             "enforce_bucket_budget": self.enforce_bucket_budget,
             "include_base": self.include_base,
+            "exact_required": self.exact_required,
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -384,6 +395,38 @@ def run_audit(spec: AuditSpec | Mapping[str, Any], data: Any) -> AuditRun:
             include_base=spec.include_base,
             title=spec.title or "Public Representation Frontier",
         )
+    elif spec.kind == "certificate":
+        q_presets = (
+            (spec.q.to_preset(),)
+            if spec.q_presets is None
+            else tuple(preset.to_preset() for preset in spec.q_presets)
+        )
+        if spec.ambiguity_limit is None:
+            raise ValueError("certificate audits require ambiguity_limit")
+        report = certify_public_representation(
+            data,
+            base_public=spec.public,
+            hidden=spec.hidden,
+            target=spec.target,
+            weight=spec.weight,
+            candidate_refinements=spec.candidate_refinements,
+            min_cell_weight=spec.min_cell_weight,
+            min_cell_weights=spec.min_cell_weights,
+            hidden_sets=spec.hidden_sets,
+            q_presets=q_presets,
+            ambiguity_limit=spec.ambiguity_limit,
+            bucket_budget=spec.bucket_budget,
+            max_added_columns=spec.max_added_columns,
+            search=spec.search,
+            beam_width=spec.beam_width,
+            max_evaluations=spec.max_evaluations,
+            must_include=spec.must_include,
+            must_exclude=spec.must_exclude,
+            enforce_bucket_budget=spec.enforce_bucket_budget,
+            include_base=spec.include_base,
+            exact_required=spec.exact_required,
+            title=spec.title or "Representation Stability Certificate",
+        )
     else:
         raise ValueError(f"unsupported audit kind: {spec.kind!r}")
 
@@ -399,6 +442,11 @@ def _normalize_kind(kind: str) -> str:
         "robustness": "sensitivity",
         "frontier": "frontier",
         "public_representation_frontier": "frontier",
+        "certificate": "certificate",
+        "certification": "certificate",
+        "certify": "certificate",
+        "representation_certificate": "certificate",
+        "representation_stability_certificate": "certificate",
     }
     key = kind.strip().lower().replace("-", "_")
     try:

@@ -102,6 +102,15 @@ Public-representation frontier reports expose:
 - `candidates`
 - `candidate_scenarios`
 
+Representation-stability certificates expose:
+
+- `summary`
+- `reasons`
+- `limitations`
+- `selected_scenarios`
+- prefixed frontier evidence such as `frontier_summary`,
+  `frontier_candidates`, and `frontier_candidate_scenarios`
+
 Causal reporting suites prefix the component tables, for example:
 
 - `primary_summary`

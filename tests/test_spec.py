@@ -127,6 +127,30 @@ class AuditSpecTests(unittest.TestCase):
         )
         self.assertIn("# Configured Frontier", run.to_markdown())
 
+    def test_certificate_spec_runs_search(self):
+        spec = us.AuditSpec(
+            kind="certificate",
+            public=["segment"],
+            hidden=["segment", "driver", "noise"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["noise", "driver"],
+            q_presets=["saturated", {"name": "bounded_shift", "radius": 0.5}],
+            ambiguity_limit=0.05,
+            bucket_budget=3,
+            title="Configured Certificate",
+        )
+
+        run = spec.run(_rows())
+        payload = run.as_dict()
+
+        self.assertIsInstance(run.report, us.RepresentationStabilityCertificate)
+        self.assertTrue(run.report.passed)
+        self.assertEqual(run.report.certified_candidate.added_columns, ("driver",))
+        self.assertEqual(payload["report_type"], "certificate")
+        self.assertEqual(payload["report"]["status"], "pass")
+        self.assertIn("# Configured Certificate", run.to_markdown())
+
     def test_q_spec_rejects_unknown_keys(self):
         with self.assertRaises(ValueError):
             us.QSpec.from_value({"name": "saturated", "unexpected": True})

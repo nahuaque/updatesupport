@@ -67,6 +67,9 @@ A useful analyst-facing report should include:
 - **Public representation frontier**: the Pareto frontier of candidate public
   representations when the review asks for the smallest public bucket design
   that remains stable across stress tests.
+- **Representation stability certificate**: a pass/fail/inconclusive decision
+  artifact built from frontier search, recording the selected public
+  representation, stress-test assumptions, search guarantee, and limitations.
 
 This report should be readable without requiring the audience to know the
 underlying finite-support theory. In causal or model-based workflows, the report

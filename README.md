@@ -206,13 +206,14 @@ See [docs/transport-presets.md](docs/transport-presets.md) for guidance on Q
 presets and [docs/representation-adequacy.md](docs/representation-adequacy.md)
 for interpretation rules.
 
-### 3. Choose a Stable Public Segmentation
+### 3. Certify a Stable Public Segmentation
 
-Use `public_representation_frontier(...)` when you want the smallest public
-bucket design that keeps ambiguity below a review threshold.
+Use `certify_public_representation(...)` when you want a review-ready decision:
+the smallest evaluated public bucket design that keeps ambiguity below a
+declared threshold, with search assumptions and limitations attached.
 
 ```python
-frontier = us.public_representation_frontier(
+certificate = us.certify_public_representation(
     rows_or_frame,
     base_public=["AGE_BAND", "EDU_BAND"],
     hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND"],
@@ -222,16 +223,15 @@ frontier = us.public_representation_frontier(
     min_cell_weights=[1, 10, 25],
     ambiguity_limit=0.01,
     bucket_budget=40,
-    search="beam",
+    search="exhaustive",
 )
 
-explanation = frontier.explain_minimal_stable()
-if explanation is not None:
-    print(explanation.to_markdown())
+print(certificate.to_markdown())
 ```
 
-The frontier compares public-cell count, added public columns, and ambiguity
-across the stress grid. See
+Use `public_representation_frontier(...)` when you want the exploratory Pareto
+frontier behind the certificate. The frontier compares public-cell count, added
+public columns, and ambiguity across the stress grid. See
 [docs/public-representation-frontier.md](docs/public-representation-frontier.md).
 
 ### 4. Audit Causal or Uplift Reports
@@ -362,6 +362,7 @@ uv run pytest
 - [Data diagnostics](docs/data-diagnostics.md)
 - [Mathematical and statistical soundness](docs/mathematical-statistical-soundness.md)
 - [Public representation frontier](docs/public-representation-frontier.md)
+- [Representation stability certificates](docs/representation-stability-certificates.md)
 - [Transport preset guide](docs/transport-presets.md)
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)
 - [Benchmark gallery](docs/benchmark-gallery.md)

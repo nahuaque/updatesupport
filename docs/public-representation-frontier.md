@@ -3,6 +3,10 @@
 `public_representation_frontier(...)` searches over candidate public
 representations and keeps the Pareto frontier of reporting choices.
 
+Use `certify_public_representation(...)` instead when you want a pass/fail
+representation-stability certificate built from the same frontier machinery.
+See [Representation stability certificates](representation-stability-certificates.md).
+
 Use it when the review question is not only:
 
 > Which one hidden variable would reduce ambiguity?

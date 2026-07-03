@@ -213,6 +213,30 @@ class StructuredExportTests(unittest.TestCase):
             "base public representation",
         )
 
+    def test_certificate_exports_decision_and_frontier_evidence(self):
+        certificate = us.certify_public_representation(
+            _rows(),
+            base_public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            candidate_refinements=["driver"],
+            q_presets=["saturated", us.q_bounded_shift(0.5)],
+            ambiguity_limit=0.05,
+        )
+
+        tables = certificate.to_tables()
+        payload = json.loads(certificate.to_json())
+
+        self.assertEqual(tables["summary"][0]["status"], "pass")
+        self.assertEqual(tables["summary"][0]["certified_label"], "base + driver")
+        self.assertIn("selected_scenarios", tables)
+        self.assertIn("frontier_candidates", tables)
+        self.assertEqual(payload["status"], "pass")
+        self.assertEqual(
+            payload["certified_candidate"]["added_columns"],
+            ["driver"],
+        )
+
     def test_report_to_dataframes_uses_pandas_when_available(self):
         try:
             import pandas as pd

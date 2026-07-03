@@ -9,6 +9,10 @@ from .adapters import (
     adapt_dowhy_effects,
     adapt_econml_effects,
 )
+from .certificate import (
+    RepresentationStabilityCertificate,
+    certify_public_representation,
+)
 from .data import DataDiagnostic, DataDiagnostics, GroupedProblem, from_dataframe
 from .dowhy import (
     DoWhyRepresentationAudit,
@@ -138,6 +142,7 @@ __all__ = [
     "adapt_econml_effects",
     "CardinalGapResult",
     "CausalReportingStabilitySuite",
+    "certify_public_representation",
     "ConstraintDual",
     "CvxpyEnvironments",
     "CvxpyConstraintMetadata",
@@ -221,6 +226,7 @@ __all__ = [
     "RefinementSensitivityReport",
     "RefinementSensitivityRow",
     "RefinementSensitivityScenario",
+    "RepresentationStabilityCertificate",
     "RatioTarget",
     "SensitivityReport",
     "SensitivityRow",
