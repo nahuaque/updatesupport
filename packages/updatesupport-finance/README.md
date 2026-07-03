@@ -151,6 +151,38 @@ report = usf.model_risk_report(
 print(report.to_markdown())
 ```
 
+Structured exports are available for downstream model-risk systems:
+
+```python
+json_payload = report.to_json()
+tables = report.to_tables()
+frames = report.to_dataframes()  # Requires pandas.
+```
+
+The finance wrapper exposes finance-named tables that are intended to feed
+validation packs, governance dashboards, model inventory systems, and evidence
+archives:
+
+- `finance_model_risk`: one-row review summary with metadata, status, reported
+  estimate, ambiguity, adequacy flag, and Q preset
+- `finance_review_reasons`: threshold breaches or adequacy failures
+- `finance_concentration_stress`: concentration-stress interpretation of the
+  active Q preset
+- `finance_statistical_uncertainty`: supplied statistical/model uncertainty,
+  when provided
+- `finance_estimator_uncertainty`: hidden-cell standard-error adjustment, when
+  provided
+- `finance_refinement_recommendations`: candidate public refinements ranked by
+  ambiguity reduction
+- `finance_dual_diagnostics`: largest CVXPY dual multipliers, when available
+- `finance_data_diagnostics`: pre-solve data diagnostics
+- `finance_limitations` and `finance_reviewer_notes`: review boundaries and
+  analyst notes
+
+Core `updatesupport` tables are also included with a `core_` prefix, such as
+`core_summary`, `core_worst_fibers`, and `core_refinements`, so finance users
+can keep both the domain summary and the underlying audit evidence.
+
 The report answers:
 
 - What is the reported portfolio risk estimate?

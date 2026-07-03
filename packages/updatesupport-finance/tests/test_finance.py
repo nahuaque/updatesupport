@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import runpy
 import unittest
 from pathlib import Path
@@ -233,6 +234,63 @@ class FinancePluginTests(unittest.TestCase):
         self.assertEqual(
             tables["finance_concentration_stress"][0]["stress_type"],
             "factor-exposure concentration stress",
+        )
+
+    def test_model_risk_report_structured_exports_are_finance_named(self):
+        report = usf.model_risk_report(
+            _portfolio_rows(),
+            public=["product", "region", "fico_band", "ltv_band"],
+            hidden=[
+                "product",
+                "region",
+                "fico_band",
+                "ltv_band",
+                "channel",
+                "employment",
+            ],
+            metric=usf.default_rate(default="defaulted"),
+            exposure="ead",
+            q=usf.q_portfolio_mix_shift(radius=0.25),
+            top=2,
+            model_id="PD_EXPORT_001",
+            portfolio_name="Export test portfolio",
+            as_of_date="2026-06-30",
+            intended_use="Governance dashboard export",
+            reviewer_notes=["Archive with quarterly validation evidence."],
+        )
+
+        payload = json.loads(report.to_json())
+        tables = report.to_tables()
+
+        self.assertEqual(payload["metadata"]["model_id"], "PD_EXPORT_001")
+        self.assertEqual(payload["review_status"], "pass")
+        self.assertIn("reported_portfolio_risk_estimate", payload)
+        self.assertIn("concentration_stress", payload)
+        self.assertIn("core", payload)
+        self.assertEqual(
+            tables["finance_model_risk"][0]["model_id"],
+            "PD_EXPORT_001",
+        )
+        self.assertEqual(
+            tables["finance_reviewer_notes"][0]["note"],
+            "Archive with quarterly validation evidence.",
+        )
+        self.assertIn("finance_concentration_stress", tables)
+        self.assertIn("finance_refinement_recommendations", tables)
+        self.assertIn("finance_dual_diagnostics", tables)
+        self.assertIn("finance_data_diagnostics", tables)
+        self.assertIn("finance_limitations", tables)
+        self.assertIn("core_summary", tables)
+
+        try:
+            import pandas  # noqa: F401
+        except ImportError as exc:
+            raise unittest.SkipTest("pandas is not installed") from exc
+        frames = report.to_dataframes()
+        self.assertIn("finance_model_risk", frames)
+        self.assertEqual(
+            frames["finance_model_risk"].loc[0, "model_id"],
+            "PD_EXPORT_001",
         )
 
     def test_review_thresholds_can_pass(self):
