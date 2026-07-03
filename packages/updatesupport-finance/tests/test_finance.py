@@ -606,6 +606,7 @@ class FinancePluginTests(unittest.TestCase):
             self.assertIn("seaborn", source)
             self.assertIn("ipywidgets", source)
             self.assertIn("colab.research.google.com", source)
+            self.assertNotIn(".legend_.remove()", source)
             for cell in payload["cells"]:
                 if cell["cell_type"] == "code":
                     self.assertIsNone(cell.get("execution_count"))
