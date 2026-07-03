@@ -58,6 +58,10 @@ All notable changes to `updatesupport` are documented here.
 - Added `WitnessReport` and `witness_report(...)` for analyst-facing
   lower-vs-upper adversarial witness reports that show which hidden cells move
   between interval endpoints while the public distribution stays fixed.
+- Added `ConvexAdmissibleSet`, `SupportFunctionResult`, and
+  `SupportFunctionBackend`, a CVXPY `SuppFunc`-based backend for evaluating
+  fixed-linear transport intervals as support functions of the admissible
+  hidden-distribution set.
 
 ### Fixed
 

@@ -119,6 +119,89 @@ class _CvxpySolveResult:
 
 
 @dataclass(frozen=True)
+class SupportFunctionResult:
+    """Value and optimizer for one support-function evaluation."""
+
+    direction: tuple[float, ...]
+    value: float
+    vector: tuple[float, ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "direction": self.direction,
+            "value": self.value,
+            "vector": self.vector,
+        }
+
+
+@dataclass(frozen=True)
+class ConvexAdmissibleSet:
+    """A CVXPY-defined convex admissible set over hidden distributions."""
+
+    variable: Any
+    constraints: Sequence[Any]
+    records: Sequence[CvxpyConstraintMetadata] = ()
+    name: str = "convex admissible set"
+
+    def support_function(self) -> Any:
+        """Return CVXPY's support-function transform for this set."""
+
+        try:
+            from cvxpy.transforms.suppfunc import SuppFunc
+        except ImportError as exc:  # pragma: no cover - CVXPY API availability
+            raise CvxpyError(
+                "CVXPY support-function transforms are unavailable. "
+                "Install a CVXPY version that provides cvxpy.transforms.suppfunc."
+            ) from exc
+        return SuppFunc(self.variable, list(self.constraints))
+
+    def support_expression(self, direction: Sequence[float]) -> Any:
+        """Return the CVXPY expression ``sigma_Q(direction)``."""
+
+        return self.support_function()(tuple(float(value) for value in direction))
+
+    def support_value(
+        self,
+        direction: Sequence[float],
+        *,
+        solver: str | None = None,
+        solver_options: Mapping[str, Any] | None = None,
+    ) -> SupportFunctionResult:
+        """Evaluate ``sup_{q in Q} <direction, q>`` with CVXPY."""
+
+        try:
+            import cvxpy as cp
+        except ImportError as exc:  # pragma: no cover - exercised without optional dep
+            raise CvxpyError(
+                "CVXPY support is optional; install it with "
+                "`uv sync --extra cvxpy` or `pip install updatesupport[cvxpy]`."
+            ) from exc
+
+        direction_vector = tuple(float(value) for value in direction)
+        expression = self.support_expression(direction_vector)
+        problem = cp.Problem(cp.Minimize(-expression), [])
+        options = dict(solver_options or {})
+        try:
+            if solver is None:
+                problem.solve(**options)
+            else:
+                problem.solve(solver=solver, **options)
+        except Exception as exc:  # pragma: no cover - solver exceptions vary
+            raise CvxpyError(str(exc)) from exc
+        if problem.status not in {"optimal", "optimal_inaccurate"}:
+            raise CvxpyError(f"CVXPY support-function status: {problem.status}")
+        if self.variable.value is None:
+            raise CvxpyError("CVXPY support function did not return an optimizer")
+        if expression.value is None:
+            raise CvxpyError("CVXPY support function did not return a value")
+        return SupportFunctionResult(
+            direction=direction_vector,
+            value=float(expression.value),
+            vector=tuple(float(value) for value in self.variable.value),
+        )
+
+
+@dataclass(frozen=True)
 class _CvxpyPairSolveResult:
     q1: tuple[float, ...]
     q2: tuple[float, ...]
@@ -1138,6 +1221,30 @@ class CvxpyEnvironments:
             duals=result.duals,
         )
 
+    def convex_admissible_set(
+        self,
+        problem,
+        *,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> ConvexAdmissibleSet:
+        """Build the CVXPY admissible distribution set for this problem."""
+
+        cp = self._cvxpy()
+        q = cp.Variable(len(problem.states))
+        records = self._labeled_constraints_for_variable(
+            cp,
+            problem,
+            q,
+            variable="q",
+            public_law=public_law,
+        )
+        return ConvexAdmissibleSet(
+            variable=q,
+            constraints=tuple(record.constraint for record in records),
+            records=tuple(records),
+            name=self.name,
+        )
+
     def moment_transform_endpoint(
         self,
         problem,
@@ -1875,6 +1982,101 @@ class CvxpyEnvironments:
                 "`uv sync --extra cvxpy` or `pip install updatesupport[cvxpy]`."
             ) from exc
         return cp
+
+
+@dataclass(frozen=True)
+class SupportFunctionBackend(CvxpyEnvironments):
+    """CVXPY backend that evaluates linear intervals via support functions."""
+
+    name: str = "support-function-cvxpy"
+
+    def local_transport(
+        self, problem, public_law: Mapping[Hashable, float]
+    ) -> TransportResult:
+        if _is_nonlinear_ratio_problem(problem):
+            return super().local_transport(problem, public_law)
+        problem._require_linear_target("SupportFunctionBackend.local_transport")
+        p = problem._coerce_public_law(public_law)
+        h = self._estimand_vector(problem)
+        lower_result = self._support_function_result(
+            problem,
+            tuple(-value for value in h),
+            public_law=p,
+            solve="lower",
+        )
+        upper_result = self._support_function_result(
+            problem,
+            h,
+            public_law=p,
+            solve="upper",
+        )
+        lower = -lower_result.value
+        upper = upper_result.value
+        if lower > upper and abs(lower - upper) <= problem.tol:
+            lower = upper = 0.5 * (lower + upper)
+        return TransportResult(
+            lower=lower,
+            upper=upper,
+            diameter=max(0.0, upper - lower),
+            public_law=p,
+            q_lower=problem._distribution_from_vector(lower_result.vector),
+            q_upper=problem._distribution_from_vector(upper_result.vector),
+            duals=lower_result.duals + upper_result.duals,
+        )
+
+    def global_transport(self, problem) -> TransportResult:
+        if _is_nonlinear_ratio_problem(problem):
+            return super().global_transport(problem)
+        problem._require_linear_target("SupportFunctionBackend.global_transport")
+        if self.fixed_public_law is not None:
+            return self.local_transport(problem, self.fixed_public_law)
+        return super().global_transport(problem)
+
+    def support_value(
+        self,
+        problem,
+        direction: Sequence[float],
+        *,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> SupportFunctionResult:
+        """Evaluate the support function of this backend's admissible set."""
+
+        result = self._support_function_result(
+            problem,
+            direction,
+            public_law=public_law,
+            solve="support",
+        )
+        return SupportFunctionResult(
+            direction=tuple(float(value) for value in direction),
+            value=result.value,
+            vector=result.vector,
+        )
+
+    def _support_function_result(
+        self,
+        problem,
+        direction: Sequence[float],
+        *,
+        public_law: Mapping[Hashable, float] | None,
+        solve: str,
+    ) -> _CvxpySolveResult:
+        direction_vector = tuple(float(value) for value in direction)
+        if len(direction_vector) != len(problem.states):
+            raise ValueError("support direction must have one value per state")
+        admissible_set = self.convex_admissible_set(problem, public_law=public_law)
+        result = admissible_set.support_value(
+            direction_vector,
+            solver=self._normalized_solver_name(),
+            solver_options=self.solver_options,
+        )
+        vector = self._clean_vector(problem, result.vector)
+        duals = self._constraint_duals(admissible_set.records, solve=solve)
+        return _CvxpySolveResult(
+            vector=vector,
+            value=result.value,
+            duals=duals,
+        )
 
 
 @dataclass(frozen=True)

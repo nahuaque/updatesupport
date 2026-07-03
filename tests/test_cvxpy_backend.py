@@ -116,6 +116,93 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.upper, 0.75, places=6)
         self.assertAlmostEqual(interval.diameter, 0.75, places=6)
 
+    def test_support_function_backend_solves_linear_interval(self):
+        _require_cvxpy()
+
+        def cap_b(_cp, q, _states, state_index):
+            return (
+                us.cvxpy_constraint(
+                    q[state_index["b"]] <= 0.75,
+                    name="cap hidden cell b",
+                    kind="cell_cap",
+                    sense="<=",
+                    state="b",
+                ),
+            )
+
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand={"a": 0.0, "b": 1.0},
+            environments=us.SupportFunctionBackend(
+                fixed_public_law={"o": 1.0},
+                constraint_builders=(cap_b,),
+            ),
+        )
+
+        interval = problem.global_transport_modulus()
+
+        self.assertAlmostEqual(interval.lower, 0.0, places=6)
+        self.assertAlmostEqual(interval.upper, 0.75, places=6)
+        self.assertAlmostEqual(interval.diameter, 0.75, places=6)
+        self.assertAlmostEqual(interval.q_lower["a"], 1.0, places=6)
+        self.assertAlmostEqual(interval.q_upper["b"], 0.75, places=6)
+        self.assertIn("cell_cap", {row.kind for row in interval.duals})
+
+    def test_convex_admissible_set_exposes_support_function(self):
+        _require_cvxpy()
+
+        def cap_b(_cp, q, _states, state_index):
+            return (q[state_index["b"]] <= 0.75,)
+
+        env = us.SupportFunctionBackend(
+            fixed_public_law={"o": 1.0},
+            constraint_builders=(cap_b,),
+        )
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand={"a": 0.0, "b": 1.0},
+            environments=env,
+        )
+        admissible_set = env.convex_admissible_set(
+            problem,
+            public_law={"o": 1.0},
+        )
+
+        result = admissible_set.support_value([0.0, 1.0])
+        backend_result = env.support_value(
+            problem,
+            [0.0, 1.0],
+            public_law={"o": 1.0},
+        )
+
+        self.assertIsInstance(admissible_set, us.ConvexAdmissibleSet)
+        self.assertIsInstance(result, us.SupportFunctionResult)
+        self.assertAlmostEqual(result.value, 0.75, places=5)
+        self.assertAlmostEqual(result.vector[1], 0.75, places=5)
+        self.assertAlmostEqual(backend_result.value, 0.75, places=5)
+
+    def test_support_function_backend_can_be_selected_from_q_preset(self):
+        _require_cvxpy()
+
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_tv_budget(0.15, backend="support_function"),
+        )
+
+        interval = grouped.problem.global_transport_modulus()
+
+        self.assertIsInstance(grouped.problem.environments, us.SupportFunctionBackend)
+        self.assertEqual(grouped.q_name, "tv_budget(radius=0.15)")
+        self.assertAlmostEqual(interval.lower, 0.35, places=5)
+        self.assertAlmostEqual(interval.upper, 0.65, places=5)
+        self.assertAlmostEqual(interval.diameter, 0.30, places=5)
+
     def test_batched_cvxpy_solves_multiple_public_laws(self):
         _require_cvxpy()
 

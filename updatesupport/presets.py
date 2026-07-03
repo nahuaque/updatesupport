@@ -14,6 +14,7 @@ from .environments import (
     ParameterizedCvxpyEnvironments,
     PolytopeEnvironments,
     PublicFiberSaturated,
+    SupportFunctionBackend,
     cvxpy_constraint,
     eq,
 )
@@ -320,6 +321,22 @@ def resolve_q_environment(
                     f"the observed hidden distribution <= {radius:g}"
                 ),
             )
+        if backend == "support_function":
+            return QEnvironment(
+                environment=SupportFunctionBackend(
+                    fixed_public_law=public_law,
+                    constraint_builders=(_tv_constraint_builder(cell_weights, radius),),
+                    solver=preset.solver,
+                    solver_options=preset.solver_options,
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=(
+                    "fixed observed public law with total variation distance from "
+                    f"the observed hidden distribution <= {radius:g}"
+                ),
+            )
         _require_backend(preset, "cvxpy")
         return QEnvironment(
             environment=CvxpyEnvironments(
@@ -371,6 +388,24 @@ def resolve_q_environment(
         if backend == "batched_cvxpy":
             return QEnvironment(
                 environment=BatchedCvxpyEnvironments(
+                    fixed_public_law=public_law,
+                    constraint_builders=(
+                        _chi_square_constraint_builder(cell_weights, radius),
+                    ),
+                    solver=preset.solver,
+                    solver_options=preset.solver_options,
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=(
+                    "fixed observed public law with Pearson chi-square divergence "
+                    f"from the observed hidden distribution <= {radius:g}"
+                ),
+            )
+        if backend == "support_function":
+            return QEnvironment(
+                environment=SupportFunctionBackend(
                     fixed_public_law=public_law,
                     constraint_builders=(
                         _chi_square_constraint_builder(cell_weights, radius),
@@ -452,6 +487,22 @@ def resolve_q_environment(
                     f"hidden distribution <= {radius:g}"
                 ),
             )
+        if backend == "support_function":
+            return QEnvironment(
+                environment=SupportFunctionBackend(
+                    fixed_public_law=public_law,
+                    constraint_builders=(_kl_constraint_builder(cell_weights, radius),),
+                    solver=preset.solver,
+                    solver_options=preset.solver_options,
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=(
+                    "fixed observed public law with KL divergence from the observed "
+                    f"hidden distribution <= {radius:g}"
+                ),
+            )
         _require_backend(preset, "cvxpy")
         return QEnvironment(
             environment=CvxpyEnvironments(
@@ -499,6 +550,28 @@ def resolve_q_environment(
         if backend == "batched_cvxpy":
             return QEnvironment(
                 environment=BatchedCvxpyEnvironments(
+                    fixed_public_law=public_law,
+                    constraint_builders=(
+                        _wasserstein_constraint_builder(
+                            cell_weights,
+                            preset.cost,
+                            radius,
+                        ),
+                    ),
+                    solver=preset.solver,
+                    solver_options=preset.solver_options,
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=(
+                    "fixed observed public law with Wasserstein cost from the "
+                    f"observed hidden distribution <= {radius:g}"
+                ),
+            )
+        if backend == "support_function":
+            return QEnvironment(
+                environment=SupportFunctionBackend(
                     fixed_public_law=public_law,
                     constraint_builders=(
                         _wasserstein_constraint_builder(

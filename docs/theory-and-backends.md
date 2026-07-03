@@ -50,6 +50,9 @@ Core finite objects:
 - `LineSegment`
 - `PolytopeEnvironments`
 - `CvxpyEnvironments`
+- `ConvexAdmissibleSet`
+- `SupportFunctionBackend`
+- `SupportFunctionResult`
 - `ParameterizedCvxpyEnvironments`
 
 Tabular and reporting helpers:
@@ -310,6 +313,52 @@ constraints that are locally influential for the solved interval, such as
 public-law equalities, Q-budget constraints, or active state lower bounds.
 Custom constraint builders can return `us.cvxpy_constraint(...)` to attach a
 readable name and kind to their dual rows.
+
+### Support-Function Backend
+
+`SupportFunctionBackend` exposes the admissible hidden-distribution set as a
+CVXPY support function. For a fixed linear target `psi(q) = <h, q>`, the
+transport interval can be computed as:
+
+```text
+upper = sigma_Q(h)
+lower = -sigma_Q(-h)
+```
+
+where `sigma_Q(y) = sup_{q in Q} <y, q>`.
+
+```python
+env = us.SupportFunctionBackend(
+    fixed_public_law={"North": 1.0},
+)
+
+problem = us.FiniteProblem(
+    states=["low", "high"],
+    public={"low": "North", "high": "North"},
+    estimand={"low": 0.0, "high": 1.0},
+    environments=env,
+)
+
+interval = problem.global_transport_modulus()
+```
+
+You can also inspect the set directly:
+
+```python
+q_set = env.convex_admissible_set(problem, public_law={"North": 1.0})
+result = q_set.support_value([0.0, 1.0])
+```
+
+Compatible built-in convex presets can opt into this backend:
+
+```python
+q = us.q_tv_budget(0.10, backend="support_function")
+```
+
+This first support-function slice is for continuous convex Q sets and fixed
+linear targets. Mixed-integer presets such as `q_fiber_support_floor(...)` and
+variable-denominator `RatioTarget` problems continue to use their existing
+solver paths.
 
 ## SCIP Solver Selection
 
