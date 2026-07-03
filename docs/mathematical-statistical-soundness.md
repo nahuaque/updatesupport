@@ -142,8 +142,25 @@ g(E_q[m_1], ..., E_q[m_k])
 
 so the target is a fixed linear target in equivalent hidden-cell form. Those
 affine moment transforms support adequacy checks, interval solving, and
-public-fiber decomposition. Non-affine moment transforms have false capability
-flags and raise before solving until a dedicated nonlinear backend exists.
+public-fiber decomposition.
+
+Non-affine moment transforms are supported only when the declared mathematical
+shape justifies the requested operation:
+
+- if `g` is convex and a DCP-valid `cvxpy_transform` is supplied, minimization is
+  a convex problem and the lower endpoint can be exact;
+- if `g` is concave and a DCP-valid `cvxpy_transform` is supplied, maximization
+  is a convex-compatible problem and the upper endpoint can be exact;
+- if `g` is monotone in every bounded moment, the library can produce a
+  conservative two-sided interval by optimizing each moment separately and
+  applying `g` to the monotone box corners.
+
+Those monotone box endpoints may not be jointly attainable. The resulting
+interval is therefore valid as a conservative bound, not necessarily a sharp
+identified interval. Non-affine moment transforms also do not claim public
+adequacy or additive public-fiber decomposition support, because hidden-cell
+point ranges of `g(m(d))` are not, in general, the same object as variation in
+`g(E_q[m])`.
 
 ### Distributional Targets
 
@@ -438,14 +455,16 @@ example:
 ```python
 LinearTarget(h)
 RatioTarget(numerator, denominator)  # supported for finite/saturated Q
-MomentTransformTarget(moments, transform)  # affine transforms supported
+MomentTransformTarget(moments, transform)  # affine, one-sided CVXPY, monotone boxes
 CvxpyTarget(objective_builder)
 ```
 
 Each target type would need its own adequacy condition, interval solver, witness
 construction, report language, and tests. Affine moment transforms are already
-reduced to fixed linear hidden-cell target values. Some remaining nonlinear
-targets are convex or linear-fractional and can be solved cleanly. Some require
+reduced to fixed linear hidden-cell target values; convex/concave moment
+transforms expose only the DCP-compatible endpoint; monotone moment transforms
+can expose conservative box bounds. Some remaining nonlinear targets are
+convex or linear-fractional and can be solved cleanly. Some require
 mixed-integer optimization or only admit conservative bounds.
 Representation-dependent procedures are currently treated as scenario
 comparisons through `ProcedureTarget`, not as a single transported nonlinear

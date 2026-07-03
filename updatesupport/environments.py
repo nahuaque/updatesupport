@@ -8,6 +8,7 @@ from typing import Any, Callable, Hashable, Mapping, Protocol, Sequence
 
 from .partition import Partition
 from .results import AdequacyResult, ConstraintDual, TransportResult, Witness
+from .targets import MomentTransformTarget, UnsupportedTargetError
 
 
 class LPError(RuntimeError):
@@ -1137,6 +1138,76 @@ class CvxpyEnvironments:
             duals=result.duals,
         )
 
+    def moment_transform_endpoint(
+        self,
+        problem,
+        *,
+        public_law: Mapping[Hashable, float],
+        maximize: bool,
+    ) -> TransportResult:
+        """Solve one convex-compatible MomentTransformTarget endpoint."""
+
+        target = problem.target_functional
+        if not isinstance(target, MomentTransformTarget):
+            raise TypeError("problem target is not a MomentTransformTarget")
+        if maximize and not target.supports_exact_upper_endpoint:
+            raise UnsupportedTargetError(
+                "MomentTransformTarget maximization is exact only for concave "
+                "CVXPY-compatible transforms."
+            )
+        if not maximize and not target.supports_exact_lower_endpoint:
+            raise UnsupportedTargetError(
+                "MomentTransformTarget minimization is exact only for convex "
+                "CVXPY-compatible transforms."
+            )
+
+        cp = self._cvxpy()
+        q = cp.Variable(len(problem.states))
+        state_index = {state: i for i, state in enumerate(problem.states)}
+        moment_exprs = {}
+        for moment in target.moments:
+            vector = target.moment_vector(moment, problem.states)
+            moment_exprs[moment] = cp.sum(cp.multiply(vector, q))
+        objective_expr = target.cvxpy_expression(cp, moment_exprs)
+        records = self._labeled_constraints_for_variable(
+            cp,
+            problem,
+            q,
+            variable="q",
+            public_law=public_law,
+        )
+        cvx_problem = cp.Problem(
+            cp.Maximize(objective_expr) if maximize else cp.Minimize(objective_expr),
+            [record.constraint for record in records],
+        )
+        if not cvx_problem.is_dcp():
+            direction = "maximization" if maximize else "minimization"
+            raise CvxpyError(
+                f"MomentTransformTarget {direction} is not DCP. Convex targets "
+                "support minimization and concave targets support maximization."
+            )
+        self._solve_problem(cvx_problem)
+        vector = self._clean_vector(problem, q.value)
+        moment_values = {
+            moment: sum(
+                target.moment_value(moment, state) * vector[state_index[state]]
+                for state in problem.states
+            )
+            for moment in target.moments
+        }
+        value = target.transform_value(moment_values)
+        q_distribution = problem._distribution_from_vector(vector)
+        solve = "upper" if maximize else "lower"
+        return TransportResult(
+            lower=value,
+            upper=value,
+            diameter=0.0,
+            public_law=problem._coerce_public_law(public_law),
+            q_lower=q_distribution,
+            q_upper=q_distribution,
+            duals=self._constraint_duals(records, solve=solve),
+        )
+
     def _ratio_local_transport(
         self,
         problem,
@@ -1887,6 +1958,83 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
                 "ParameterizedCvxpyEnvironments.global_transport"
             )
         return super().global_transport(problem)
+
+    def moment_transform_endpoint(
+        self,
+        problem,
+        *,
+        public_law: Mapping[Hashable, float],
+        maximize: bool,
+    ) -> TransportResult:
+        target = problem.target_functional
+        if not isinstance(target, MomentTransformTarget):
+            raise TypeError("problem target is not a MomentTransformTarget")
+        if maximize and not target.supports_exact_upper_endpoint:
+            raise UnsupportedTargetError(
+                "MomentTransformTarget maximization is exact only for concave "
+                "CVXPY-compatible transforms."
+            )
+        if not maximize and not target.supports_exact_lower_endpoint:
+            raise UnsupportedTargetError(
+                "MomentTransformTarget minimization is exact only for convex "
+                "CVXPY-compatible transforms."
+            )
+
+        cp = self._cvxpy()
+        q = cp.Variable(len(problem.states))
+        public_law_parameter = cp.Parameter(len(problem.public_values))
+        extra_parameters: dict[str, Any] = {}
+        records = self._parameterized_labeled_constraints_for_variable(
+            cp,
+            problem,
+            q,
+            variable="q",
+            public_law=public_law_parameter,
+            extra_parameters=extra_parameters,
+        )
+        moment_exprs = {}
+        for moment in target.moments:
+            vector = target.moment_vector(moment, problem.states)
+            moment_exprs[moment] = cp.sum(cp.multiply(vector, q))
+        objective_expr = target.cvxpy_expression(cp, moment_exprs)
+        cvx_problem = cp.Problem(
+            cp.Maximize(objective_expr) if maximize else cp.Minimize(objective_expr),
+            [record.constraint for record in records],
+        )
+        if not cvx_problem.is_dcp():
+            direction = "maximization" if maximize else "minimization"
+            raise CvxpyError(
+                f"MomentTransformTarget {direction} is not DCP. Convex targets "
+                "support minimization and concave targets support maximization."
+            )
+        effective_public_law = self._effective_public_law(problem, public_law)
+        public_law_parameter.value = self._public_law_array(
+            problem,
+            effective_public_law,
+        )
+        self._set_extra_parameter_values(extra_parameters)
+        self._solve_problem(cvx_problem)
+        vector = self._clean_vector(problem, q.value)
+        state_index = {state: i for i, state in enumerate(problem.states)}
+        moment_values = {
+            moment: sum(
+                target.moment_value(moment, state) * vector[state_index[state]]
+                for state in problem.states
+            )
+            for moment in target.moments
+        }
+        value = target.transform_value(moment_values)
+        q_distribution = problem._distribution_from_vector(vector)
+        solve = "upper" if maximize else "lower"
+        return TransportResult(
+            lower=value,
+            upper=value,
+            diameter=0.0,
+            public_law=effective_public_law,
+            q_lower=q_distribution,
+            q_upper=q_distribution,
+            duals=self._constraint_duals(records, solve=solve),
+        )
 
     def _solve_single(
         self,

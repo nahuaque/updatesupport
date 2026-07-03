@@ -385,6 +385,96 @@ class CvxpyBackendTests(unittest.TestCase):
         )
         self.assertEqual(len(report.scenarios), 2)
 
+    def test_convex_moment_transform_uses_exact_lower_and_conservative_upper(self):
+        _require_cvxpy()
+
+        target = us.MomentTransformTarget(
+            moments={"score": {"a": 0.0, "b": 2.0}},
+            transform=lambda moments: moments["score"] ** 2,
+            curvature="convex",
+            cvxpy_transform=lambda cp, moments: cp.square(moments["score"]),
+            monotonicity={"score": "increasing"},
+            name="squared_mean_score",
+        )
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand=target,
+            environments=us.CvxpyEnvironments(fixed_public_law={"o": 1.0}),
+        )
+
+        interval = problem.global_transport_modulus()
+        endpoint = problem.moment_transform_endpoint(minimize=True)
+
+        self.assertTrue(target.contract.capabilities.supports_exact_lower)
+        self.assertFalse(target.contract.capabilities.supports_exact_upper)
+        self.assertEqual(interval.bound_type, "conservative")
+        self.assertEqual(interval.lower_bound_type, "exact")
+        self.assertEqual(interval.upper_bound_type, "conservative")
+        self.assertAlmostEqual(interval.lower, 0.0, places=6)
+        self.assertAlmostEqual(interval.upper, 4.0, places=6)
+        self.assertIsNotNone(interval.q_lower)
+        self.assertAlmostEqual(endpoint.lower, 0.0, places=6)
+
+    def test_concave_moment_transform_uses_conservative_lower_and_exact_upper(self):
+        _require_cvxpy()
+
+        target = us.MomentTransformTarget(
+            moments={"score": {"a": 0.0, "b": 4.0}},
+            transform=lambda moments: moments["score"] ** 0.5,
+            curvature="concave",
+            cvxpy_transform=lambda cp, moments: cp.sqrt(moments["score"]),
+            monotonicity={"score": "increasing"},
+            name="sqrt_mean_score",
+        )
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand=target,
+            environments=us.CvxpyEnvironments(fixed_public_law={"o": 1.0}),
+        )
+
+        interval = problem.global_transport_modulus()
+        endpoint = problem.moment_transform_endpoint(minimize=False)
+
+        self.assertFalse(target.contract.capabilities.supports_exact_lower)
+        self.assertTrue(target.contract.capabilities.supports_exact_upper)
+        self.assertEqual(interval.bound_type, "conservative")
+        self.assertEqual(interval.lower_bound_type, "conservative")
+        self.assertEqual(interval.upper_bound_type, "exact")
+        self.assertAlmostEqual(interval.lower, 0.0, places=6)
+        self.assertAlmostEqual(interval.upper, 2.0, places=6)
+        self.assertIsNotNone(interval.q_upper)
+        self.assertAlmostEqual(endpoint.upper, 2.0, places=6)
+
+    def test_convex_moment_transform_endpoint_without_monotonicity_is_one_sided(self):
+        _require_cvxpy()
+
+        target = us.MomentTransformTarget(
+            moments={"score": {"a": 0.0, "b": 2.0}},
+            transform=lambda moments: moments["score"] ** 2,
+            curvature="convex",
+            cvxpy_transform=lambda cp, moments: cp.square(moments["score"]),
+            name="squared_mean_score",
+        )
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand=target,
+            environments=us.CvxpyEnvironments(fixed_public_law={"o": 1.0}),
+        )
+
+        endpoint = problem.moment_transform_endpoint(minimize=True)
+        with self.assertRaisesRegex(
+            us.UnsupportedTargetError,
+            "does not provide both endpoints",
+        ):
+            problem.global_transport_modulus()
+
+        self.assertFalse(target.contract.supports_interval)
+        self.assertTrue(target.contract.capabilities.supports_exact_lower)
+        self.assertAlmostEqual(endpoint.lower, 0.0, places=6)
+
     def test_chi_square_budget_preset_limits_divergence_from_observed(self):
         _require_cvxpy()
 

@@ -20,6 +20,9 @@ class TargetCapabilities:
     supports_adequacy: bool
     supports_interval: bool
     supports_fiber_decomposition: bool
+    supports_exact_lower: bool = False
+    supports_exact_upper: bool = False
+    supports_conservative_interval: bool = False
 
     @classmethod
     def none(cls) -> "TargetCapabilities":
@@ -27,6 +30,9 @@ class TargetCapabilities:
             supports_adequacy=False,
             supports_interval=False,
             supports_fiber_decomposition=False,
+            supports_exact_lower=False,
+            supports_exact_upper=False,
+            supports_conservative_interval=False,
         )
 
     @classmethod
@@ -35,6 +41,9 @@ class TargetCapabilities:
             supports_adequacy=True,
             supports_interval=True,
             supports_fiber_decomposition=True,
+            supports_exact_lower=True,
+            supports_exact_upper=True,
+            supports_conservative_interval=True,
         )
 
     def as_dict(self) -> dict[str, bool]:
@@ -42,6 +51,9 @@ class TargetCapabilities:
             "supports_adequacy": self.supports_adequacy,
             "supports_interval": self.supports_interval,
             "supports_fiber_decomposition": self.supports_fiber_decomposition,
+            "supports_exact_lower": self.supports_exact_lower,
+            "supports_exact_upper": self.supports_exact_upper,
+            "supports_conservative_interval": self.supports_conservative_interval,
         }
 
 
@@ -58,13 +70,34 @@ class TargetContract:
     supports_interval: bool
     supports_fiber_decomposition: bool
     limitations: tuple[str, ...] = ()
+    supports_exact_lower: bool | None = None
+    supports_exact_upper: bool | None = None
+    supports_conservative_interval: bool | None = None
 
     @property
     def capabilities(self) -> TargetCapabilities:
+        supports_exact_lower = (
+            self.supports_interval
+            if self.supports_exact_lower is None
+            else self.supports_exact_lower
+        )
+        supports_exact_upper = (
+            self.supports_interval
+            if self.supports_exact_upper is None
+            else self.supports_exact_upper
+        )
+        supports_conservative_interval = (
+            self.supports_interval
+            if self.supports_conservative_interval is None
+            else self.supports_conservative_interval
+        )
         return TargetCapabilities(
             supports_adequacy=self.supports_adequacy,
             supports_interval=self.supports_interval,
             supports_fiber_decomposition=self.supports_fiber_decomposition,
+            supports_exact_lower=supports_exact_lower,
+            supports_exact_upper=supports_exact_upper,
+            supports_conservative_interval=supports_conservative_interval,
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -282,10 +315,10 @@ class MomentTransformTarget:
     """Fixed transform of one or more linear moments.
 
     The mathematical form is ``psi(q) = g(mu(q))`` where each moment is
-    ``mu_j(q) = sum_d m_j(d) q(d)``. The current finite solvers support this
-    target only when ``g`` is declared affine through ``affine_coefficients`` and
-    ``intercept``. Non-affine moment transforms remain explicit target-contract
-    objects with false capability flags.
+    ``mu_j(q) = sum_d m_j(d) q(d)``. Affine transforms reduce to fixed linear
+    hidden-cell targets. Convex or concave transforms can expose one exact CVXPY
+    endpoint, and monotone transforms can expose conservative interval bounds
+    from separately optimized moment boxes.
     """
 
     moments: Mapping[str, Mapping[Hashable, float]]
@@ -294,6 +327,9 @@ class MomentTransformTarget:
     description: str = "fixed transform of linear moments"
     affine_coefficients: Mapping[str, float] | None = None
     intercept: float = 0.0
+    curvature: str = "unknown"
+    monotonicity: Mapping[str, str] = ()
+    cvxpy_transform: Callable[[Any, Mapping[str, Any]], Any] | None = None
     capabilities: TargetCapabilities | None = None
     formula: str | None = None
     source: str | None = None
@@ -312,6 +348,35 @@ class MomentTransformTarget:
                 name=f"moment {name!r}",
             )
         object.__setattr__(self, "moments", moments)
+
+        curvature = str(self.curvature).strip().lower()
+        if self.affine_coefficients is not None:
+            curvature = "affine"
+        if curvature not in {"affine", "convex", "concave", "unknown"}:
+            raise ValueError(
+                "curvature must be 'affine', 'convex', 'concave', or 'unknown'"
+            )
+        object.__setattr__(self, "curvature", curvature)
+
+        if isinstance(self.monotonicity, Mapping):
+            monotonicity_items = self.monotonicity.items()
+        elif not self.monotonicity:
+            monotonicity_items = ()
+        else:
+            raise TypeError("monotonicity must be a mapping")
+        monotonicity = {
+            str(moment): _normalize_monotonicity(value)
+            for moment, value in monotonicity_items
+        }
+        unknown_monotone = sorted(set(monotonicity) - set(moments))
+        if unknown_monotone:
+            raise ValueError(
+                f"monotonicity references unknown moments: {unknown_monotone!r}"
+            )
+        object.__setattr__(self, "monotonicity", monotonicity)
+
+        if self.cvxpy_transform is not None and not callable(self.cvxpy_transform):
+            raise TypeError("cvxpy_transform must be callable")
 
         intercept = float(self.intercept)
         if not isfinite(intercept):
@@ -334,18 +399,40 @@ class MomentTransformTarget:
             self.capabilities, TargetCapabilities
         ):
             raise TypeError("capabilities must be a TargetCapabilities object")
-        if (
-            self.affine_coefficients is None
-            and self.capabilities is not None
-            and (
-                self.capabilities.supports_adequacy
-                or self.capabilities.supports_interval
-                or self.capabilities.supports_fiber_decomposition
-            )
-        ):
-            raise ValueError(
-                "non-affine MomentTransformTarget capability flags cannot be true"
-            )
+        if self.capabilities is not None:
+            inferred = self._inferred_capabilities()
+            if self.capabilities.supports_adequacy and not inferred.supports_adequacy:
+                raise ValueError("capability flags cannot claim unsupported adequacy")
+            if self.capabilities.supports_interval and not inferred.supports_interval:
+                raise ValueError("capability flags cannot claim unsupported intervals")
+            if (
+                self.capabilities.supports_fiber_decomposition
+                and not inferred.supports_fiber_decomposition
+            ):
+                raise ValueError(
+                    "capability flags cannot claim unsupported fiber decomposition"
+                )
+            if (
+                self.capabilities.supports_exact_lower
+                and not inferred.supports_exact_lower
+            ):
+                raise ValueError(
+                    "capability flags cannot claim unsupported exact lower endpoint"
+                )
+            if (
+                self.capabilities.supports_exact_upper
+                and not inferred.supports_exact_upper
+            ):
+                raise ValueError(
+                    "capability flags cannot claim unsupported exact upper endpoint"
+                )
+            if (
+                self.capabilities.supports_conservative_interval
+                and not inferred.supports_conservative_interval
+            ):
+                raise ValueError(
+                    "capability flags cannot claim unsupported conservative interval"
+                )
 
     @property
     def is_affine(self) -> bool:
@@ -355,9 +442,29 @@ class MomentTransformTarget:
     def resolved_capabilities(self) -> TargetCapabilities:
         if self.capabilities is not None:
             return self.capabilities
-        if self.is_affine:
-            return TargetCapabilities.linear()
-        return TargetCapabilities.none()
+        return self._inferred_capabilities()
+
+    @property
+    def supports_exact_lower_endpoint(self) -> bool:
+        return self.resolved_capabilities.supports_exact_lower
+
+    @property
+    def supports_exact_upper_endpoint(self) -> bool:
+        return self.resolved_capabilities.supports_exact_upper
+
+    @property
+    def supports_conservative_interval(self) -> bool:
+        return self.resolved_capabilities.supports_conservative_interval
+
+    @property
+    def has_supported_behavior(self) -> bool:
+        capabilities = self.resolved_capabilities
+        return (
+            self.supports_linear_backend
+            or capabilities.supports_exact_lower
+            or capabilities.supports_exact_upper
+            or capabilities.supports_conservative_interval
+        )
 
     @property
     def supports_linear_backend(self) -> bool:
@@ -377,6 +484,35 @@ class MomentTransformTarget:
                 "Affine moment transforms are solved through their equivalent "
                 "fixed linear hidden-cell target values."
             )
+        elif (
+            capabilities.supports_exact_lower and not capabilities.supports_exact_upper
+        ):
+            limitations.append(
+                "Convex moment transforms support exact lower endpoints through "
+                "CVXPY-compatible minimization when a cvxpy_transform is supplied."
+            )
+            if capabilities.supports_conservative_interval:
+                limitations.append(
+                    "The upper endpoint is conservative unless a dedicated "
+                    "nonconvex maximization backend is supplied."
+                )
+        elif (
+            capabilities.supports_exact_upper and not capabilities.supports_exact_lower
+        ):
+            limitations.append(
+                "Concave moment transforms support exact upper endpoints through "
+                "CVXPY-compatible maximization when a cvxpy_transform is supplied."
+            )
+            if capabilities.supports_conservative_interval:
+                limitations.append(
+                    "The lower endpoint is conservative unless a dedicated "
+                    "nonconvex minimization backend is supplied."
+                )
+        elif capabilities.supports_conservative_interval:
+            limitations.append(
+                "Monotone transforms of bounded moments produce conservative "
+                "intervals by optimizing each moment separately."
+            )
         else:
             limitations.append(
                 "Non-affine moment transforms are not solved by the current "
@@ -395,12 +531,14 @@ class MomentTransformTarget:
             supports_adequacy=capabilities.supports_adequacy,
             supports_interval=capabilities.supports_interval,
             supports_fiber_decomposition=capabilities.supports_fiber_decomposition,
+            supports_exact_lower=capabilities.supports_exact_lower,
+            supports_exact_upper=capabilities.supports_exact_upper,
+            supports_conservative_interval=capabilities.supports_conservative_interval,
             limitations=tuple(limitations),
         )
 
     @property
     def values(self) -> dict[Hashable, float]:
-        self._require_supported_affine()
         states = self._moment_states()
         return {state: self.point_value(state) for state in states}
 
@@ -451,13 +589,53 @@ class MomentTransformTarget:
                 for moment in self.moments
             )
         else:
-            value = self.transform(
+            value = self.transform_value(
                 {moment: self.moment_value(moment, state) for moment in self.moments}
             )
-        value = float(value)
-        if not isfinite(value):
-            raise ValueError(f"moment transform {self.name!r} evaluated non-finite")
-        return value
+        return _finite_float(value, name=f"moment transform {self.name!r}")
+
+    def transform_value(self, moments: Mapping[str, float]) -> float:
+        missing = [moment for moment in self.moments if moment not in moments]
+        if missing:
+            raise ValueError(f"moment transform input is missing moments: {missing!r}")
+        value = self.transform(
+            {moment: float(moments[moment]) for moment in self.moments}
+        )
+        return _finite_float(value, name=f"moment transform {self.name!r}")
+
+    def cvxpy_expression(self, cp: Any, moments: Mapping[str, Any]) -> Any:
+        if self.cvxpy_transform is None:
+            raise UnsupportedTargetError(
+                "MomentTransformTarget requires cvxpy_transform for exact "
+                "convex/concave endpoint solves."
+            )
+        return self.cvxpy_transform(cp, moments)
+
+    def conservative_box_values(
+        self,
+        moment_bounds: Mapping[str, tuple[float, float]],
+    ) -> tuple[float, float]:
+        if not self.supports_conservative_interval:
+            raise UnsupportedTargetError(
+                "MomentTransformTarget does not declare monotonicity for every "
+                "moment, so box-based conservative bounds are unavailable."
+            )
+        lower_moments = {}
+        upper_moments = {}
+        for moment in self.moments:
+            lower, upper = moment_bounds[moment]
+            direction = self.monotonicity[moment]
+            if direction == "increasing":
+                lower_moments[moment] = lower
+                upper_moments[moment] = upper
+            else:
+                lower_moments[moment] = upper
+                upper_moments[moment] = lower
+        lower_value = self.transform_value(lower_moments)
+        upper_value = self.transform_value(upper_moments)
+        if lower_value <= upper_value:
+            return lower_value, upper_value
+        return upper_value, lower_value
 
     def value(self, state: Hashable) -> float:
         return self.point_value(state)
@@ -480,6 +658,13 @@ class MomentTransformTarget:
             if self.affine_coefficients is None
             else dict(self.affine_coefficients),
             "intercept": self.intercept,
+            "curvature": self.curvature,
+            "monotonicity": dict(self.monotonicity),
+            "cvxpy_transform": None
+            if self.cvxpy_transform is None
+            else getattr(
+                self.cvxpy_transform, "__name__", type(self.cvxpy_transform).__name__
+            ),
             "source": self.source,
             "contract": self.contract.as_dict(),
         }
@@ -519,6 +704,23 @@ class MomentTransformTarget:
             "MomentTransformTarget is supported by the current finite solvers "
             "only when it declares affine_coefficients and capability flags for "
             "adequacy and interval solving."
+        )
+
+    def _inferred_capabilities(self) -> TargetCapabilities:
+        if self.is_affine:
+            return TargetCapabilities.linear()
+        exact_lower = self.curvature == "convex" and self.cvxpy_transform is not None
+        exact_upper = self.curvature == "concave" and self.cvxpy_transform is not None
+        conservative = set(self.monotonicity) == set(self.moments) and bool(
+            self.moments
+        )
+        return TargetCapabilities(
+            supports_adequacy=False,
+            supports_interval=(exact_lower and exact_upper) or conservative,
+            supports_fiber_decomposition=False,
+            supports_exact_lower=exact_lower,
+            supports_exact_upper=exact_upper,
+            supports_conservative_interval=conservative,
         )
 
 
@@ -739,12 +941,13 @@ def coerce_target(
         )
     if isinstance(value, MomentTransformTarget):
         _validate_moment_target_states(states, value)
-        if not value.supports_linear_backend:
+        if not value.has_supported_behavior:
             raise UnsupportedTargetError(
-                "MomentTransformTarget is supported by `FiniteProblem` only for "
-                "affine transforms of linear moments. Provide "
-                "`affine_coefficients` or use a dedicated nonlinear target "
-                "backend. Capability flags: "
+                "MomentTransformTarget has no supported solver behavior. "
+                "Declare affine_coefficients, provide convex/concave curvature "
+                "with cvxpy_transform for one-sided exact endpoints, or provide "
+                "monotonicity for every moment to enable conservative bounds. "
+                "Capability flags: "
                 f"{value.resolved_capabilities.as_dict()!r}."
             )
         return value
@@ -801,11 +1004,27 @@ def _finite_float_mapping(
     *,
     name: str,
 ) -> dict[Hashable, float]:
-    coerced = {state: float(item) for state, item in value.items()}
-    nonfinite = [state for state, item in coerced.items() if not isfinite(item)]
-    if nonfinite:
-        raise ValueError(f"{name} has non-finite values: {nonfinite!r}")
+    coerced = {
+        state: _finite_float(item, name=f"{name} value")
+        for state, item in value.items()
+    }
     return coerced
+
+
+def _finite_float(value: Any, *, name: str) -> float:
+    coerced = float(value)
+    if not isfinite(coerced):
+        raise ValueError(f"{name} must be finite")
+    return coerced
+
+
+def _normalize_monotonicity(value: str) -> str:
+    normalized = str(value).strip().lower().replace("_", "-")
+    if normalized in {"increasing", "nondecreasing", "non-decreasing", "up"}:
+        return "increasing"
+    if normalized in {"decreasing", "nonincreasing", "non-increasing", "down"}:
+        return "decreasing"
+    raise ValueError("monotonicity values must be 'increasing' or 'decreasing'")
 
 
 def raise_if_unsupported_target(value: Any, *, context: str) -> None:
@@ -838,10 +1057,10 @@ def raise_if_unsupported_target(value: Any, *, context: str) -> None:
     if contract.kind == "moment_transform":
         raise UnsupportedTargetError(
             f"{context} received moment-transform target {contract.name!r}. "
-            "MomentTransformTarget is a finite target functional; pass affine "
-            "moment transforms to `FiniteProblem`, not as row-level dataframe "
-            "targets. Non-affine moment transforms require a dedicated nonlinear "
-            "target backend."
+            "MomentTransformTarget is a finite target functional, not a row-level "
+            "dataframe target. Pass a concrete MomentTransformTarget to "
+            "`FiniteProblem`, or use supported affine, convex/concave CVXPY, "
+            "or monotone declarations before solving."
         )
     limitations = "; ".join(contract.limitations)
     detail = f" {limitations}" if limitations else ""

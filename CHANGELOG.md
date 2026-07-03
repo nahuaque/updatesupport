@@ -35,9 +35,10 @@ All notable changes to `updatesupport` are documented here.
   local/fixed-public-law ratio intervals, and explicit guardrails for ratio
   cases that still need dedicated constrained solvers.
 - Added `TargetCapabilities` and `MomentTransformTarget` for fixed transforms
-  of linear moments, with affine moment transforms supported through the
-  existing linear backends and nonlinear transforms guarded by false capability
-  flags.
+  of linear moments, with affine transforms reduced to linear targets,
+  convex/concave transforms exposing exact CVXPY-compatible one-sided
+  endpoints, monotone transforms exposing conservative interval bounds, and
+  non-additive decomposition APIs gated by capability flags.
 - Added `ProcedureTarget` and `ProcedureTargetContext` for
   representation-dependent reporting procedures that compile to a column or
   row metric per public representation before solving.

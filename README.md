@@ -68,10 +68,11 @@ survey-design, or model uncertainty.
 
 The core solver target is fixed after compilation. Most tabular reports compile
 to the linear plug-in aggregate `sum_d h(d) q(d)`; `RatioTarget` covers
-supported fixed ratio targets; `MomentTransformTarget` covers affine transforms
-of fixed linear moments; and `ProcedureTarget` handles representation-dependent
-reporting procedures by recompiling the target for each representation before
-solving. Nonlinear targets that depend directly on `q` still need an explicit
+supported fixed ratio targets; `MomentTransformTarget` covers affine moment
+transforms, one-sided convex/concave CVXPY endpoints, and conservative monotone
+moment bounds; and `ProcedureTarget` handles representation-dependent reporting
+procedures by recompiling the target for each representation before solving.
+Other nonlinear targets that depend directly on `q` still need an explicit
 reformulation or a dedicated target-functional backend.
 
 See [docs/mathematical-statistical-soundness.md](docs/mathematical-statistical-soundness.md)

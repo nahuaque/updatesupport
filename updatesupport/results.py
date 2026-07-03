@@ -84,6 +84,10 @@ class TransportResult:
     q_lower: Distribution | None = None
     q_upper: Distribution | None = None
     duals: tuple[ConstraintDual, ...] = ()
+    bound_type: str = "exact"
+    lower_bound_type: str = "exact"
+    upper_bound_type: str = "exact"
+    notes: tuple[str, ...] = ()
 
     def dual_summary(
         self, *, top: int | None = 10, min_magnitude: float = 0.0

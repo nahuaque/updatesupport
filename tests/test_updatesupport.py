@@ -219,7 +219,7 @@ class MomentTransformTargetTests(unittest.TestCase):
         self.assertFalse(target.contract.capabilities.supports_adequacy)
         with self.assertRaisesRegex(
             us.UnsupportedTargetError,
-            "only for affine transforms",
+            "no supported solver behavior",
         ):
             us.FiniteProblem(
                 states=["a", "b"],
@@ -228,12 +228,105 @@ class MomentTransformTargetTests(unittest.TestCase):
             )
 
     def test_moment_transform_capabilities_cannot_claim_nonlinear_support(self):
-        with self.assertRaisesRegex(ValueError, "capability flags cannot be true"):
+        with self.assertRaisesRegex(ValueError, "unsupported"):
             us.MomentTransformTarget(
                 moments={"score": {"a": 0.0, "b": 2.0}},
                 transform=lambda moments: moments["score"] ** 2,
                 capabilities=us.TargetCapabilities.linear(),
             )
+
+    def test_monotone_moment_transform_returns_conservative_bounds(self):
+        target = us.MomentTransformTarget(
+            moments={"score": {"a": 0.0, "b": 2.0}},
+            transform=lambda moments: moments["score"] ** 2,
+            monotonicity={"score": "increasing"},
+            name="squared_mean_score",
+        )
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand=target,
+            environments=us.PublicFiberSaturated.fixed({"o": 1.0}),
+        )
+
+        interval = problem.global_transport_modulus()
+
+        self.assertTrue(target.contract.capabilities.supports_conservative_interval)
+        self.assertFalse(target.contract.capabilities.supports_exact_lower)
+        self.assertEqual(interval.bound_type, "conservative")
+        self.assertEqual(interval.lower_bound_type, "conservative")
+        self.assertEqual(interval.upper_bound_type, "conservative")
+        self.assertAlmostEqual(interval.lower, 0.0)
+        self.assertAlmostEqual(interval.upper, 4.0)
+        self.assertAlmostEqual(interval.diameter, 4.0)
+        self.assertAlmostEqual(problem.psi({"a": 0.5, "b": 0.5}), 1.0)
+        self.assertIsNone(interval.q_lower)
+        self.assertTrue(interval.notes)
+
+        with self.assertRaisesRegex(us.UnsupportedTargetError, "adequacy diagnostic"):
+            problem.is_public_adequate()
+
+    def test_monotone_decreasing_moment_transform_bounds_reverse_moment_endpoints(self):
+        target = us.MomentTransformTarget(
+            moments={"risk": {"a": 1.0, "b": 3.0}},
+            transform=lambda moments: -moments["risk"],
+            monotonicity={"risk": "decreasing"},
+            name="negative_risk",
+        )
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand=target,
+            environments=us.PublicFiberSaturated.fixed({"o": 1.0}),
+        )
+
+        interval = problem.global_transport_modulus()
+
+        self.assertEqual(interval.bound_type, "conservative")
+        self.assertAlmostEqual(interval.lower, -3.0)
+        self.assertAlmostEqual(interval.upper, -1.0)
+
+    def test_monotone_convex_transform_falls_back_without_cvxpy_environment(self):
+        target = us.MomentTransformTarget(
+            moments={"score": {"a": 0.0, "b": 2.0}},
+            transform=lambda moments: moments["score"] ** 2,
+            curvature="convex",
+            cvxpy_transform=lambda cp, moments: cp.square(moments["score"]),
+            monotonicity={"score": "increasing"},
+            name="squared_mean_score",
+        )
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand=target,
+            environments=us.PublicFiberSaturated.fixed({"o": 1.0}),
+        )
+
+        interval = problem.global_transport_modulus()
+
+        self.assertEqual(interval.lower_bound_type, "conservative")
+        self.assertEqual(interval.upper_bound_type, "conservative")
+        self.assertAlmostEqual(interval.lower, 0.0)
+        self.assertAlmostEqual(interval.upper, 4.0)
+        self.assertTrue(any("not CVXPY-backed" in note for note in interval.notes))
+
+    def test_nonlinear_moment_transform_global_requires_fixed_public_law(self):
+        target = us.MomentTransformTarget(
+            moments={"score": {"a": 0.0, "b": 2.0}},
+            transform=lambda moments: moments["score"] ** 2,
+            monotonicity={"score": "increasing"},
+        )
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand=target,
+        )
+
+        with self.assertRaisesRegex(
+            us.UnsupportedTargetError,
+            "require a fixed public law",
+        ):
+            problem.global_transport_modulus()
 
     def test_moment_transform_rejects_missing_states(self):
         target = us.MomentTransformTarget(

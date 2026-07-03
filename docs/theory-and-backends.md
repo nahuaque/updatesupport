@@ -220,8 +220,17 @@ psi(q) = g(E_q[m_1], ..., E_q[m_k])
 ```
 
 where each `m_j` is a fixed hidden-state moment. The current solver support is
-deliberately narrow: affine transforms of moments are supported because they
-are equivalent to a fixed linear target.
+deliberately capability-based:
+
+- affine transforms reduce to a fixed linear target and support the usual
+  adequacy, interval, and public-fiber decomposition APIs;
+- convex transforms with `cvxpy_transform` support exact minimization through a
+  CVXPY-backed environment, but maximization is generally nonconvex;
+- concave transforms with `cvxpy_transform` support exact maximization through a
+  CVXPY-backed environment, but minimization is generally nonconvex;
+- monotone transforms with every moment marked `increasing` or `decreasing`
+  support conservative interval bounds by optimizing each moment separately and
+  applying the transform to the resulting moment box.
 
 ```python
 import updatesupport as us
@@ -247,13 +256,20 @@ problem = us.FiniteProblem(
 The target contract keeps `kind="moment_transform"` and exposes capability
 flags through `TargetCapabilities`. Affine moment transforms default to
 adequacy, interval, and public-fiber decomposition support. Non-affine moment
-transforms default to no solver capabilities and raise before solving.
+transforms can support interval bounds, but they do not support public-adequacy
+or additive public-fiber decomposition diagnostics unless a future target
+backend supplies a valid decomposition.
 
-Use this when a business or statistical metric is a fixed affine transform of
-several hidden-cell moments. Use `RatioTarget` for linear-fractional targets,
-`ProcedureTarget` for representation-dependent procedures, and a future
-nonlinear backend for genuinely nonlinear transforms such as squared means,
-calibrated nonlinear indices, or distributional statistics.
+For nonlinear moment transforms, use `partial_identification_interval(public_law)`
+or an environment with a fixed public law. One-sided exact endpoints are exposed
+through `moment_transform_endpoint(minimize=True/False)`. If only one exact
+endpoint is convex-compatible, add monotonicity declarations to get a
+two-sided conservative interval.
+
+Use `RatioTarget` for linear-fractional targets, `ProcedureTarget` for
+representation-dependent procedures, and a future nonlinear backend for
+distributional statistics such as quantiles, Gini coefficients, calibrated
+indices without valid curvature/monotonicity declarations, or threshold metrics.
 
 ## Convex CVXPY Backend
 

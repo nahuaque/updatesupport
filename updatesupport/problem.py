@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
 from math import log2
 from typing import Callable, Hashable, Mapping, Sequence
@@ -103,8 +104,10 @@ class FiniteProblem:
 
     @property
     def has_linear_target(self) -> bool:
-        if isinstance(self.target_functional, LinearTarget | MomentTransformTarget):
+        if isinstance(self.target_functional, LinearTarget):
             return True
+        if isinstance(self.target_functional, MomentTransformTarget):
+            return self.target_functional.supports_linear_backend
         return isinstance(
             self.target_functional, RatioTarget
         ) and self.target_functional.has_constant_denominator(self.states)
@@ -124,6 +127,26 @@ class FiniteProblem:
             "CvxpyEnvironments with a fixed public law for RatioTarget; "
             "otherwise compile the ratio to a LinearTarget when the denominator "
             "is known to be invariant."
+        )
+
+    def _require_adequacy_supported(self, context: str) -> None:
+        if self.target_contract.supports_adequacy:
+            return
+        contract = self.target_contract
+        raise UnsupportedTargetError(
+            f"{context} is not supported for {contract.kind!r} target "
+            f"{contract.name!r}. This target can be bounded, but it does not "
+            "declare an adequacy diagnostic."
+        )
+
+    def _require_fiber_decomposition_supported(self, context: str) -> None:
+        if self.target_contract.supports_fiber_decomposition:
+            return
+        contract = self.target_contract
+        raise UnsupportedTargetError(
+            f"{context} is not supported for {contract.kind!r} target "
+            f"{contract.name!r}. This target does not have an additive "
+            "public-fiber decomposition."
         )
 
     def _coerce_vector(
@@ -184,6 +207,13 @@ class FiniteProblem:
         return all(abs(item) <= self.tol for item in vector)
 
     def _dot_estimand(self, vector: Sequence[float]) -> float:
+        if (
+            isinstance(self.target_functional, MomentTransformTarget)
+            and not self.target_functional.supports_linear_backend
+        ):
+            return self.target_functional.transform_value(
+                self.target_functional.moment_values(self.states, vector)
+            )
         return self.target_functional.dot(self.states, vector)
 
     def _target_support_key(self, state: Hashable) -> Hashable:
@@ -281,6 +311,7 @@ class FiniteProblem:
     def estimand_partition(self) -> Partition:
         """The saturated least support: quotient by joint values of (public, h)."""
 
+        self._require_fiber_decomposition_supported("FiniteProblem.estimand_partition")
         blocks: list[list[Hashable]] = []
         keys: list[tuple[Hashable, float]] = []
         for state in self.states:
@@ -324,6 +355,7 @@ class FiniteProblem:
         )
 
     def fiber_ranges(self) -> dict[Hashable, float]:
+        self._require_fiber_decomposition_supported("FiniteProblem.fiber_ranges")
         ranges: dict[Hashable, float] = {}
         for public_value, fiber in self.public_fibers.items():
             values = [self.estimand_map[state] for state in fiber]
@@ -331,6 +363,7 @@ class FiniteProblem:
         return ranges
 
     def check_support(self, support: Partition) -> AdequacyResult:
+        self._require_adequacy_supported("FiniteProblem.check_support")
         return self.environments.check_support(self, support)
 
     def check_public(self) -> AdequacyResult:
@@ -362,6 +395,7 @@ class FiniteProblem:
         return tuple(minimal)
 
     def least_support(self, *, max_states: int = 9) -> LeastSupportResult:
+        self._require_fiber_decomposition_supported("FiniteProblem.least_support")
         if isinstance(self.environments, PublicFiberSaturated):
             support = self.environments.least_support(self)
             return LeastSupportResult(
@@ -399,9 +433,20 @@ class FiniteProblem:
     def local_transport_modulus(
         self, public_law: Mapping[Hashable, float]
     ) -> TransportResult:
+        if self._has_nonlinear_moment_transform_target():
+            return self._moment_transform_transport_interval(public_law)
         return self.environments.local_transport(self, public_law)
 
     def global_transport_modulus(self) -> TransportResult:
+        if self._has_nonlinear_moment_transform_target():
+            fixed_public_law = self._fixed_public_law_from_environment()
+            if fixed_public_law is None:
+                raise UnsupportedTargetError(
+                    "Global moment-transform intervals require a fixed public "
+                    "law. Use `partial_identification_interval(public_law)` or "
+                    "an environment with a fixed public law."
+                )
+            return self._moment_transform_transport_interval(fixed_public_law)
         return self.environments.global_transport(self)
 
     def public_descent_gap(self) -> float:
@@ -412,6 +457,205 @@ class FiniteProblem:
         public_law: Mapping[Hashable, float],
     ) -> TransportResult:
         return self.local_transport_modulus(public_law)
+
+    def moment_bounds(
+        self,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> dict[str, tuple[float, float]]:
+        """Return exact linear moment bounds under a fixed public law."""
+
+        target = self._require_moment_transform_target()
+        p = self._resolve_moment_public_law(public_law)
+        bounds = {}
+        for moment, values in target.moments.items():
+            moment_problem = FiniteProblem(
+                states=self.states,
+                public=self.public_map,
+                estimand=LinearTarget(
+                    values,
+                    name=f"{target.name}.{moment}",
+                    description=f"linear moment {moment!r}",
+                    source=target.name,
+                ),
+                environments=self.environments,
+                tol=self.tol,
+            )
+            interval = moment_problem.local_transport_modulus(p)
+            bounds[moment] = (interval.lower, interval.upper)
+        return bounds
+
+    def moment_transform_endpoint(
+        self,
+        *,
+        minimize: bool,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> TransportResult:
+        """Solve one exact convex-compatible moment-transform endpoint."""
+
+        target = self._require_moment_transform_target()
+        if target.supports_linear_backend:
+            interval = (
+                self.global_transport_modulus()
+                if public_law is None
+                else self.local_transport_modulus(public_law)
+            )
+            value = interval.lower if minimize else interval.upper
+            q = interval.q_lower if minimize else interval.q_upper
+            return TransportResult(
+                lower=value,
+                upper=value,
+                diameter=0.0,
+                public_law=interval.public_law,
+                q_lower=q,
+                q_upper=q,
+                duals=interval.duals,
+            )
+        if minimize and not target.supports_exact_lower_endpoint:
+            raise UnsupportedTargetError(
+                "This MomentTransformTarget does not support exact minimization. "
+                "Convex transforms need curvature='convex' and cvxpy_transform."
+            )
+        if not minimize and not target.supports_exact_upper_endpoint:
+            raise UnsupportedTargetError(
+                "This MomentTransformTarget does not support exact maximization. "
+                "Concave transforms need curvature='concave' and cvxpy_transform."
+            )
+        solver = getattr(self.environments, "moment_transform_endpoint", None)
+        if solver is None:
+            raise UnsupportedTargetError(
+                "Exact nonlinear moment-transform endpoints require a "
+                "CVXPY-backed environment."
+            )
+        p = self._resolve_moment_public_law(public_law)
+        return solver(self, public_law=p, maximize=not minimize)
+
+    def _has_nonlinear_moment_transform_target(self) -> bool:
+        return (
+            isinstance(self.target_functional, MomentTransformTarget)
+            and not self.target_functional.supports_linear_backend
+        )
+
+    def _require_moment_transform_target(self) -> MomentTransformTarget:
+        if not isinstance(self.target_functional, MomentTransformTarget):
+            raise TypeError("problem target is not a MomentTransformTarget")
+        return self.target_functional
+
+    def _moment_transform_transport_interval(
+        self,
+        public_law: Mapping[Hashable, float],
+    ) -> TransportResult:
+        target = self._require_moment_transform_target()
+        p = self._coerce_public_law(public_law)
+        lower = None
+        upper = None
+        q_lower = None
+        q_upper = None
+        lower_bound_type = "unsupported"
+        upper_bound_type = "unsupported"
+        duals = []
+        notes = []
+
+        if target.supports_conservative_interval:
+            moment_bounds = self.moment_bounds(p)
+            lower, upper = target.conservative_box_values(moment_bounds)
+            lower_bound_type = "conservative"
+            upper_bound_type = "conservative"
+            notes.append(
+                "Conservative endpoint from monotone transform of separately "
+                "optimized moment bounds; endpoint moments may not be jointly "
+                "attainable."
+            )
+
+        exact_solver = getattr(self.environments, "moment_transform_endpoint", None)
+        exact_solver_available = callable(exact_solver)
+        if target.supports_exact_lower_endpoint:
+            if exact_solver_available:
+                lower_result = self.moment_transform_endpoint(
+                    minimize=True, public_law=p
+                )
+                lower = lower_result.lower
+                q_lower = lower_result.q_lower
+                lower_bound_type = "exact"
+                duals.extend(lower_result.duals)
+            elif lower is not None:
+                notes.append(
+                    "Exact lower endpoint was not computed because the selected "
+                    "environment is not CVXPY-backed."
+                )
+
+        if target.supports_exact_upper_endpoint:
+            if exact_solver_available:
+                upper_result = self.moment_transform_endpoint(
+                    minimize=False,
+                    public_law=p,
+                )
+                upper = upper_result.upper
+                q_upper = upper_result.q_upper
+                upper_bound_type = "exact"
+                duals.extend(upper_result.duals)
+            elif upper is not None:
+                notes.append(
+                    "Exact upper endpoint was not computed because the selected "
+                    "environment is not CVXPY-backed."
+                )
+
+        if lower is None or upper is None:
+            raise UnsupportedTargetError(
+                "MomentTransformTarget does not provide both endpoints for an "
+                "interval. Convex transforms give an exact lower endpoint, "
+                "concave transforms give an exact upper endpoint, and monotone "
+                "transforms with all moments marked increasing/decreasing give "
+                "conservative two-sided bounds."
+            )
+        if lower > upper and abs(lower - upper) <= self.tol:
+            lower = upper = 0.5 * (lower + upper)
+        if lower > upper:
+            raise UnsupportedTargetError(
+                "Moment-transform lower bound exceeded upper bound; check "
+                "curvature, monotonicity, and transform declarations."
+            )
+        bound_type = (
+            "exact"
+            if lower_bound_type == "exact" and upper_bound_type == "exact"
+            else "conservative"
+        )
+        return TransportResult(
+            lower=lower,
+            upper=upper,
+            diameter=upper - lower,
+            public_law=p,
+            q_lower=q_lower,
+            q_upper=q_upper,
+            duals=tuple(duals),
+            bound_type=bound_type,
+            lower_bound_type=lower_bound_type,
+            upper_bound_type=upper_bound_type,
+            notes=tuple(notes),
+        )
+
+    def _resolve_moment_public_law(
+        self,
+        public_law: Mapping[Hashable, float] | None,
+    ) -> dict[Hashable, float]:
+        if public_law is not None:
+            return self._coerce_public_law(public_law)
+        fixed_public_law = self._fixed_public_law_from_environment()
+        if fixed_public_law is None:
+            raise UnsupportedTargetError(
+                "Moment-transform bounds require a fixed public law."
+            )
+        return fixed_public_law
+
+    def _fixed_public_law_from_environment(self) -> dict[Hashable, float] | None:
+        if isinstance(self.environments, PublicFiberSaturated):
+            public_marginals = self.environments.public_marginals
+            if isinstance(public_marginals, MappingABC):
+                return self._coerce_public_law(public_marginals)
+            return None
+        fixed_public_law = getattr(self.environments, "fixed_public_law", None)
+        if fixed_public_law is None:
+            return None
+        return self._coerce_public_law(fixed_public_law)
 
     def cardinal_gap(self) -> CardinalGapResult:
         least = self.least_support()
