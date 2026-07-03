@@ -98,6 +98,10 @@ All notable changes to `updatesupport` are documented here.
 - Added SOCP-compatible `q_l2_budget(...)` and
   `q_mahalanobis_budget(...)` presets for Euclidean and covariance-aware
   ellipsoidal hidden-composition stress tests through the CVXPY backends.
+- Added `UncertainLinearTarget`, `target_standard_error=...`, and
+  `effect_standard_error=...` so public-descent and causal-effect reports can
+  widen hidden-composition ambiguity with supplied hidden-cell estimator
+  standard errors while keeping the base point-estimate interval separate.
 
 ### Fixed
 

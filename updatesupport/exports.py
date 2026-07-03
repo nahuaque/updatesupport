@@ -127,7 +127,7 @@ def tables_to_dataframes(tables: Mapping[str, TableRows]) -> dict[str, Any]:
 
 def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
     grouped = report.grouped
-    return {
+    tables: ReportTables = {
         "summary": (
             {
                 "title": report.title,
@@ -172,6 +172,16 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
                 "fiber_diagnostic_kind": report.fiber_diagnostic_kind,
                 "top_fiber_contribution": report.top_fiber_contribution,
                 "top_fiber_contribution_share": report.top_fiber_contribution_share,
+                "has_estimator_uncertainty": report.estimator_uncertainty is not None,
+                "estimator_uncertainty_conservative_lower": None
+                if report.estimator_uncertainty is None
+                else report.estimator_uncertainty.conservative_lower,
+                "estimator_uncertainty_conservative_upper": None
+                if report.estimator_uncertainty is None
+                else report.estimator_uncertainty.conservative_upper,
+                "estimator_uncertainty_conservative_diameter": None
+                if report.estimator_uncertainty is None
+                else report.estimator_uncertainty.conservative_diameter,
                 "diagnostic_count": len(report.diagnostics),
                 "diagnostic_warning_count": sum(
                     1 for row in report.diagnostics if row.severity == "warning"
@@ -185,6 +195,9 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
             row.as_dict() for row in report.interval.dual_summary(top=20)
         ),
     }
+    if report.estimator_uncertainty is not None:
+        tables["estimator_uncertainty"] = (report.estimator_uncertainty.as_dict(),)
+    return tables
 
 
 def _witness_tables(report: WitnessReport) -> ReportTables:
@@ -256,6 +269,9 @@ def _causal_suite_tables(report: CausalReportingStabilitySuite) -> ReportTables:
                 "q_name": report.primary.grouped.q_name,
                 "has_statistical_uncertainty": (
                     report.statistical_uncertainty is not None
+                ),
+                "has_estimator_uncertainty": (
+                    report.primary.estimator_uncertainty is not None
                 ),
                 "has_sensitivity": report.sensitivity is not None,
                 "has_refinement_sensitivity": (

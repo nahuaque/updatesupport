@@ -43,6 +43,7 @@ Suppose a causal estimator has produced one estimated treatment effect per row:
 
 ```python
 df["tau_hat"] = estimated_treatment_effects
+df["tau_se"] = estimated_treatment_effect_standard_errors  # optional
 ```
 
 Then `updatesupport` can audit the reporting categories with the full causal
@@ -63,6 +64,7 @@ suite = us.causal_reporting_stability(
         "prior_usage_band",
     ],
     effect="tau_hat",
+    effect_standard_error="tau_se",
     weight="sample_weight",
     candidate_refinements=[
         "education_band",
@@ -94,12 +96,15 @@ one uncertainty statement:
 - the causal estimate supplied by the causal library
 - statistical uncertainty from the causal/statistical workflow
 - hidden-composition ambiguity from the update-support stress test
+- estimator-uncertainty-aware hidden ambiguity when effect standard errors are
+  supplied
 - public refinement recommendations for improving the reporting representation
 
 The rendered suite is designed to be attachable to a model review. It has
 explicit sections for the causal estimate, supplied statistical uncertainty,
-hidden-composition ambiguity, sensitivity scenarios, refinement
-recommendations, CVXPY dual diagnostics when available, and limitations.
+hidden-composition ambiguity, estimator-uncertainty-aware adjusted intervals
+when available, sensitivity scenarios, refinement recommendations, CVXPY dual
+diagnostics when available, and limitations.
 
 ## Estimator Adapters
 
@@ -213,6 +218,7 @@ strategy:
 ```python
 # Example shape, independent of the specific causal library.
 df["tau_hat"] = causal_estimator.effect(X)
+df["tau_se"] = causal_estimator.effect_standard_error(X)  # if available
 
 report = us.audit_effects(
     df,
@@ -228,6 +234,7 @@ report = us.audit_effects(
         "RELP",
     ],
     effect="tau_hat",
+    effect_standard_error="tau_se",
     weight="sample_weight",
     candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P", "MAR"],
     q=us.q_bounded_shift(0.5),

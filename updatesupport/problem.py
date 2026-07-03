@@ -27,6 +27,7 @@ from .targets import (
     ProcedureTarget,
     RatioTarget,
     TargetContract,
+    UncertainLinearTarget,
     UnsupportedTargetError,
     coerce_target,
 )
@@ -42,6 +43,7 @@ EstimandMap = (
     | Sequence[float]
     | Callable[[Hashable], float]
     | LinearTarget
+    | UncertainLinearTarget
     | MomentTransformTarget
     | ProcedureTarget
     | RatioTarget
@@ -104,7 +106,7 @@ class FiniteProblem:
 
     @property
     def has_linear_target(self) -> bool:
-        if isinstance(self.target_functional, LinearTarget):
+        if isinstance(self.target_functional, LinearTarget | UncertainLinearTarget):
             return True
         if isinstance(self.target_functional, MomentTransformTarget):
             return self.target_functional.supports_linear_backend

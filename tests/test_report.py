@@ -98,6 +98,63 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertAlmostEqual(report.refinements[0].reduction_percent, 100.0)
         self.assertAlmostEqual(report.refinements[0].reduction_fraction, 1.0)
 
+    def test_public_descent_report_adds_estimator_uncertainty_adjustment(self):
+        rows = [
+            {"public": "A", "hidden": "x", "target": 0.0, "se": 0.1, "weight": 30},
+            {"public": "A", "hidden": "y", "target": 1.0, "se": 0.2, "weight": 30},
+            {"public": "B", "hidden": "z", "target": 0.5, "se": 0.3, "weight": 40},
+        ]
+
+        report = us.public_descent_report(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            target_standard_error="se",
+            weight="weight",
+            target_confidence_multiplier=2.0,
+            top=2,
+        )
+        uncertainty = report.estimator_uncertainty
+        markdown = report.to_markdown()
+        payload = report.as_dict()
+        tables = report.to_tables()
+
+        self.assertIsInstance(
+            report.grouped.target_functional, us.UncertainLinearTarget
+        )
+        self.assertIsInstance(uncertainty, us.EstimatorUncertaintyAdjustment)
+        self.assertAlmostEqual(report.interval.lower, 0.2)
+        self.assertAlmostEqual(report.interval.upper, 0.8)
+        self.assertAlmostEqual(uncertainty.base_diameter, 0.6)
+        self.assertAlmostEqual(
+            uncertainty.lower_endpoint_standard_error,
+            ((0.6 * 0.1) ** 2 + (0.4 * 0.3) ** 2) ** 0.5,
+        )
+        self.assertAlmostEqual(
+            uncertainty.upper_endpoint_standard_error,
+            ((0.6 * 0.2) ** 2 + (0.4 * 0.3) ** 2) ** 0.5,
+        )
+        self.assertAlmostEqual(
+            uncertainty.conservative_standard_error_bound,
+            ((0.6 * 0.2) ** 2 + (0.4 * 0.3) ** 2) ** 0.5,
+        )
+        self.assertAlmostEqual(
+            uncertainty.conservative_lower,
+            0.2 - 2.0 * uncertainty.conservative_standard_error_bound,
+        )
+        self.assertAlmostEqual(
+            uncertainty.conservative_upper,
+            0.8 + 2.0 * uncertainty.conservative_standard_error_bound,
+        )
+        self.assertIn("## Estimator-Uncertainty-Aware Hidden Ambiguity", markdown)
+        self.assertIn("Estimator-uncertainty-aware interval", markdown)
+        self.assertEqual(
+            payload["estimator_uncertainty"]["method"], "endpoint_and_conservative"
+        )
+        self.assertIn("estimator_uncertainty", tables)
+        self.assertTrue(tables["summary"][0]["has_estimator_uncertainty"])
+
     def test_public_descent_report_includes_data_diagnostics(self):
         rows = [
             {"public": "A", "hidden": "x", "target": 0.0, "weight": 1},
@@ -602,6 +659,27 @@ class PublicDescentReportTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(report.observed_value, 1.0)
+
+    def test_audit_effects_accepts_effect_standard_error_alias(self):
+        report = us.audit_effects(
+            [
+                {"public": "A", "hidden": "x", "effect": 0.0, "se": 0.1},
+                {"public": "A", "hidden": "y", "effect": 1.0, "se": 0.2},
+            ],
+            public=["public"],
+            hidden=["public", "hidden"],
+            effect="effect",
+            effect_standard_error_column="se",
+            effect_confidence_multiplier=1.0,
+        )
+
+        self.assertIsInstance(
+            report.estimator_uncertainty, us.EstimatorUncertaintyAdjustment
+        )
+        self.assertAlmostEqual(
+            report.estimator_uncertainty.conservative_standard_error_bound,
+            0.2,
+        )
 
     def test_audit_effects_requires_effect_for_raw_data(self):
         with self.assertRaisesRegex(TypeError, "missing required keyword"):

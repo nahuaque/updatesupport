@@ -114,6 +114,7 @@ from .presets import (
 )
 from .report import (
     CausalReportingStabilitySuite,
+    EstimatorUncertaintyAdjustment,
     PublicDescentReport,
     PublicFiberDiagnostic,
     RefinementCandidate,
@@ -154,6 +155,7 @@ from .targets import (
     RatioTarget,
     TargetCapabilities,
     TargetContract,
+    UncertainLinearTarget,
     UnsupportedTarget,
     UnsupportedTargetError,
 )
@@ -189,6 +191,7 @@ __all__ = [
     "DataDiagnostics",
     "DoWhyRepresentationAudit",
     "eq",
+    "EstimatorUncertaintyAdjustment",
     "EstimatorAdapterResult",
     "audit_effects",
     "audit_dowhy_effects",
@@ -295,6 +298,7 @@ __all__ = [
     "UpdateSupportPlugin",
     "UnsupportedTarget",
     "UnsupportedTargetError",
+    "UncertainLinearTarget",
     "UncertaintyMetricSummary",
     "validate_plugin",
     "verify_claim",

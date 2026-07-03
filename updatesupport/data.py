@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from math import isfinite
+from math import isfinite, sqrt
 from typing import Any, Hashable, Iterable, Mapping, Sequence
 
 from .metrics import RowMetric, evaluate_target, target_description, target_name
@@ -15,11 +15,13 @@ from .targets import (
     ProcedureTarget,
     ProcedureTargetContext,
     RatioTarget,
+    UncertainLinearTarget,
     UnsupportedTargetError,
     raise_if_unsupported_target,
 )
 
 TabularTarget = str | RowMetric | ProcedureTarget
+TabularStandardError = str | RowMetric
 
 
 @dataclass(frozen=True)
@@ -106,7 +108,7 @@ class GroupedProblem:
     public_columns: tuple[str, ...]
     hidden_columns: tuple[str, ...]
     target_column: str | RowMetric
-    target_functional: LinearTarget | RatioTarget
+    target_functional: LinearTarget | UncertainLinearTarget | RatioTarget
     total_weight: float
     cell_weights: dict[tuple[Hashable, ...], float]
     q: QPreset | None = None
@@ -118,6 +120,7 @@ class GroupedProblem:
     diagnostics: DataDiagnostics | None = None
     target_procedure: ProcedureTarget | None = None
     target_procedure_context: ProcedureTargetContext | None = None
+    target_standard_error_column: TabularStandardError | None = None
 
 
 def from_dataframe(
@@ -126,14 +129,17 @@ def from_dataframe(
     public: Sequence[str] | None = None,
     hidden: Sequence[str] | None = None,
     target: TabularTarget | None = None,
+    target_standard_error: TabularStandardError | None = None,
     weight: str | None = None,
     public_columns: Sequence[str] | None = None,
     hidden_columns: Sequence[str] | None = None,
     target_column: TabularTarget | None = None,
+    target_standard_error_column: TabularStandardError | None = None,
     weight_column: str | None = None,
     min_cell_weight: float = 1.0,
     q: Any = "saturated",
     q_radius: float | None = None,
+    target_confidence_multiplier: float = 1.96,
 ) -> GroupedProblem:
     """Compile tabular observations into a finite update-support problem.
 
@@ -147,6 +153,12 @@ def from_dataframe(
     ``q="saturated"``, which fixes the observed public law and allows arbitrary
     reweighting inside retained public fibers.
 
+    If ``target_standard_error`` is supplied, each hidden cell also receives a
+    weighted-mean standard error under independent row-level target estimation
+    errors. The compiled target remains linear in the hidden-cell point
+    estimates, and reports can use the standard errors for
+    estimator-uncertainty-aware interval adjustments.
+
     The ``*_columns`` keyword names are accepted as compatibility aliases for
     ``public``, ``hidden``, ``target``, and ``weight``.
     """
@@ -159,6 +171,12 @@ def from_dataframe(
     )
     target = _resolve_scalar_arg(
         target, target_column, primary_name="target", alias_name="target_column"
+    )
+    target_standard_error = _resolve_scalar_arg(
+        target_standard_error,
+        target_standard_error_column,
+        primary_name="target_standard_error",
+        alias_name="target_standard_error_column",
     )
     weight = _resolve_scalar_arg(
         weight, weight_column, primary_name="weight", alias_name="weight_column"
@@ -207,6 +225,7 @@ def from_dataframe(
 
     cell_weight: dict[tuple[Hashable, ...], float] = defaultdict(float)
     cell_target_sum: dict[tuple[Hashable, ...], float] = defaultdict(float)
+    cell_target_variance_sum: dict[tuple[Hashable, ...], float] = defaultdict(float)
     public_by_cell: dict[tuple[Hashable, ...], tuple[Hashable, ...]] = {}
     missing_category_counts: dict[str, int] = defaultdict(int)
     zero_weight_rows = 0
@@ -230,6 +249,13 @@ def from_dataframe(
         target_value = _target_value(row, target, row_number=row_number)
         cell_weight[hidden_key] += row_weight
         cell_target_sum[hidden_key] += row_weight * target_value
+        if target_standard_error is not None:
+            target_se = _target_standard_error_value(
+                row,
+                target_standard_error,
+                row_number=row_number,
+            )
+            cell_target_variance_sum[hidden_key] += (row_weight * target_se) ** 2
         public_by_cell[hidden_key] = public_key
 
     if rows_seen == 0:
@@ -247,12 +273,26 @@ def from_dataframe(
     states = tuple(sorted(kept_cells, key=str))
     public_map = {cell: public_by_cell[cell] for cell in states}
     estimand = {cell: cell_target_sum[cell] / cell_weight[cell] for cell in states}
-    target_functional = LinearTarget(
-        estimand,
-        name=target_name(target),
-        description=target_description(target),
-        source="from_dataframe",
-    )
+    if target_standard_error is None:
+        target_functional = LinearTarget(
+            estimand,
+            name=target_name(target),
+            description=target_description(target),
+            source="from_dataframe",
+        )
+    else:
+        standard_errors = {
+            cell: sqrt(cell_target_variance_sum[cell]) / cell_weight[cell]
+            for cell in states
+        }
+        target_functional = UncertainLinearTarget(
+            estimand,
+            standard_errors=standard_errors,
+            name=target_name(target),
+            description=target_description(target),
+            confidence_multiplier=target_confidence_multiplier,
+            source="from_dataframe",
+        )
     normalized_cell_weight = {cell: cell_weight[cell] / total_weight for cell in states}
 
     public_law: dict[tuple[Hashable, ...], float] = defaultdict(float)
@@ -300,6 +340,7 @@ def from_dataframe(
         q_name=q_environment.name,
         q_description=q_environment.description,
         diagnostics=diagnostics,
+        target_standard_error_column=target_standard_error,
     )
 
 
@@ -541,6 +582,31 @@ def _target_value(
         )
     except ValueError as exc:
         raise ValueError(f"row {row_number} has invalid target") from exc
+
+
+def _target_standard_error_value(
+    row: Mapping[str, Any],
+    target_standard_error: str | RowMetric,
+    *,
+    row_number: int,
+) -> float:
+    try:
+        value = evaluate_target(
+            row,
+            target_standard_error,
+            get_value=lambda record, column: _record_value(
+                record,
+                column,
+                row_number=row_number,
+            ),
+        )
+    except ValueError as exc:
+        raise ValueError(f"row {row_number} has invalid target standard error") from exc
+    if not isfinite(value):
+        raise ValueError(f"row {row_number} has non-finite target standard error")
+    if value < 0:
+        raise ValueError("target standard errors must be non-negative")
+    return value
 
 
 def _hashable_category(value: Any) -> Hashable:

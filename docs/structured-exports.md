@@ -67,6 +67,7 @@ Public-descent reports expose:
 - `refinements`
 - `data_diagnostics`
 - `dual_diagnostics`
+- `estimator_uncertainty` when hidden-cell target standard errors were supplied
 
 The `summary` table and JSON payload include `target_contract` metadata so
 review systems can tell whether the report used a linear target, a supported
@@ -74,6 +75,13 @@ ratio target, or another compiled target contract. Procedure-aware reports also
 include `target_procedure`, `target_procedure_context`, and `compiled_target`
 fields so consumers can tell which reporting procedure produced the compiled
 target values.
+
+When `target_standard_error=...` or `effect_standard_error=...` is supplied,
+public-descent exports include an `estimator_uncertainty` table. The summary
+table also includes `has_estimator_uncertainty` and conservative adjusted
+lower/upper/diameter fields. The table records the base point-estimate
+transport interval, endpoint-adjusted margins when witness distributions are
+available, and the conservative fixed-public-law outer interval.
 
 Public-descent exports also include `fiber_decomposition_available` and
 `fiber_diagnostic_kind`. When decomposition is unavailable, for example for a

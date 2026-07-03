@@ -22,6 +22,8 @@ It models:
 - a fixed target functional, currently either a linear target
   `psi(q) = <h, q>` or a ratio target
   `psi(q) = <n, q> / <w, q>`
+- optional hidden-cell estimator standard errors for linear point-estimate
+  targets
 - optional procedure-target workflows that compile a representation-dependent
   target into one of those fixed target functionals before solving
 - an admissible environment class `Q`
@@ -40,6 +42,7 @@ Core finite objects:
 - `ProcedureTarget`
 - `ProcedureTargetContext`
 - `RatioTarget`
+- `UncertainLinearTarget`
 - `TargetCapabilities`
 - `TargetContract`
 - `UnsupportedTarget`
@@ -139,6 +142,46 @@ Ratio targets with a constant denominator over the finite state space reduce to
 linear targets and can use this backend. Variable-denominator `RatioTarget`
 objects intentionally raise `UnsupportedTargetError` here until a
 linear-fractional LP transform is added for general finite-linear constraints.
+
+## Uncertain Linear Targets
+
+`UncertainLinearTarget` represents the same point-estimate linear target as
+`LinearTarget`, plus a hidden-cell standard error:
+
+```text
+psi(q) = sum_d mu(d) q(d)
+se(q) = sqrt(sum_d (se(d) q(d))^2)
+```
+
+The optimizer still solves the point-estimate interval over `mu(d)`. Reports
+then add estimator-uncertainty-aware intervals:
+
+- endpoint-adjusted bounds when lower/upper witness distributions are available;
+- a conservative fixed-public-law outer interval using the largest supplied
+  standard error in each public fiber.
+
+For tabular workflows, pass `target_standard_error=...`:
+
+```python
+report = us.public_descent_report(
+    rows,
+    public=["segment"],
+    hidden=["segment", "driver", "channel"],
+    target="tau_hat",
+    target_standard_error="tau_se",
+    weight="sample_weight",
+    target_confidence_multiplier=1.96,
+)
+```
+
+Causal wrappers expose the same feature as `effect_standard_error=...` or
+`effect_standard_error_column=...`.
+
+The conservative interval is a reporting adjustment, not an exact joint
+optimization over both hidden composition and target-estimation error. It is
+intended to keep three quantities separate in model-review output: the causal or
+statistical point estimate, hidden-composition ambiguity, and estimator
+uncertainty in the hidden-cell target values.
 
 ## Ratio Targets
 

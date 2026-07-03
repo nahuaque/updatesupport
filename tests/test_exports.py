@@ -99,6 +99,33 @@ class StructuredExportTests(unittest.TestCase):
             "bounded_shift(radius=0.5)",
         )
 
+    def test_public_descent_exports_estimator_uncertainty_adjustment(self):
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0, "se": 0.1, "weight": 30},
+            {"segment": "A", "driver": "high", "target": 1.0, "se": 0.2, "weight": 30},
+            {"segment": "B", "driver": "flat", "target": 0.5, "se": 0.3, "weight": 40},
+        ]
+        report = us.public_descent_report(
+            rows,
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            target_standard_error="se",
+            weight="weight",
+        )
+
+        payload = json.loads(report.to_json())
+        tables = report.to_tables()
+
+        self.assertEqual(payload["target_contract"]["kind"], "uncertain_linear")
+        self.assertIn("estimator_uncertainty", payload)
+        self.assertIn("estimator_uncertainty", tables)
+        self.assertTrue(tables["summary"][0]["has_estimator_uncertainty"])
+        self.assertAlmostEqual(
+            tables["estimator_uncertainty"][0]["base_diameter"],
+            report.interval.diameter,
+        )
+
     def test_public_descent_exports_gate_nonadditive_decomposition(self):
         report = us.public_descent_report(_ratio_grouped_problem(), top=2)
 

@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import sqrt
 from typing import Any, Hashable, Mapping, Sequence
 
-from .data import DataDiagnostic, GroupedProblem, TabularTarget, from_dataframe
+from .data import (
+    DataDiagnostic,
+    GroupedProblem,
+    TabularStandardError,
+    TabularTarget,
+    from_dataframe,
+)
 from .environments import BatchedCvxpyEnvironments, CvxpyEnvironments
 from .metrics import target_description as describe_target
 from .problem import FiniteProblem
@@ -18,7 +25,7 @@ from .presets import (
     resolve_q_environment,
 )
 from .results import ConstraintDual, TransportResult
-from .targets import ProcedureTarget
+from .targets import ProcedureTarget, UncertainLinearTarget
 
 
 _PARAMETERIZED_SENSITIVITY_PRESETS = frozenset(
@@ -574,6 +581,70 @@ class StatisticalUncertainty:
 
 
 @dataclass(frozen=True)
+class EstimatorUncertaintyAdjustment:
+    """Estimator-standard-error adjustment for hidden-composition ambiguity."""
+
+    base_lower: float
+    base_upper: float
+    base_diameter: float
+    confidence_multiplier: float
+    lower_endpoint_standard_error: float | None
+    upper_endpoint_standard_error: float | None
+    conservative_standard_error_bound: float
+    endpoint_lower: float | None
+    endpoint_upper: float | None
+    endpoint_diameter: float | None
+    conservative_lower: float
+    conservative_upper: float
+    conservative_diameter: float
+    method: str = "endpoint_and_conservative"
+
+    @property
+    def endpoint_lower_margin(self) -> float | None:
+        if self.lower_endpoint_standard_error is None:
+            return None
+        return self.confidence_multiplier * self.lower_endpoint_standard_error
+
+    @property
+    def endpoint_upper_margin(self) -> float | None:
+        if self.upper_endpoint_standard_error is None:
+            return None
+        return self.confidence_multiplier * self.upper_endpoint_standard_error
+
+    @property
+    def conservative_margin(self) -> float:
+        return self.confidence_multiplier * self.conservative_standard_error_bound
+
+    @property
+    def added_conservative_diameter(self) -> float:
+        return self.conservative_diameter - self.base_diameter
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "method": self.method,
+            "base_lower": self.base_lower,
+            "base_upper": self.base_upper,
+            "base_diameter": self.base_diameter,
+            "confidence_multiplier": self.confidence_multiplier,
+            "lower_endpoint_standard_error": self.lower_endpoint_standard_error,
+            "upper_endpoint_standard_error": self.upper_endpoint_standard_error,
+            "conservative_standard_error_bound": (
+                self.conservative_standard_error_bound
+            ),
+            "endpoint_lower_margin": self.endpoint_lower_margin,
+            "endpoint_upper_margin": self.endpoint_upper_margin,
+            "conservative_margin": self.conservative_margin,
+            "endpoint_lower": self.endpoint_lower,
+            "endpoint_upper": self.endpoint_upper,
+            "endpoint_diameter": self.endpoint_diameter,
+            "conservative_lower": self.conservative_lower,
+            "conservative_upper": self.conservative_upper,
+            "conservative_diameter": self.conservative_diameter,
+            "added_conservative_diameter": self.added_conservative_diameter,
+        }
+
+
+@dataclass(frozen=True)
 class CausalReportingStabilitySuite:
     """One-stop report object for causal-effect reporting stability."""
 
@@ -637,6 +708,14 @@ class CausalReportingStabilitySuite:
             f"- Public adequate: {'yes' if self.primary.public_adequate else 'no'}",
             f"- Primary Q preset: {self.primary.grouped.q_name}",
         ]
+        if self.primary.estimator_uncertainty is not None:
+            uncertainty = self.primary.estimator_uncertainty
+            lines.append(
+                "- Estimator-uncertainty-aware hidden ambiguity: "
+                f"{uncertainty.conservative_diameter:.4f} "
+                f"([{uncertainty.conservative_lower:.4f}, "
+                f"{uncertainty.conservative_upper:.4f}])"
+            )
         if self.statistical_uncertainty is not None:
             lines.append(
                 "- Statistical uncertainty: "
@@ -677,6 +756,9 @@ class CausalReportingStabilitySuite:
                 "supplied by that external estimator, when provided.",
                 "- Hidden-composition ambiguity: the update-support partial-ID "
                 "interval holding the public distribution fixed under the chosen Q.",
+                "- Estimator-uncertainty-aware ambiguity: optional widening of the "
+                "hidden-composition interval when hidden-cell effect standard "
+                "errors are supplied.",
                 "- Public refinement recommendations: variables that make the public "
                 "reporting representation more stable, not causal adjustment advice.",
             ]
@@ -761,6 +843,7 @@ class PublicDescentReport:
     row_count_label: str = "Rows"
     min_cell_weight: float | None = None
     diagnostics: tuple[DataDiagnostic, ...] = ()
+    estimator_uncertainty: EstimatorUncertaintyAdjustment | None = None
 
     @property
     def fiber_decomposition_available(self) -> bool:
@@ -861,6 +944,17 @@ class PublicDescentReport:
                 f"- Observed-law transport ambiguity: {self.interval.diameter:.4f}",
             ]
         )
+        if self.estimator_uncertainty is not None:
+            uncertainty = self.estimator_uncertainty
+            lines.extend(
+                [
+                    "- Estimator-uncertainty-aware interval (conservative): "
+                    f"[{uncertainty.conservative_lower:.4f}, "
+                    f"{uncertainty.conservative_upper:.4f}]",
+                    "- Estimator-uncertainty-aware ambiguity (conservative): "
+                    f"{uncertainty.conservative_diameter:.4f}",
+                ]
+            )
         if self.fiber_decomposition_available:
             lines.append(
                 f"- Top {len(self.fibers)} fiber contribution share: "
@@ -893,9 +987,9 @@ class PublicDescentReport:
                 "",
                 f"The transport ambiguity is the interval width, {self.interval.diameter:.4f}. "
                 "It is a sensitivity / partial-identification diameter, not a "
-                "sampling confidence interval. It does not include binomial standard "
-                "errors, design weights, survey design uncertainty, model "
-                "uncertainty, or uncertainty in the hidden-cell target values.",
+                "sampling confidence interval.",
+                "",
+                _statistical_uncertainty_scope_text(self),
                 "",
                 "Public adequacy asks whether the public categories alone determine "
                 "the estimand under the chosen hidden-reweighting class. If public "
@@ -927,6 +1021,7 @@ class PublicDescentReport:
                     "not be read as an additive share of the total interval.",
                 ]
             )
+        lines.extend(_estimator_uncertainty_markdown(self.estimator_uncertainty))
         lines.extend(
             [
                 "",
@@ -940,7 +1035,9 @@ class PublicDescentReport:
                 "- Statistical uncertainty: this report does not estimate standard "
                 "errors, confidence intervals, bootstrap intervals, survey-design "
                 "uncertainty, or uncertainty in the supplied causal/model estimates. "
-                "Report those separately using the causal, statistical, or survey "
+                "When hidden-cell standard errors are supplied, this report carries "
+                "them into the estimator-uncertainty-aware interval above; otherwise "
+                "report them separately using the causal, statistical, or survey "
                 "workflow that produced the target values.",
                 "- Hidden-composition ambiguity: the partial-ID interval and its "
                 "width are computed by holding the public distribution fixed and "
@@ -1042,10 +1139,12 @@ def public_descent_report(
     public: Sequence[str] | None = None,
     hidden: Sequence[str] | None = None,
     target: TabularTarget | None = None,
+    target_standard_error: TabularStandardError | None = None,
     weight: str | None = None,
     public_columns: Sequence[str] | None = None,
     hidden_columns: Sequence[str] | None = None,
     target_column: TabularTarget | None = None,
+    target_standard_error_column: TabularStandardError | None = None,
     weight_column: str | None = None,
     candidate_refinements: Sequence[str] | None = None,
     candidate_columns: Sequence[str] | None = None,
@@ -1058,12 +1157,17 @@ def public_descent_report(
     row_count_label: str = "Rows",
     q: Any | None = None,
     q_radius: float | None = None,
+    target_confidence_multiplier: float = 1.96,
 ) -> PublicDescentReport:
     """Build an analyst-facing public-descent report.
 
     ``data`` may be a raw dataframe/row iterable or a precompiled
     :class:`GroupedProblem`. When ``data`` is precompiled, pass ``source_data``
     to compute one-column refinement candidates.
+
+    ``target_standard_error`` supplies row-level target-estimator standard
+    errors. The point-estimate transport interval is unchanged, and the report
+    adds endpoint/conservative estimator-uncertainty-aware interval summaries.
     """
 
     if top < 0:
@@ -1092,11 +1196,18 @@ def public_descent_report(
             primary_name="target",
             alias_name="target_column",
         )
+        resolved_target_standard_error = _resolve_scalar_arg(
+            target_standard_error,
+            target_standard_error_column,
+            primary_name="target_standard_error",
+            alias_name="target_standard_error_column",
+        )
         grouped = from_dataframe(
             compile_data,
             public=public,
             hidden=hidden,
             target=resolved_target,
+            target_standard_error=resolved_target_standard_error,
             weight=weight,
             public_columns=public_columns,
             hidden_columns=hidden_columns,
@@ -1104,6 +1215,7 @@ def public_descent_report(
             min_cell_weight=min_cell_weight,
             q=effective_q,
             q_radius=q_radius,
+            target_confidence_multiplier=target_confidence_multiplier,
         )
         refinement_data = source_data if source_data is not None else compile_data
 
@@ -1117,6 +1229,7 @@ def public_descent_report(
         target_description = describe_target(grouped.target_column)
 
     interval = grouped.problem.global_transport_modulus()
+    estimator_uncertainty = _estimator_uncertainty_adjustment(grouped, interval)
     observed_value = _observed_value(grouped)
     fibers = public_fiber_diagnostics(grouped, top=top)
     diagnostics = (
@@ -1168,6 +1281,7 @@ def public_descent_report(
         row_count_label=row_count_label,
         min_cell_weight=min_cell_weight,
         diagnostics=diagnostics,
+        estimator_uncertainty=estimator_uncertainty,
     )
 
 
@@ -1237,10 +1351,12 @@ def audit_effects(
     public: Sequence[str] | None = None,
     hidden: Sequence[str] | None = None,
     effect: str | None = None,
+    effect_standard_error: TabularStandardError | None = None,
     weight: str | None = None,
     public_columns: Sequence[str] | None = None,
     hidden_columns: Sequence[str] | None = None,
     effect_column: str | None = None,
+    effect_standard_error_column: TabularStandardError | None = None,
     weight_column: str | None = None,
     candidate_refinements: Sequence[str] | None = None,
     candidate_columns: Sequence[str] | None = None,
@@ -1253,6 +1369,7 @@ def audit_effects(
     row_count_label: str = "Rows",
     q: Any | None = None,
     q_radius: float | None = None,
+    effect_confidence_multiplier: float = 1.96,
 ) -> PublicDescentReport:
     """Audit whether public categories stably report estimated effects.
 
@@ -1260,6 +1377,10 @@ def audit_effects(
     or uplift workflows. A causal library should produce the row-level,
     subgroup-level, or hidden-cell-level effect target; this function audits the
     reporting representation for that supplied target.
+
+    Pass ``effect_standard_error`` when the causal estimator also supplies
+    row-level or hidden-cell effect standard errors and the report should carry
+    them into estimator-uncertainty-aware hidden-ambiguity summaries.
     """
 
     effect = _resolve_scalar_arg(
@@ -1270,6 +1391,12 @@ def audit_effects(
     )
     if effect is None and not isinstance(data, GroupedProblem):
         raise TypeError("audit_effects() missing required keyword argument: 'effect'")
+    effect_standard_error = _resolve_scalar_arg(
+        effect_standard_error,
+        effect_standard_error_column,
+        primary_name="effect_standard_error",
+        alias_name="effect_standard_error_column",
+    )
 
     return public_descent_report(
         data,
@@ -1277,6 +1404,7 @@ def audit_effects(
         public=public,
         hidden=hidden,
         target=effect,
+        target_standard_error=effect_standard_error,
         weight=weight,
         public_columns=public_columns,
         hidden_columns=hidden_columns,
@@ -1292,6 +1420,7 @@ def audit_effects(
         row_count_label=row_count_label,
         q=q,
         q_radius=q_radius,
+        target_confidence_multiplier=effect_confidence_multiplier,
     )
 
 
@@ -1302,10 +1431,12 @@ def causal_reporting_stability(
     public: Sequence[str] | None = None,
     hidden: Sequence[str] | None = None,
     effect: str | None = None,
+    effect_standard_error: TabularStandardError | None = None,
     weight: str | None = None,
     public_columns: Sequence[str] | None = None,
     hidden_columns: Sequence[str] | None = None,
     effect_column: str | None = None,
+    effect_standard_error_column: TabularStandardError | None = None,
     weight_column: str | None = None,
     candidate_refinements: Sequence[str] | None = None,
     candidate_columns: Sequence[str] | None = None,
@@ -1324,6 +1455,7 @@ def causal_reporting_stability(
     statistical_confidence_level: float | None = None,
     statistical_method: str | None = None,
     statistical_label: str = "Statistical uncertainty",
+    effect_confidence_multiplier: float = 1.96,
     title: str = "Causal Reporting Stability Suite",
     primary_title: str = "Causal Effect Representation Stability Audit",
     raise_errors: bool = False,
@@ -1340,6 +1472,12 @@ def causal_reporting_stability(
         effect_column,
         primary_name="effect",
         alias_name="effect_column",
+    )
+    effect_standard_error = _resolve_scalar_arg(
+        effect_standard_error,
+        effect_standard_error_column,
+        primary_name="effect_standard_error",
+        alias_name="effect_standard_error_column",
     )
     weight = _resolve_scalar_arg(
         weight,
@@ -1374,6 +1512,7 @@ def causal_reporting_stability(
         public=public,
         hidden=hidden,
         effect=effect,
+        effect_standard_error=effect_standard_error,
         weight=weight,
         public_columns=public_columns,
         hidden_columns=hidden_columns,
@@ -1386,6 +1525,7 @@ def causal_reporting_stability(
         row_count=row_count,
         q=q,
         q_radius=q_radius,
+        effect_confidence_multiplier=effect_confidence_multiplier,
     )
 
     public_tuple = primary.grouped.public_columns
@@ -2847,6 +2987,87 @@ def _observed_value(grouped: GroupedProblem) -> float:
     return grouped.problem.psi(grouped.cell_weights)
 
 
+def _estimator_uncertainty_adjustment(
+    grouped: GroupedProblem,
+    interval: TransportResult,
+) -> EstimatorUncertaintyAdjustment | None:
+    target = grouped.problem.target_functional
+    if not isinstance(target, UncertainLinearTarget):
+        return None
+
+    z_value = target.confidence_multiplier
+    conservative_se = _fixed_public_law_standard_error_bound(
+        grouped,
+        public_law=interval.public_law or grouped.public_law,
+        target=target,
+    )
+    conservative_margin = z_value * conservative_se
+
+    lower_endpoint_se: float | None = None
+    upper_endpoint_se: float | None = None
+    endpoint_lower: float | None = None
+    endpoint_upper: float | None = None
+    endpoint_diameter: float | None = None
+    if interval.q_lower is not None and interval.q_upper is not None:
+        states = grouped.problem.states
+        lower_vector = tuple(
+            float(interval.q_lower.get(state, 0.0)) for state in states
+        )
+        upper_vector = tuple(
+            float(interval.q_upper.get(state, 0.0)) for state in states
+        )
+        lower_endpoint_se = target.standard_error_for_distribution(
+            states,
+            lower_vector,
+        )
+        upper_endpoint_se = target.standard_error_for_distribution(
+            states,
+            upper_vector,
+        )
+        endpoint_lower = interval.lower - z_value * lower_endpoint_se
+        endpoint_upper = interval.upper + z_value * upper_endpoint_se
+        endpoint_diameter = endpoint_upper - endpoint_lower
+
+    return EstimatorUncertaintyAdjustment(
+        base_lower=interval.lower,
+        base_upper=interval.upper,
+        base_diameter=interval.diameter,
+        confidence_multiplier=z_value,
+        lower_endpoint_standard_error=lower_endpoint_se,
+        upper_endpoint_standard_error=upper_endpoint_se,
+        conservative_standard_error_bound=conservative_se,
+        endpoint_lower=endpoint_lower,
+        endpoint_upper=endpoint_upper,
+        endpoint_diameter=endpoint_diameter,
+        conservative_lower=interval.lower - conservative_margin,
+        conservative_upper=interval.upper + conservative_margin,
+        conservative_diameter=interval.diameter + 2.0 * conservative_margin,
+    )
+
+
+def _fixed_public_law_standard_error_bound(
+    grouped: GroupedProblem,
+    *,
+    public_law: Mapping[Hashable, float],
+    target: UncertainLinearTarget,
+) -> float:
+    problem = grouped.problem
+    public_masses = problem._coerce_public_law(public_law)
+    max_standard_errors = {public_value: 0.0 for public_value in problem.public_values}
+    for state in problem.states:
+        public_value = problem.public_map[state]
+        max_standard_errors[public_value] = max(
+            max_standard_errors[public_value],
+            target.standard_error(state),
+        )
+    return sqrt(
+        sum(
+            (public_masses[public_value] * max_standard_errors[public_value]) ** 2
+            for public_value in problem.public_values
+        )
+    )
+
+
 def _build_statistical_uncertainty(
     *,
     estimate: float | None,
@@ -2898,6 +3119,87 @@ def _format_statistical_uncertainty(row: StatisticalUncertainty) -> str:
     return f"{row.label}: {detail}"
 
 
+def _statistical_uncertainty_scope_text(report: PublicDescentReport) -> str:
+    if report.estimator_uncertainty is None:
+        return (
+            "It does not include binomial standard errors, design weights, "
+            "survey design uncertainty, model uncertainty, or uncertainty in "
+            "the hidden-cell target values."
+        )
+    return (
+        "The base interval above uses hidden-cell point estimates. Because "
+        "hidden-cell target standard errors were supplied, the next section "
+        "adds estimator-uncertainty-aware endpoint and conservative outer "
+        "intervals. Other statistical uncertainty sources, such as survey "
+        "design uncertainty or causal identification uncertainty, still need "
+        "to be reported separately."
+    )
+
+
+def _estimator_uncertainty_markdown(
+    uncertainty: EstimatorUncertaintyAdjustment | None,
+) -> list[str]:
+    if uncertainty is None:
+        return []
+
+    lines = [
+        "",
+        "## Estimator-Uncertainty-Aware Hidden Ambiguity",
+        "",
+        "- Base hidden-composition interval using point estimates: "
+        f"[{uncertainty.base_lower:.4f}, {uncertainty.base_upper:.4f}] "
+        f"(diameter {uncertainty.base_diameter:.4f}).",
+        "- Conservative outer interval: "
+        f"[{uncertainty.conservative_lower:.4f}, "
+        f"{uncertainty.conservative_upper:.4f}] "
+        f"(diameter {uncertainty.conservative_diameter:.4f}).",
+        "- Conservative standard-error bound: "
+        f"{uncertainty.conservative_standard_error_bound:.4f}; "
+        f"multiplier: {uncertainty.confidence_multiplier:.4f}; "
+        f"margin per endpoint: {uncertainty.conservative_margin:.4f}.",
+    ]
+    if (
+        uncertainty.endpoint_lower is not None
+        and uncertainty.endpoint_upper is not None
+        and uncertainty.endpoint_diameter is not None
+    ):
+        lines.extend(
+            [
+                "- Endpoint-adjusted interval at the lower/upper witness "
+                "distributions: "
+                f"[{uncertainty.endpoint_lower:.4f}, "
+                f"{uncertainty.endpoint_upper:.4f}] "
+                f"(diameter {uncertainty.endpoint_diameter:.4f}).",
+                "- Endpoint standard errors: "
+                f"lower={_format_optional_float(uncertainty.lower_endpoint_standard_error)}, "
+                f"upper={_format_optional_float(uncertainty.upper_endpoint_standard_error)}.",
+            ]
+        )
+    else:
+        lines.append(
+            "- Endpoint witness distributions were not returned by this backend, "
+            "so endpoint-specific standard errors are unavailable."
+        )
+    lines.extend(
+        [
+            "",
+            "Interpretation: the point-estimate transport interval asks how much "
+            "hidden-composition shifts can move the reported target. The "
+            "uncertainty-aware interval then adds the supplied hidden-cell "
+            "estimator standard errors to that ambiguity calculation.",
+            "",
+            "This is not an exact joint optimization over both hidden composition "
+            "and target-estimation error. The endpoint interval evaluates "
+            "standard errors at the reported lower and upper witness "
+            "distributions. The conservative interval uses the fixed public law "
+            "and the largest supplied standard error inside each public fiber, "
+            "so it is deliberately wider when endpoint witnesses may miss the "
+            "highest-uncertainty hidden cells.",
+        ]
+    )
+    return lines
+
+
 def _suite_causal_estimate_markdown(report: PublicDescentReport) -> list[str]:
     return [
         f"- Reported value: {report.observed_value:.4f} (`{report.observed_label}`).",
@@ -2922,6 +3224,14 @@ def _suite_hidden_ambiguity_markdown(report: PublicDescentReport) -> list[str]:
         f"{'inside' if report.interval_contains_observed else 'outside'} the "
         "partial-ID interval.",
     ]
+    if report.estimator_uncertainty is not None:
+        uncertainty = report.estimator_uncertainty
+        lines.append(
+            "- Estimator-uncertainty-aware conservative interval: "
+            f"[{uncertainty.conservative_lower:.4f}, "
+            f"{uncertainty.conservative_upper:.4f}] "
+            f"(diameter {uncertainty.conservative_diameter:.4f})."
+        )
     if report.fibers:
         top = report.fibers[0]
         if report.fiber_decomposition_available and top.contribution is not None:
@@ -3249,6 +3559,9 @@ def _public_descent_summary_dict(report: PublicDescentReport) -> dict[str, Any]:
         "refinements": [row.as_dict() for row in report.refinements],
         "diagnostics": [row.as_dict() for row in report.diagnostics],
         "duals": [row.as_dict() for row in report.interval.dual_summary(top=20)],
+        "estimator_uncertainty": None
+        if report.estimator_uncertainty is None
+        else report.estimator_uncertainty.as_dict(),
     }
 
 

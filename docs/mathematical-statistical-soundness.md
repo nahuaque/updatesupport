@@ -29,6 +29,12 @@ adds a workflow contract for representation-dependent reporting procedures: the
 procedure is compiled to a column or row metric for each representation, and the
 finite problem then solves the compiled fixed target.
 
+`UncertainLinearTarget` keeps the same fixed linear point-estimate target and
+adds hidden-cell estimator standard errors. Those standard errors do not change
+the base transport optimization. They are used in the report layer to widen the
+hidden-composition interval with endpoint-specific and conservative
+estimator-uncertainty margins.
+
 If the aggregate target is nonlinear in `q` or depends on the transported
 distribution itself, it is not automatically covered by the current soundness
 guarantee. Such a target needs an explicit reformulation or a dedicated
@@ -329,8 +335,40 @@ audited.
 It deliberately does not claim that those inputs are known without error. If
 cell means are estimated, modeled, survey-weighted, or causal-effect estimates,
 their standard errors, bootstrap intervals, survey-design uncertainty, or model
-uncertainty should be reported separately. `updatesupport` separates that
-uncertainty from hidden-composition ambiguity.
+uncertainty should be accounted for explicitly.
+
+When hidden-cell estimator standard errors are supplied through
+`target_standard_error=...` or `effect_standard_error=...`, `updatesupport`
+constructs an `UncertainLinearTarget`. The base interval remains:
+
+```text
+lower = inf { sum_d mu(d) q(d) : q in Q, pi#q = p }
+upper = sup { sum_d mu(d) q(d) : q in Q, pi#q = p }
+```
+
+where `mu(d)` is the hidden-cell point estimate. The report then adds:
+
+```text
+se(q) = sqrt(sum_d (se(d) q(d))^2)
+```
+
+assuming independent hidden-cell target-estimation errors after compilation.
+If lower and upper witness distributions are available, the report evaluates
+`se(q)` at those endpoint witnesses and widens each endpoint by
+`confidence_multiplier * se(q)`.
+
+The report also emits a conservative fixed-public-law outer interval using:
+
+```text
+se_conservative = sqrt(sum_o (p(o) max_{d: pi(d)=o} se(d))^2)
+```
+
+This bound is deliberately wider when the hidden cell that maximizes estimator
+standard error is not the same hidden cell that maximizes or minimizes the point
+estimate. It is not an exact joint nonconvex solve over both hidden composition
+and target-estimation error. It is a transparent reporting adjustment that keeps
+statistical uncertainty and hidden-composition ambiguity visible as separate
+quantities.
 
 The `min_cell_weight` option changes the retained finite support. That can make
 reports less sensitive to one-off sparse cells, but it also changes the
@@ -454,6 +492,7 @@ example:
 
 ```python
 LinearTarget(h)
+UncertainLinearTarget(mu, se)  # linear point target with report-level SE widening
 RatioTarget(numerator, denominator)  # supported for finite/saturated Q
 MomentTransformTarget(moments, transform)  # affine, one-sided CVXPY, monotone boxes
 CvxpyTarget(objective_builder)
@@ -494,6 +533,8 @@ The test suite exercises the current mathematical contract directly:
 - saturated ratio-target intervals via Charnes-Cooper LP,
 - affine moment-transform targets and capability guardrails for nonlinear
   moment transforms,
+- uncertain linear targets, including hidden-cell standard-error aggregation
+  and estimator-uncertainty-aware report intervals,
 - procedure-target compilation and recompilation across tabular, report, and
   frontier workflows,
 - fixed public-law saturated witnesses and zero-mass public fibers,

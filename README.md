@@ -37,6 +37,8 @@ The output is a review-ready Markdown audit with:
 - observed estimate
 - hidden-composition stress interval
 - transport ambiguity, the interval width
+- estimator-uncertainty-aware interval when hidden-cell standard errors are
+  supplied
 - public adequacy flag
 - public cells driving the ambiguity
 - refinement recommendations
@@ -64,8 +66,10 @@ problem with a linear objective.
 
 The interval is statistically meaningful as a partial-identification or
 sensitivity interval conditional on the retained support, target values, and
-chosen `Q`. It is not a confidence interval and does not estimate causal,
-survey-design, or model uncertainty.
+chosen `Q`. It is not a confidence interval. If hidden-cell target standard
+errors are supplied, reports can add an estimator-uncertainty-aware outer
+interval, but causal, survey-design, and broader model uncertainty still belong
+to the upstream statistical workflow.
 
 The core solver target is fixed after compilation. Most tabular reports compile
 to the linear plug-in aggregate `sum_d h(d) q(d)`; `RatioTarget` covers
@@ -307,6 +311,7 @@ suite = us.causal_reporting_stability(
     public=["AGE_BAND", "SEX"],
     hidden=["AGE_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND", "RAC1P"],
     effect="tau_hat",
+    effect_standard_error="tau_se",
     weight="sample_weight",
     candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P"],
     q=us.q_bounded_shift(0.5),
@@ -316,8 +321,9 @@ suite = us.causal_reporting_stability(
 )
 ```
 
-This keeps four things separate: causal estimate, statistical uncertainty,
-hidden-composition ambiguity, and public refinement recommendations.
+This keeps causal estimate, statistical uncertainty, hidden-composition
+ambiguity, estimator-uncertainty-aware adjusted ambiguity, and public refinement
+recommendations separate.
 
 See [docs/causal-library-integration.md](docs/causal-library-integration.md).
 

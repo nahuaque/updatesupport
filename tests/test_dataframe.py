@@ -50,6 +50,53 @@ class FromDataFrameTests(unittest.TestCase):
         self.assertAlmostEqual(interval.upper, 0.8)
         self.assertAlmostEqual(interval.diameter, 0.6)
 
+    def test_from_dataframe_compiles_uncertain_linear_target(self):
+        rows = [
+            {"public": "A", "hidden": "x", "target": 0.0, "se": 0.1, "weight": 2},
+            {"public": "A", "hidden": "x", "target": 1.0, "se": 0.2, "weight": 1},
+            {"public": "A", "hidden": "y", "target": 1.0, "se": 0.3, "weight": 3},
+            {"public": "B", "hidden": "z", "target": 0.5, "se": 0.4, "weight": 4},
+        ]
+
+        grouped = us.from_dataframe(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            target_standard_error="se",
+            weight="weight",
+            target_confidence_multiplier=2.0,
+        )
+
+        self.assertIsInstance(grouped.target_functional, us.UncertainLinearTarget)
+        self.assertEqual(grouped.problem.target_contract.kind, "uncertain_linear")
+        self.assertEqual(grouped.target_standard_error_column, "se")
+        self.assertAlmostEqual(grouped.target_functional.confidence_multiplier, 2.0)
+        self.assertAlmostEqual(
+            grouped.problem.estimand_map[("A", "x")],
+            1.0 / 3.0,
+        )
+        self.assertAlmostEqual(
+            grouped.target_functional.standard_error(("A", "x")),
+            ((2 * 0.1) ** 2 + (1 * 0.2) ** 2) ** 0.5 / 3.0,
+        )
+        self.assertAlmostEqual(
+            grouped.target_functional.standard_error(("A", "y")),
+            0.3,
+        )
+
+    def test_from_dataframe_rejects_negative_target_standard_error(self):
+        with self.assertRaisesRegex(
+            ValueError, "target standard errors must be non-negative"
+        ):
+            us.from_dataframe(
+                [{"public": "A", "hidden": "x", "target": 1.0, "se": -0.1}],
+                public=["public"],
+                hidden=["public", "hidden"],
+                target="target",
+                target_standard_error="se",
+            )
+
     def test_from_dataframe_accepts_dataframe_like_records(self):
         frame = FakeFrame(
             [

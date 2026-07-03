@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from math import isfinite
+from math import isfinite, sqrt
 from numbers import Real
 from typing import Any, Hashable
 
@@ -306,6 +306,111 @@ class LinearTarget:
             "description": self.description,
             "source": self.source,
             "state_count": len(self.values),
+            "contract": self.contract.as_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class UncertainLinearTarget:
+    """Fixed linear plug-in target with hidden-cell estimator standard errors."""
+
+    values: Mapping[Hashable, float]
+    standard_errors: Mapping[Hashable, float]
+    name: str = "uncertain_linear_target"
+    description: str = "fixed linear target with estimator standard errors"
+    confidence_multiplier: float = 1.96
+    source: str | None = None
+
+    def __post_init__(self) -> None:
+        values = _finite_float_mapping(self.values, name="uncertain linear target")
+        standard_errors = _finite_float_mapping(
+            self.standard_errors,
+            name="uncertain linear target standard error",
+        )
+        missing = sorted(set(values) - set(standard_errors), key=str)
+        extra = sorted(set(standard_errors) - set(values), key=str)
+        if missing:
+            raise ValueError(
+                f"uncertain linear target standard errors missing states: {missing!r}"
+            )
+        if extra:
+            raise ValueError(
+                f"uncertain linear target standard errors contain unknown states: {extra!r}"
+            )
+        negative = [
+            state for state, value in standard_errors.items() if float(value) < 0.0
+        ]
+        if negative:
+            raise ValueError(
+                f"uncertain linear target standard errors must be non-negative: {negative!r}"
+            )
+        multiplier = _finite_float(
+            self.confidence_multiplier,
+            name="confidence multiplier",
+        )
+        if multiplier < 0.0:
+            raise ValueError("confidence multiplier must be non-negative")
+        object.__setattr__(self, "values", values)
+        object.__setattr__(self, "standard_errors", standard_errors)
+        object.__setattr__(self, "confidence_multiplier", multiplier)
+
+    @property
+    def contract(self) -> TargetContract:
+        limitations = (
+            "Point-estimate hidden-cell target values are fixed after compilation.",
+            "Hidden-cell standard errors are fixed after compilation and are "
+            "used only for estimator-uncertainty-aware reporting adjustments.",
+            "The default adjusted interval is an endpoint/conservative reporting "
+            "calculation, not an exact joint nonconvex optimization over target "
+            "estimation error and hidden composition.",
+        )
+        return TargetContract(
+            kind="uncertain_linear",
+            name=self.name,
+            formula="psi(q) = sum_d mu(d) q(d); se(q) = ||se(d) q(d)||_2",
+            description=self.description,
+            fixed_after_compilation=True,
+            supports_adequacy=True,
+            supports_interval=True,
+            supports_fiber_decomposition=True,
+            limitations=limitations,
+        )
+
+    def value(self, state: Hashable) -> float:
+        return self.values[state]
+
+    def point_value(self, state: Hashable) -> float:
+        return self.value(state)
+
+    def standard_error(self, state: Hashable) -> float:
+        return self.standard_errors[state]
+
+    def support_key(self, state: Hashable) -> float:
+        return self.value(state)
+
+    def dot(self, states: Sequence[Hashable], vector: Sequence[float]) -> float:
+        return sum(self.values[state] * vector[i] for i, state in enumerate(states))
+
+    def standard_error_for_distribution(
+        self,
+        states: Sequence[Hashable],
+        vector: Sequence[float],
+    ) -> float:
+        return sqrt(
+            sum(
+                (self.standard_errors[state] * float(vector[i])) ** 2
+                for i, state in enumerate(states)
+            )
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "kind": "uncertain_linear",
+            "name": self.name,
+            "description": self.description,
+            "source": self.source,
+            "state_count": len(self.values),
+            "confidence_multiplier": self.confidence_multiplier,
             "contract": self.contract.as_dict(),
         }
 
@@ -873,10 +978,10 @@ def coerce_linear_target(
     name: str = "linear_target",
     description: str = "fixed linear plug-in target",
     source: str | None = None,
-) -> LinearTarget:
+) -> LinearTarget | UncertainLinearTarget:
     """Coerce mappings, sequences, callables, or LinearTarget objects."""
 
-    if isinstance(value, LinearTarget):
+    if isinstance(value, LinearTarget | UncertainLinearTarget):
         _validate_target_states(states, value.values)
         return value
 
@@ -929,7 +1034,7 @@ def coerce_target(
     name: str = "linear_target",
     description: str = "fixed linear plug-in target",
     source: str | None = None,
-) -> LinearTarget | MomentTransformTarget | RatioTarget:
+) -> LinearTarget | UncertainLinearTarget | MomentTransformTarget | RatioTarget:
     """Coerce a supported target functional."""
 
     if isinstance(value, ProcedureTarget):
@@ -1033,7 +1138,7 @@ def raise_if_unsupported_target(value: Any, *, context: str) -> None:
     contract = declared_target_contract(value)
     if contract is None:
         return
-    if isinstance(value, LinearTarget | RatioTarget):
+    if isinstance(value, LinearTarget | UncertainLinearTarget | RatioTarget):
         return
     if contract.kind == "linear" and contract.supports_interval:
         raise UnsupportedTargetError(
