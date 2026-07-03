@@ -17,6 +17,7 @@ from .report import (
     PublicDescentReport,
     RefinementSensitivityReport,
     SensitivityReport,
+    WitnessReport,
 )
 
 TableRows = tuple[dict[str, Any], ...]
@@ -41,6 +42,9 @@ def report_tables(report: Any) -> ReportTables:
 
     if isinstance(report, PublicDescentReport):
         return _public_descent_tables(report)
+
+    if isinstance(report, WitnessReport):
+        return _witness_tables(report)
 
     if isinstance(report, SensitivityReport):
         return _sensitivity_tables(report)
@@ -172,6 +176,32 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
         "dual_diagnostics": tuple(
             row.as_dict() for row in report.interval.dual_summary(top=20)
         ),
+    }
+
+
+def _witness_tables(report: WitnessReport) -> ReportTables:
+    grouped = report.grouped
+    return {
+        "summary": (
+            {
+                "title": report.title,
+                "observed_value": report.observed_value,
+                "lower": report.lower_value,
+                "upper": report.upper_value,
+                "ambiguity": report.ambiguity,
+                "q_name": grouped.q_name,
+                "q_description": grouped.q_description,
+                "public_law_match": report.public_law_match,
+                "additive_contributions": report.additive_contributions,
+                "public_columns": grouped.public_columns,
+                "hidden_columns": grouped.hidden_columns,
+                "target": grouped.target_column,
+                "hidden_cells": len(grouped.problem.states),
+                "public_cells": len(grouped.problem.public_values),
+            },
+        ),
+        "fiber_shifts": tuple(row.as_dict() for row in report.fibers),
+        "cell_shifts": tuple(row.as_dict() for row in report.cells),
     }
 
 

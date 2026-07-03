@@ -80,6 +80,17 @@ Public-descent exports also include `fiber_decomposition_available` and
 variable-denominator ratio target, fiber rows report point ranges and set
 `contribution` to `null` instead of emitting a misleading zero contribution.
 
+Adversarial witness reports expose:
+
+- `summary`
+- `fiber_shifts`
+- `cell_shifts`
+
+Use `report.witness_report()` or `us.witness_report(...)` when a model review
+needs to inspect the actual lower-vs-upper endpoint distributions behind the
+reported ambiguity. The witness tables show which hidden cells gained or lost
+mass and whether each public fiber still matches the same public distribution.
+
 Sensitivity reports expose:
 
 - `summary`

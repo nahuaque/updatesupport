@@ -69,6 +69,177 @@ class PublicFiberDiagnostic:
 
 
 @dataclass(frozen=True)
+class WitnessCellShift:
+    """One hidden-cell difference between lower and upper endpoint witnesses."""
+
+    state: Hashable
+    public_value: Hashable
+    state_label: str
+    public_label: str
+    target_value: float
+    lower_mass: float
+    upper_mass: float
+    mass_shift: float
+    abs_mass_shift: float
+    lower_contribution: float | None
+    upper_contribution: float | None
+    contribution_shift: float | None
+    abs_contribution_shift: float | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "state": self.state,
+            "public_value": self.public_value,
+            "state_label": self.state_label,
+            "public_label": self.public_label,
+            "target_value": self.target_value,
+            "lower_mass": self.lower_mass,
+            "upper_mass": self.upper_mass,
+            "mass_shift": self.mass_shift,
+            "abs_mass_shift": self.abs_mass_shift,
+            "lower_contribution": self.lower_contribution,
+            "upper_contribution": self.upper_contribution,
+            "contribution_shift": self.contribution_shift,
+            "abs_contribution_shift": self.abs_contribution_shift,
+        }
+
+
+@dataclass(frozen=True)
+class WitnessFiberShift:
+    """Public-fiber witness check and within-fiber movement summary."""
+
+    public_value: Hashable
+    public_label: str
+    hidden_cells: int
+    lower_public_mass: float
+    upper_public_mass: float
+    public_mass_difference: float
+    total_abs_mass_shift: float
+    lower_contribution: float | None
+    upper_contribution: float | None
+    contribution_shift: float | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "public_value": self.public_value,
+            "public_label": self.public_label,
+            "hidden_cells": self.hidden_cells,
+            "lower_public_mass": self.lower_public_mass,
+            "upper_public_mass": self.upper_public_mass,
+            "public_mass_difference": self.public_mass_difference,
+            "total_abs_mass_shift": self.total_abs_mass_shift,
+            "lower_contribution": self.lower_contribution,
+            "upper_contribution": self.upper_contribution,
+            "contribution_shift": self.contribution_shift,
+        }
+
+
+@dataclass(frozen=True)
+class WitnessReport:
+    """Adversarial lower-vs-upper hidden-composition witness report."""
+
+    grouped: GroupedProblem
+    interval: TransportResult
+    observed_value: float
+    cells: tuple[WitnessCellShift, ...]
+    fibers: tuple[WitnessFiberShift, ...]
+    title: str = "Adversarial Witness Report"
+    top: int = 20
+
+    @property
+    def public_law_match(self) -> bool:
+        tol = self.grouped.problem.tol
+        return all(abs(row.public_mass_difference) <= tol for row in self.fibers)
+
+    @property
+    def additive_contributions(self) -> bool:
+        return self.grouped.problem.target_contract.supports_fiber_decomposition
+
+    @property
+    def lower_value(self) -> float:
+        return self.interval.lower
+
+    @property
+    def upper_value(self) -> float:
+        return self.interval.upper
+
+    @property
+    def ambiguity(self) -> float:
+        return self.interval.diameter
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "observed_value": self.observed_value,
+            "lower": self.lower_value,
+            "upper": self.upper_value,
+            "ambiguity": self.ambiguity,
+            "q_name": self.grouped.q_name,
+            "q_description": self.grouped.q_description,
+            "public_law_match": self.public_law_match,
+            "additive_contributions": self.additive_contributions,
+            "public_columns": self.grouped.public_columns,
+            "hidden_columns": self.grouped.hidden_columns,
+            "target": self.grouped.target_column,
+            "cell_shifts": [row.as_dict() for row in self.cells],
+            "fiber_shifts": [row.as_dict() for row in self.fibers],
+        }
+
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        from .exports import report_tables
+
+        return report_tables(self)
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import report_dataframes
+
+        return report_dataframes(self)
+
+    def to_markdown(self) -> str:
+        lines = [
+            f"# {self.title}",
+            "",
+            "- Purpose: show two admissible hidden-composition worlds that the "
+            "same public report cannot distinguish.",
+            f"- Q preset: {self.grouped.q_name}",
+            f"- Observed value: {self.observed_value:.4f}",
+            f"- Lower witness value: {self.lower_value:.4f}",
+            f"- Upper witness value: {self.upper_value:.4f}",
+            f"- Witness gap: {self.ambiguity:.4f}",
+            f"- Same public distribution: {'yes' if self.public_law_match else 'no'}",
+            "",
+            "## Interpretation",
+            "",
+            "The lower and upper witnesses keep the public representation fixed, "
+            "but rearrange hidden-cell mass within the admissible Q stress test. "
+            "The difference between their target values is the reported "
+            "hidden-composition ambiguity.",
+        ]
+        if self.additive_contributions:
+            lines.append(
+                "Contribution columns below are additive target contributions: "
+                "`hidden-cell target value * witness mass`."
+            )
+        else:
+            lines.append(
+                "This target is not additively decomposable by hidden cell, so "
+                "the report shows mass shifts and hidden-cell point values, but "
+                "does not interpret contribution shifts as additive shares."
+            )
+
+        lines.extend(["", "## Public-Fiber Check", ""])
+        lines.extend(_witness_fiber_table(self.fibers))
+        lines.extend(["", "## Largest Hidden-Cell Shifts", ""])
+        lines.extend(_witness_cell_table(self.cells[: self.top]))
+        return "\n".join(lines)
+
+
+@dataclass(frozen=True)
 class RefinementCandidate:
     """One-column public refinement ranked by ambiguity reduction."""
 
@@ -639,6 +810,22 @@ class PublicDescentReport:
 
         return report_dataframes(self)
 
+    def witness_report(
+        self,
+        *,
+        title: str = "Adversarial Witness Report",
+        top: int = 20,
+    ) -> WitnessReport:
+        """Render the interval's lower/upper endpoint witnesses as a report."""
+
+        return _witness_report_from_grouped(
+            self.grouped,
+            interval=self.interval,
+            observed_value=self.observed_value,
+            title=title,
+            top=top,
+        )
+
     def to_markdown(self) -> str:
         grouped = self.grouped
         problem = grouped.problem
@@ -977,6 +1164,65 @@ def public_descent_report(
     )
 
 
+def witness_report(
+    data: Any | GroupedProblem | PublicDescentReport,
+    *,
+    public: Sequence[str] | None = None,
+    hidden: Sequence[str] | None = None,
+    target: TabularTarget | None = None,
+    weight: str | None = None,
+    public_columns: Sequence[str] | None = None,
+    hidden_columns: Sequence[str] | None = None,
+    target_column: TabularTarget | None = None,
+    weight_column: str | None = None,
+    min_cell_weight: float = 1.0,
+    q: Any = "saturated",
+    q_radius: float | None = None,
+    title: str = "Adversarial Witness Report",
+    top: int = 20,
+) -> WitnessReport:
+    """Build an adversarial lower-vs-upper witness report.
+
+    ``data`` may be a raw dataframe/row iterable, a precompiled
+    :class:`GroupedProblem`, or an existing :class:`PublicDescentReport`.
+    """
+
+    if isinstance(data, PublicDescentReport):
+        return data.witness_report(title=title, top=top)
+
+    if isinstance(data, GroupedProblem):
+        grouped = data
+    else:
+        resolved_target = _resolve_scalar_arg(
+            target,
+            target_column,
+            primary_name="target",
+            alias_name="target_column",
+        )
+        grouped = from_dataframe(
+            data,
+            public=public,
+            hidden=hidden,
+            target=resolved_target,
+            weight=weight,
+            public_columns=public_columns,
+            hidden_columns=hidden_columns,
+            weight_column=weight_column,
+            min_cell_weight=min_cell_weight,
+            q=q,
+            q_radius=q_radius,
+        )
+
+    interval = grouped.problem.global_transport_modulus()
+    return _witness_report_from_grouped(
+        grouped,
+        interval=interval,
+        observed_value=_observed_value(grouped),
+        title=title,
+        top=top,
+    )
+
+
 def audit_effects(
     data: Any | GroupedProblem,
     *,
@@ -1261,6 +1507,187 @@ def public_fiber_diagnostics(
     else:
         rows.sort(key=lambda row: (row.fiber_range, row.public_mass), reverse=True)
     return tuple(rows if top is None else rows[:top])
+
+
+def _witness_report_from_grouped(
+    grouped: GroupedProblem,
+    *,
+    interval: TransportResult,
+    observed_value: float,
+    title: str,
+    top: int,
+) -> WitnessReport:
+    if top < 0:
+        raise ValueError("top must be non-negative")
+    if interval.q_lower is None or interval.q_upper is None:
+        raise ValueError(
+            "transport interval does not include lower and upper witness distributions"
+        )
+
+    problem = grouped.problem
+    additive = problem.target_contract.supports_fiber_decomposition
+    q_lower = _witness_distribution(problem.states, interval.q_lower)
+    q_upper = _witness_distribution(problem.states, interval.q_upper)
+
+    cells = []
+    for state in problem.states:
+        public_value = problem.public_map[state]
+        target_value = float(problem.estimand_map[state])
+        lower_mass = q_lower[state]
+        upper_mass = q_upper[state]
+        mass_shift = upper_mass - lower_mass
+        lower_contribution = target_value * lower_mass if additive else None
+        upper_contribution = target_value * upper_mass if additive else None
+        contribution_shift = (
+            None
+            if lower_contribution is None or upper_contribution is None
+            else upper_contribution - lower_contribution
+        )
+        cells.append(
+            WitnessCellShift(
+                state=state,
+                public_value=public_value,
+                state_label=_format_grouped_key(grouped.hidden_columns, state),
+                public_label=_format_grouped_key(grouped.public_columns, public_value),
+                target_value=target_value,
+                lower_mass=lower_mass,
+                upper_mass=upper_mass,
+                mass_shift=mass_shift,
+                abs_mass_shift=abs(mass_shift),
+                lower_contribution=lower_contribution,
+                upper_contribution=upper_contribution,
+                contribution_shift=contribution_shift,
+                abs_contribution_shift=None
+                if contribution_shift is None
+                else abs(contribution_shift),
+            )
+        )
+
+    cells.sort(key=_witness_cell_sort_key)
+
+    fibers = []
+    for public_value in problem.public_values:
+        states = problem.public_fibers[public_value]
+        lower_public_mass = sum(q_lower[state] for state in states)
+        upper_public_mass = sum(q_upper[state] for state in states)
+        lower_contribution = (
+            sum(q_lower[state] * problem.estimand_map[state] for state in states)
+            if additive
+            else None
+        )
+        upper_contribution = (
+            sum(q_upper[state] * problem.estimand_map[state] for state in states)
+            if additive
+            else None
+        )
+        contribution_shift = (
+            None
+            if lower_contribution is None or upper_contribution is None
+            else upper_contribution - lower_contribution
+        )
+        fibers.append(
+            WitnessFiberShift(
+                public_value=public_value,
+                public_label=_format_grouped_key(grouped.public_columns, public_value),
+                hidden_cells=len(states),
+                lower_public_mass=lower_public_mass,
+                upper_public_mass=upper_public_mass,
+                public_mass_difference=upper_public_mass - lower_public_mass,
+                total_abs_mass_shift=sum(
+                    abs(q_upper[state] - q_lower[state]) for state in states
+                ),
+                lower_contribution=lower_contribution,
+                upper_contribution=upper_contribution,
+                contribution_shift=contribution_shift,
+            )
+        )
+    fibers.sort(
+        key=lambda row: (
+            abs(row.contribution_shift or 0.0),
+            row.total_abs_mass_shift,
+            row.public_label,
+        ),
+        reverse=True,
+    )
+
+    return WitnessReport(
+        grouped=grouped,
+        interval=interval,
+        observed_value=observed_value,
+        cells=tuple(cells),
+        fibers=tuple(fibers),
+        title=title,
+        top=top,
+    )
+
+
+def _witness_distribution(
+    states: Sequence[Hashable],
+    distribution: Mapping[Hashable, float],
+) -> dict[Hashable, float]:
+    return {state: float(distribution.get(state, 0.0)) for state in states}
+
+
+def _witness_cell_sort_key(
+    row: WitnessCellShift,
+) -> tuple[float, float, str, str]:
+    return (
+        -(row.abs_contribution_shift or 0.0),
+        -row.abs_mass_shift,
+        row.public_label,
+        row.state_label,
+    )
+
+
+def _witness_fiber_table(rows: Sequence[WitnessFiberShift]) -> list[str]:
+    if not rows:
+        return ["No public-fiber witness rows are available."]
+
+    lines = [
+        "| public cell | hidden cells | lower public mass | upper public mass | "
+        "public mass diff | total abs mass shift | lower contrib | upper contrib | "
+        "contrib shift |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            f"{_escape_table(row.public_label)} | "
+            f"{row.hidden_cells} | "
+            f"{row.lower_public_mass:.4f} | "
+            f"{row.upper_public_mass:.4f} | "
+            f"{row.public_mass_difference:.4f} | "
+            f"{row.total_abs_mass_shift:.4f} | "
+            f"{_format_optional_float(row.lower_contribution)} | "
+            f"{_format_optional_float(row.upper_contribution)} | "
+            f"{_format_optional_float(row.contribution_shift)} |"
+        )
+    return lines
+
+
+def _witness_cell_table(rows: Sequence[WitnessCellShift]) -> list[str]:
+    if not rows:
+        return ["No hidden-cell witness shifts are available."]
+
+    lines = [
+        "| hidden cell | public cell | target | lower mass | upper mass | "
+        "mass shift | lower contrib | upper contrib | contrib shift |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            f"{_escape_table(row.state_label)} | "
+            f"{_escape_table(row.public_label)} | "
+            f"{row.target_value:.4f} | "
+            f"{row.lower_mass:.4f} | "
+            f"{row.upper_mass:.4f} | "
+            f"{row.mass_shift:.4f} | "
+            f"{_format_optional_float(row.lower_contribution)} | "
+            f"{_format_optional_float(row.upper_contribution)} | "
+            f"{_format_optional_float(row.contribution_shift)} |"
+        )
+    return lines
 
 
 def recommend_refinements(
@@ -2842,6 +3269,13 @@ def _format_key(columns: Sequence[str], key: tuple[Hashable, ...]) -> str:
     return ", ".join(
         f"{column}={value}" for column, value in zip(columns, key, strict=True)
     )
+
+
+def _format_grouped_key(columns: Sequence[str], key: Hashable) -> str:
+    key_tuple = key if isinstance(key, tuple) else (key,)
+    if len(key_tuple) == len(columns):
+        return _format_key(columns, key_tuple)
+    return repr(key)
 
 
 def _format_dual(row: ConstraintDual) -> str:

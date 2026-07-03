@@ -186,6 +186,10 @@ Reports include pre-solve data diagnostics for sparse cells, dropped mass,
 singleton public fibers, constant-target fibers, and skipped refinement
 candidates. See [docs/data-diagnostics.md](docs/data-diagnostics.md).
 
+When you need to inspect the actual lower-vs-upper endpoint worlds behind an
+ambiguity result, use `report.witness_report()` or `us.witness_report(...)` to
+see which hidden cells move while the public distribution stays fixed.
+
 ### 2. Run Robustness Checks
 
 Use `sensitivity_report(...)` when the conclusion should be checked across Q

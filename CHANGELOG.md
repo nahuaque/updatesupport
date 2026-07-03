@@ -55,6 +55,9 @@ All notable changes to `updatesupport` are documented here.
 - Added `q_fiber_support_floor(...)`, the first SCIP-backed mixed-integer Q
   preset, to require each public fiber to keep a minimum number of hidden cells
   active above a minimum share; `QSpec` now carries preset-specific `settings`.
+- Added `WitnessReport` and `witness_report(...)` for analyst-facing
+  lower-vs-upper adversarial witness reports that show which hidden cells move
+  between interval endpoints while the public distribution stays fixed.
 
 ### Fixed
 

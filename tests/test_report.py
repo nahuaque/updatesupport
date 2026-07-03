@@ -171,6 +171,79 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertIn("reduction_pct=100.0%", markdown)
         self.assertIn("## Analyst Notes", markdown)
 
+    def test_witness_report_shows_endpoint_hidden_composition_shift(self):
+        rows = [
+            {"public": "A", "hidden": "x", "target": 0.0, "weight": 30},
+            {"public": "A", "hidden": "y", "target": 1.0, "weight": 30},
+            {"public": "B", "hidden": "z", "target": 0.5, "weight": 40},
+        ]
+
+        report = us.public_descent_report(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            top=2,
+        )
+        witness = report.witness_report(top=2)
+        raw_witness = us.witness_report(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+        )
+        helper_witness = us.witness_report(report, top=1)
+        markdown = witness.to_markdown()
+        payload = witness.as_dict()
+        tables = witness.to_tables()
+
+        self.assertIsInstance(witness, us.WitnessReport)
+        self.assertAlmostEqual(raw_witness.ambiguity, witness.ambiguity)
+        self.assertEqual(helper_witness.top, 1)
+        self.assertTrue(witness.public_law_match)
+        self.assertTrue(witness.additive_contributions)
+        self.assertAlmostEqual(witness.observed_value, 0.5)
+        self.assertAlmostEqual(witness.lower_value, 0.2)
+        self.assertAlmostEqual(witness.upper_value, 0.8)
+        self.assertAlmostEqual(witness.ambiguity, 0.6)
+
+        fiber_by_label = {row.public_label: row for row in witness.fibers}
+        fiber_a = fiber_by_label["public=A"]
+        self.assertEqual(fiber_a.hidden_cells, 2)
+        self.assertAlmostEqual(fiber_a.lower_public_mass, 0.6)
+        self.assertAlmostEqual(fiber_a.upper_public_mass, 0.6)
+        self.assertAlmostEqual(fiber_a.public_mass_difference, 0.0)
+        self.assertAlmostEqual(fiber_a.total_abs_mass_shift, 1.2)
+        self.assertAlmostEqual(fiber_a.contribution_shift, 0.6)
+
+        cells = {row.state_label: row for row in witness.cells}
+        self.assertAlmostEqual(cells["public=A, hidden=x"].lower_mass, 0.6)
+        self.assertAlmostEqual(cells["public=A, hidden=x"].upper_mass, 0.0)
+        self.assertAlmostEqual(cells["public=A, hidden=x"].mass_shift, -0.6)
+        self.assertAlmostEqual(cells["public=A, hidden=y"].lower_mass, 0.0)
+        self.assertAlmostEqual(cells["public=A, hidden=y"].upper_mass, 0.6)
+        self.assertAlmostEqual(cells["public=A, hidden=y"].mass_shift, 0.6)
+        self.assertAlmostEqual(cells["public=A, hidden=y"].contribution_shift, 0.6)
+
+        self.assertIn("# Adversarial Witness Report", markdown)
+        self.assertIn("same public report cannot distinguish", markdown)
+        self.assertIn("Same public distribution: yes", markdown)
+        self.assertIn("## Public-Fiber Check", markdown)
+        self.assertIn("## Largest Hidden-Cell Shifts", markdown)
+        self.assertIn("| public=A | 2 | 0.6000 | 0.6000 | 0.0000 |", markdown)
+        self.assertEqual(payload["ambiguity"], witness.ambiguity)
+        self.assertIn("cell_shifts", payload)
+        self.assertEqual(
+            set(tables),
+            {"summary", "fiber_shifts", "cell_shifts"},
+        )
+        self.assertEqual(tables["summary"][0]["title"], "Adversarial Witness Report")
+        self.assertEqual(
+            tables["cell_shifts"][0]["state_label"], witness.cells[0].state_label
+        )
+
     def test_public_descent_report_explains_scip_mip_dual_absence(self):
         _require_cvxpy_solver("SCIP")
         rows = [

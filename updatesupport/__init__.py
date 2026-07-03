@@ -99,6 +99,9 @@ from .report import (
     SensitivityRow,
     SensitivitySummary,
     StatisticalUncertainty,
+    WitnessCellShift,
+    WitnessFiberShift,
+    WitnessReport,
     audit_effects,
     causal_reporting_stability,
     public_descent_report,
@@ -106,6 +109,7 @@ from .report import (
     recommend_refinements,
     recommend_refinements_sensitivity,
     sensitivity_report,
+    witness_report,
 )
 from .results import (
     AdequacyResult,
@@ -247,4 +251,8 @@ __all__ = [
     "UnsupportedTargetError",
     "validate_plugin",
     "Witness",
+    "WitnessCellShift",
+    "WitnessFiberShift",
+    "WitnessReport",
+    "witness_report",
 ]
