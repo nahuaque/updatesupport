@@ -333,6 +333,28 @@ second = grouped.problem.global_transport_modulus()
 `ParameterizedCvxpyEnvironments` caches the CVXPY problem and updates CVXPY
 parameters for the objective, public law, and preset radius.
 
+## Batched CVXPY Local Intervals
+
+`BatchedCvxpyEnvironments` solves multiple fixed-public-law local interval
+problems together with variables shaped like:
+
+```text
+q[scenario, state]
+```
+
+This is useful for sensitivity-grid rows that share the same retained hidden
+state space and public projection. The public API is:
+
+```python
+intervals = env.batched_local_transport(problem, public_laws)
+```
+
+The sensitivity-report workflow opts in when adjacent Q presets use
+`backend="batched_cvxpy"`. Current batched solves reuse existing one-dimensional
+CVXPY constraint builders per scenario; future tensor-specialized builders can
+make Wasserstein-style couplings use shapes such as
+`gamma[scenario, source_state, target_state]`.
+
 ## Theory Example: No Least Support
 
 The finite poset of adequate supports need not have a least element.

@@ -6,13 +6,16 @@ from dataclasses import dataclass
 from typing import Any, Hashable, Sequence
 
 from .data import DataDiagnostic, GroupedProblem, TabularTarget, from_dataframe
+from .environments import BatchedCvxpyEnvironments, CvxpyEnvironments
 from .metrics import target_description as describe_target
+from .problem import FiniteProblem
 from .presets import (
     QPreset,
     normalize_q_preset,
     q_bounded_shift,
     q_description,
     q_name,
+    resolve_q_environment,
 )
 from .results import ConstraintDual, TransportResult
 from .targets import ProcedureTarget
@@ -1361,6 +1364,104 @@ def _parameterized_sensitivity_key(preset: QPreset) -> tuple[Any, ...]:
     return (preset.name, cost_key)
 
 
+def _batched_sensitivity_key(q: Any) -> tuple[Any, ...] | None:
+    preset = normalize_q_preset(q)
+    if preset is None or preset.name not in _PARAMETERIZED_SENSITIVITY_PRESETS:
+        return None
+    backend = (preset.backend or "cvxpy").strip().lower()
+    if backend != "batched_cvxpy":
+        return None
+    if preset.name in {"tv_budget", "chi_square_budget", "kl_budget"}:
+        if preset.radius is None or float(preset.radius) == 0.0:
+            return None
+    return _parameterized_sensitivity_key(preset)
+
+
+def _batched_sensitivity_rows(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    weight: str | None,
+    min_cell_weight: float,
+    q_presets: Sequence[Any],
+    scenarios: Sequence[str],
+) -> tuple[SensitivityRow, ...]:
+    grouped = from_dataframe(
+        data,
+        public=public,
+        hidden=hidden,
+        target=target,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        q="saturated",
+    )
+    scenario_builders = []
+    for q_preset in q_presets:
+        preset = normalize_q_preset(q_preset)
+        if preset is None:
+            raise TypeError("batched sensitivity requires built-in Q presets")
+        runtime_preset = QPreset(
+            name=preset.name,
+            radius=preset.radius,
+            cost=preset.cost,
+            backend="cvxpy",
+        )
+        q_environment = resolve_q_environment(
+            runtime_preset,
+            public_law=grouped.public_law,
+            public_map=grouped.problem.public_map,
+            cell_weights=grouped.cell_weights,
+        )
+        if not isinstance(q_environment.environment, CvxpyEnvironments):
+            raise TypeError("batched sensitivity requires CVXPY-compatible Q presets")
+        scenario_builders.append(tuple(q_environment.environment.constraint_builders))
+
+    batched_env = BatchedCvxpyEnvironments(
+        fixed_public_law=grouped.public_law,
+        scenario_constraint_builders=tuple(scenario_builders),
+        scenario_names=tuple(scenarios),
+        name="batched sensitivity cvxpy",
+    )
+    problem = FiniteProblem(
+        states=grouped.problem.states,
+        public=grouped.problem.public_map,
+        estimand=grouped.problem.target_functional,
+        environments=batched_env,
+        tol=grouped.problem.tol,
+    )
+    intervals = batched_env.batched_local_transport(
+        problem,
+        [grouped.public_law for _ in q_presets],
+    )
+    observed = _observed_value(grouped)
+    rows = []
+    for scenario, q_preset, interval in zip(
+        scenarios,
+        q_presets,
+        intervals,
+        strict=True,
+    ):
+        rows.append(
+            SensitivityRow(
+                scenario=scenario,
+                q_name=q_name(q_preset),
+                q_description=q_description(q_preset),
+                min_cell_weight=float(min_cell_weight),
+                hidden_columns=tuple(hidden),
+                hidden_cells=len(problem.states),
+                public_cells=len(problem.public_values),
+                observed_value=observed,
+                lower=interval.lower,
+                upper=interval.upper,
+                ambiguity=interval.diameter,
+                public_adequate=interval.diameter <= problem.tol,
+            )
+        )
+    return tuple(rows)
+
+
 def _set_parameterized_radius(grouped: GroupedProblem, preset: QPreset) -> None:
     if preset.radius is None:
         raise ValueError(f"{preset.name} radius is required")
@@ -1810,7 +1911,64 @@ def sensitivity_report(
         hidden_columns_tuple = tuple(hidden_columns)
         for min_cell_weight in min_cell_weights:
             parameterized_grouped_cache: dict[tuple[Any, ...], GroupedProblem] = {}
-            for q_preset in q_grid:
+            q_index = 0
+            while q_index < len(q_grid):
+                batch_key = _batched_sensitivity_key(q_grid[q_index])
+                if batch_key is not None and _can_reuse_parameterized_problem(target):
+                    batch_end = q_index + 1
+                    while (
+                        batch_end < len(q_grid)
+                        and _batched_sensitivity_key(q_grid[batch_end]) == batch_key
+                    ):
+                        batch_end += 1
+                    if batch_end - q_index > 1:
+                        scenario_names = tuple(
+                            f"S{scenario_number}"
+                            for scenario_number in range(
+                                scenario_index + 1,
+                                scenario_index + 1 + (batch_end - q_index),
+                            )
+                        )
+                        try:
+                            rows.extend(
+                                _batched_sensitivity_rows(
+                                    repeatable_data,
+                                    public=public,
+                                    hidden=hidden_columns_tuple,
+                                    target=target,
+                                    weight=weight,
+                                    min_cell_weight=min_cell_weight,
+                                    q_presets=q_grid[q_index:batch_end],
+                                    scenarios=scenario_names,
+                                )
+                            )
+                            scenario_index += batch_end - q_index
+                            q_index = batch_end
+                            continue
+                        except Exception as exc:
+                            if raise_errors:
+                                raise
+                            for q_preset, scenario in zip(
+                                q_grid[q_index:batch_end],
+                                scenario_names,
+                                strict=True,
+                            ):
+                                rows.append(
+                                    SensitivityRow(
+                                        scenario=scenario,
+                                        q_name=q_name(q_preset),
+                                        q_description=q_description(q_preset),
+                                        min_cell_weight=float(min_cell_weight),
+                                        hidden_columns=hidden_columns_tuple,
+                                        status="error",
+                                        error=str(exc),
+                                    )
+                                )
+                            scenario_index += batch_end - q_index
+                            q_index = batch_end
+                            continue
+
+                q_preset = q_grid[q_index]
                 scenario_index += 1
                 scenario = f"S{scenario_index}"
                 try:
@@ -1852,6 +2010,7 @@ def sensitivity_report(
                                 hidden_columns=hidden_columns_tuple,
                             )
                         )
+                        q_index += 1
                         continue
                 except Exception as exc:
                     if raise_errors:
@@ -1867,6 +2026,7 @@ def sensitivity_report(
                             error=str(exc),
                         )
                     )
+                    q_index += 1
                     continue
 
                 grouped = report.grouped
@@ -1886,6 +2046,7 @@ def sensitivity_report(
                         public_adequate=report.public_adequate,
                     )
                 )
+                q_index += 1
 
     return SensitivityReport(rows=tuple(rows), title=title, row_count=row_count)
 

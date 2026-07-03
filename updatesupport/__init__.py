@@ -20,6 +20,7 @@ from .dowhy import (
     dowhy_refutation_from_report,
 )
 from .environments import (
+    BatchedCvxpyEnvironments,
     CvxpyEnvironments,
     CvxpyConstraintMetadata,
     CvxpyError,
@@ -156,6 +157,7 @@ __all__ = [
     "EstimatorAdapterResult",
     "audit_effects",
     "audit_dowhy_effects",
+    "BatchedCvxpyEnvironments",
     "dowhy_refutation_from_report",
     "FiniteEnvironments",
     "FiniteProblem",

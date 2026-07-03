@@ -7,6 +7,7 @@ from math import isfinite
 from typing import Any, Hashable, Mapping, Sequence
 
 from .environments import (
+    BatchedCvxpyEnvironments,
     CvxpyEnvironments,
     Environment,
     FiniteEnvironments,
@@ -157,7 +158,8 @@ def resolve_q_environment(
                     "the observed hidden distribution <= 0"
                 ),
             )
-        if _backend_name(preset, default="cvxpy") == "parameterized_cvxpy":
+        backend = _backend_name(preset, default="cvxpy")
+        if backend == "parameterized_cvxpy":
             return QEnvironment(
                 environment=ParameterizedCvxpyEnvironments(
                     fixed_public_law=public_law,
@@ -165,6 +167,20 @@ def resolve_q_environment(
                         _tv_parameterized_constraint_builder(cell_weights),
                     ),
                     parameter_values={"radius": radius},
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=(
+                    "fixed observed public law with total variation distance from "
+                    f"the observed hidden distribution <= {radius:g}"
+                ),
+            )
+        if backend == "batched_cvxpy":
+            return QEnvironment(
+                environment=BatchedCvxpyEnvironments(
+                    fixed_public_law=public_law,
+                    constraint_builders=(_tv_constraint_builder(cell_weights, radius),),
                     name=q_name(preset),
                 ),
                 preset=preset,
@@ -200,7 +216,8 @@ def resolve_q_environment(
                     "from the observed hidden distribution <= 0"
                 ),
             )
-        if _backend_name(preset, default="cvxpy") == "parameterized_cvxpy":
+        backend = _backend_name(preset, default="cvxpy")
+        if backend == "parameterized_cvxpy":
             return QEnvironment(
                 environment=ParameterizedCvxpyEnvironments(
                     fixed_public_law=public_law,
@@ -208,6 +225,22 @@ def resolve_q_environment(
                         _chi_square_parameterized_constraint_builder(cell_weights),
                     ),
                     parameter_values={"radius": radius},
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=(
+                    "fixed observed public law with Pearson chi-square divergence "
+                    f"from the observed hidden distribution <= {radius:g}"
+                ),
+            )
+        if backend == "batched_cvxpy":
+            return QEnvironment(
+                environment=BatchedCvxpyEnvironments(
+                    fixed_public_law=public_law,
+                    constraint_builders=(
+                        _chi_square_constraint_builder(cell_weights, radius),
+                    ),
                     name=q_name(preset),
                 ),
                 preset=preset,
@@ -245,7 +278,8 @@ def resolve_q_environment(
                     "observed hidden distribution <= 0"
                 ),
             )
-        if _backend_name(preset, default="cvxpy") == "parameterized_cvxpy":
+        backend = _backend_name(preset, default="cvxpy")
+        if backend == "parameterized_cvxpy":
             return QEnvironment(
                 environment=ParameterizedCvxpyEnvironments(
                     fixed_public_law=public_law,
@@ -253,6 +287,20 @@ def resolve_q_environment(
                         _kl_parameterized_constraint_builder(cell_weights),
                     ),
                     parameter_values={"radius": radius},
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=(
+                    "fixed observed public law with KL divergence from the observed "
+                    f"hidden distribution <= {radius:g}"
+                ),
+            )
+        if backend == "batched_cvxpy":
+            return QEnvironment(
+                environment=BatchedCvxpyEnvironments(
+                    fixed_public_law=public_law,
+                    constraint_builders=(_kl_constraint_builder(cell_weights, radius),),
                     name=q_name(preset),
                 ),
                 preset=preset,
@@ -281,7 +329,8 @@ def resolve_q_environment(
         radius = _wasserstein_radius(preset)
         if preset.cost is None:
             raise ValueError("q_wasserstein requires an explicit cost matrix")
-        if _backend_name(preset, default="cvxpy") == "parameterized_cvxpy":
+        backend = _backend_name(preset, default="cvxpy")
+        if backend == "parameterized_cvxpy":
             return QEnvironment(
                 environment=ParameterizedCvxpyEnvironments(
                     fixed_public_law=public_law,
@@ -292,6 +341,26 @@ def resolve_q_environment(
                         ),
                     ),
                     parameter_values={"radius": radius},
+                    name=q_name(preset),
+                ),
+                preset=preset,
+                name=q_name(preset),
+                description=(
+                    "fixed observed public law with Wasserstein cost from the "
+                    f"observed hidden distribution <= {radius:g}"
+                ),
+            )
+        if backend == "batched_cvxpy":
+            return QEnvironment(
+                environment=BatchedCvxpyEnvironments(
+                    fixed_public_law=public_law,
+                    constraint_builders=(
+                        _wasserstein_constraint_builder(
+                            cell_weights,
+                            preset.cost,
+                            radius,
+                        ),
+                    ),
                     name=q_name(preset),
                 ),
                 preset=preset,

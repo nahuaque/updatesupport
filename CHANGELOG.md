@@ -13,6 +13,9 @@ All notable changes to `updatesupport` are documented here.
   `certify_public_representation(...)` to turn frontier search into a
   pass/fail/inconclusive review artifact with selected representation,
   assumptions, limitations, Markdown output, and structured exports.
+- Added `BatchedCvxpyEnvironments` plus `backend="batched_cvxpy"` for
+  CVXPY-backed Q presets, enabling compatible sensitivity-grid rows to solve
+  local intervals with scenario-by-state CVXPY variables.
 - Added `as_dict()` methods for public-descent and sensitivity reports so
   executed audit specs can emit structured report payloads.
 - Added structured export helpers and report methods: `to_json()`,

@@ -1857,6 +1857,307 @@ class CvxpyEnvironments:
 
 
 @dataclass(frozen=True)
+class BatchedCvxpyEnvironments(CvxpyEnvironments):
+    """CVXPY environment with batched local interval solves.
+
+    ``batched_local_transport`` solves independent fixed-public-law lower/upper
+    endpoint problems with variables shaped ``(scenario, state)``. Existing
+    one-dimensional custom CVXPY constraint builders are applied to each
+    scenario slice, so current TV, chi-square, KL, and Wasserstein presets can
+    be reused before specialized tensor builders are needed.
+    """
+
+    scenario_constraint_builders: Sequence[Sequence[CvxpyConstraintBuilder]] | None = (
+        None
+    )
+    scenario_names: Sequence[str] = ()
+    name: str = "batched-cvxpy"
+
+    def batched_local_transport(
+        self,
+        problem,
+        public_laws: Sequence[Mapping[Hashable, float]],
+    ) -> tuple[TransportResult, ...]:
+        if _is_nonlinear_ratio_problem(problem):
+            raise UnsupportedTargetError(
+                "BatchedCvxpyEnvironments does not yet support non-linear "
+                "RatioTarget solves."
+            )
+        problem._require_linear_target(
+            "BatchedCvxpyEnvironments.batched_local_transport"
+        )
+        laws = tuple(
+            problem._coerce_public_law(public_law) for public_law in public_laws
+        )
+        if not laws:
+            return ()
+        fixed_public_law = self._fixed_public_law(problem)
+        if fixed_public_law is not None:
+            for public_law in laws:
+                if not self._same_public_law(problem, fixed_public_law, public_law):
+                    raise ValueError(
+                        "requested public law conflicts with fixed_public_law"
+                    )
+
+        import numpy as np
+
+        cp = self._cvxpy()
+        scenario_count = len(laws)
+        state_count = len(problem.states)
+        q_lower = cp.Variable((scenario_count, state_count))
+        q_upper = cp.Variable((scenario_count, state_count))
+        records = [
+            *self._batched_labeled_constraints_for_variable(
+                cp,
+                problem,
+                q_lower,
+                variable="q_lower",
+                public_laws=laws,
+            ),
+            *self._batched_labeled_constraints_for_variable(
+                cp,
+                problem,
+                q_upper,
+                variable="q_upper",
+                public_laws=laws,
+            ),
+        ]
+        objective = np.array(self._estimand_vector(problem), dtype=float)
+        cvx_problem = cp.Problem(
+            cp.Maximize(cp.sum((q_upper - q_lower) @ objective)),
+            [record.constraint for record in records],
+        )
+        self._solve_problem(cvx_problem)
+
+        lower_values = np.asarray(q_lower.value, dtype=float)
+        upper_values = np.asarray(q_upper.value, dtype=float)
+        duals = self._constraint_duals(records, solve="batched-local")
+        results = []
+        for scenario_index, public_law in enumerate(laws):
+            lower_vector = self._clean_vector(problem, lower_values[scenario_index])
+            upper_vector = self._clean_vector(problem, upper_values[scenario_index])
+            lower = float(np.dot(objective, np.array(lower_vector, dtype=float)))
+            upper = float(np.dot(objective, np.array(upper_vector, dtype=float)))
+            if lower > upper and abs(lower - upper) <= problem.tol:
+                lower = upper = 0.5 * (lower + upper)
+            results.append(
+                TransportResult(
+                    lower=lower,
+                    upper=upper,
+                    diameter=max(0.0, upper - lower),
+                    public_law=public_law,
+                    q_lower=problem._distribution_from_vector(lower_vector),
+                    q_upper=problem._distribution_from_vector(upper_vector),
+                    duals=self._scenario_duals(duals, scenario_index),
+                )
+            )
+        return tuple(results)
+
+    def _batched_labeled_constraints_for_variable(
+        self,
+        cp,
+        problem,
+        q,
+        *,
+        variable: str,
+        public_laws: Sequence[Mapping[Hashable, float]],
+    ) -> list[CvxpyConstraintMetadata]:
+        scenario_count = len(public_laws)
+        records = [
+            cvxpy_constraint(
+                q >= 0,
+                name="batched state probability lower bound",
+                kind="lower_bound",
+                sense=">=",
+                variable=variable,
+                states=tuple(
+                    state for _ in range(scenario_count) for state in problem.states
+                ),
+            ),
+            cvxpy_constraint(
+                cp.sum(q, axis=1) == 1,
+                name="batched probability normalization",
+                kind="normalization",
+                sense="==",
+                variable=variable,
+            ),
+        ]
+        records.extend(
+            self._batched_linear_constraint_records(
+                cp,
+                problem,
+                q,
+                variable=variable,
+            )
+        )
+        records.extend(
+            self._batched_public_law_constraint_records(
+                cp,
+                problem,
+                q,
+                public_laws,
+                variable=variable,
+            )
+        )
+        records.extend(
+            self._batched_custom_constraint_records(
+                cp,
+                problem,
+                q,
+                variable=variable,
+                scenario_count=scenario_count,
+            )
+        )
+        return records
+
+    def _batched_linear_constraint_records(
+        self,
+        cp,
+        problem,
+        q,
+        *,
+        variable: str,
+    ) -> list[CvxpyConstraintMetadata]:
+        import numpy as np
+
+        records = []
+        for i, constraint in enumerate(self._normalized_constraints()):
+            vector = np.array(
+                problem._coerce_vector(constraint.coefficients), dtype=float
+            )
+            expr = q @ vector
+            rhs = float(constraint.rhs)
+            if constraint.sense == "<=":
+                cvx_constraint = expr <= rhs
+            elif constraint.sense == ">=":
+                cvx_constraint = expr >= rhs
+            elif constraint.sense == "==":
+                cvx_constraint = expr == rhs
+            else:
+                raise ValueError(f"unsupported constraint sense: {constraint.sense!r}")
+            records.append(
+                cvxpy_constraint(
+                    cvx_constraint,
+                    name=constraint.name or f"batched linear constraint {i}",
+                    kind="linear",
+                    sense=constraint.sense,
+                    variable=variable,
+                )
+            )
+        return records
+
+    def _batched_public_law_constraint_records(
+        self,
+        cp,
+        problem,
+        q,
+        public_laws: Sequence[Mapping[Hashable, float]],
+        *,
+        variable: str,
+    ) -> list[CvxpyConstraintMetadata]:
+        import numpy as np
+
+        public_indicator = np.array(
+            [
+                [
+                    1.0 if problem.public_map[state] == public_value else 0.0
+                    for state in problem.states
+                ]
+                for public_value in problem.public_values
+            ],
+            dtype=float,
+        )
+        public_array = np.array(
+            [
+                [
+                    float(public_law[public_value])
+                    for public_value in problem.public_values
+                ]
+                for public_law in public_laws
+            ],
+            dtype=float,
+        )
+        return [
+            cvxpy_constraint(
+                q @ public_indicator.T == public_array,
+                name="batched public-law equality",
+                kind="public_law",
+                sense="==",
+                variable=variable,
+                public_values=tuple(
+                    public_value
+                    for _ in range(len(public_laws))
+                    for public_value in problem.public_values
+                ),
+            )
+        ]
+
+    def _batched_custom_constraint_records(
+        self,
+        cp,
+        problem,
+        q,
+        *,
+        variable: str,
+        scenario_count: int,
+    ) -> list[CvxpyConstraintMetadata]:
+        state_index = {state: i for i, state in enumerate(problem.states)}
+        states = tuple(problem.states)
+        records = []
+        for scenario_index, builders in enumerate(
+            self._builders_by_scenario(scenario_count)
+        ):
+            scenario_variable = f"{variable}[{scenario_index}]"
+            for i, builder in enumerate(builders):
+                built = builder(cp, q[scenario_index, :], states, state_index)
+                records.extend(
+                    self._coerce_constraint_records(
+                        built,
+                        default_name=(
+                            f"scenario {scenario_index} custom constraint builder {i}"
+                        ),
+                        default_kind="custom",
+                        variable=scenario_variable,
+                    )
+                )
+        return records
+
+    def _builders_by_scenario(
+        self,
+        scenario_count: int,
+    ) -> tuple[tuple[CvxpyConstraintBuilder, ...], ...]:
+        if self.scenario_constraint_builders is None:
+            return tuple(tuple(self.constraint_builders) for _ in range(scenario_count))
+        builders = tuple(
+            tuple(builder_group) for builder_group in self.scenario_constraint_builders
+        )
+        if len(builders) != scenario_count:
+            raise ValueError(
+                "scenario_constraint_builders must have one entry per scenario"
+            )
+        return builders
+
+    def _scenario_duals(
+        self,
+        duals: Sequence[ConstraintDual],
+        scenario_index: int,
+    ) -> tuple[ConstraintDual, ...]:
+        scenario_suffix = f"[{scenario_index}]"
+        selected = []
+        for dual in duals:
+            if (
+                dual.index is not None
+                and dual.index
+                and dual.index[0] == scenario_index
+            ):
+                selected.append(dual)
+                continue
+            if dual.variable is not None and dual.variable.endswith(scenario_suffix):
+                selected.append(dual)
+        return tuple(selected)
+
+
+@dataclass(frozen=True)
 class _ParameterizedCvxpySingleProblem:
     problem: Any
     q: Any

@@ -45,6 +45,88 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.upper, 0.75, places=6)
         self.assertAlmostEqual(interval.diameter, 0.75, places=6)
 
+    def test_batched_cvxpy_solves_multiple_public_laws(self):
+        _require_cvxpy()
+
+        env = us.BatchedCvxpyEnvironments()
+        problem = us.FiniteProblem(
+            states=["a", "b", "c"],
+            public={"a": "x", "b": "x", "c": "y"},
+            estimand={"a": 0.0, "b": 1.0, "c": 2.0},
+            environments=env,
+        )
+
+        intervals = env.batched_local_transport(
+            problem,
+            [
+                {"x": 1.0, "y": 0.0},
+                {"x": 0.5, "y": 0.5},
+            ],
+        )
+
+        self.assertEqual(len(intervals), 2)
+        self.assertAlmostEqual(intervals[0].lower, 0.0, places=6)
+        self.assertAlmostEqual(intervals[0].upper, 1.0, places=6)
+        self.assertAlmostEqual(intervals[1].lower, 1.0, places=6)
+        self.assertAlmostEqual(intervals[1].upper, 1.5, places=6)
+        self.assertTrue(intervals[0].duals)
+        self.assertTrue(
+            all(row.index is None or row.index[0] == 0 for row in intervals[0].duals)
+        )
+        self.assertTrue(
+            all(row.index is None or row.index[0] == 1 for row in intervals[1].duals)
+        )
+
+    def test_batched_cvxpy_backend_can_be_selected_from_q_preset(self):
+        _require_cvxpy()
+
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_tv_budget(0.15, backend="batched_cvxpy"),
+        )
+
+        interval = grouped.problem.global_transport_modulus()
+
+        self.assertIsInstance(grouped.problem.environments, us.BatchedCvxpyEnvironments)
+        self.assertAlmostEqual(interval.lower, 0.35, places=6)
+        self.assertAlmostEqual(interval.upper, 0.65, places=6)
+
+    def test_sensitivity_report_routes_batched_cvxpy_presets_together(self):
+        _require_cvxpy()
+
+        calls = []
+        original = us.BatchedCvxpyEnvironments.batched_local_transport
+
+        def spy(self, problem, public_laws):
+            calls.append(len(public_laws))
+            return original(self, problem, public_laws)
+
+        with mock.patch.object(
+            us.BatchedCvxpyEnvironments,
+            "batched_local_transport",
+            spy,
+        ):
+            report = us.sensitivity_report(
+                _rows(),
+                public=["PUBLIC"],
+                hidden=["PUBLIC", "HIDDEN"],
+                target="Y",
+                weight="W",
+                q_presets=[
+                    us.q_tv_budget(0.15, backend="batched_cvxpy"),
+                    us.q_tv_budget(0.30, backend="batched_cvxpy"),
+                ],
+            )
+
+        self.assertEqual(calls, [2])
+        self.assertEqual(len(report.rows), 2)
+        self.assertAlmostEqual(report.rows[0].ambiguity, 0.30, places=6)
+        self.assertAlmostEqual(report.rows[1].ambiguity, 0.60, places=6)
+
     def test_dqcp_ratio_target_solves_fixed_public_interval(self):
         _require_cvxpy()
 

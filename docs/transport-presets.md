@@ -432,6 +432,29 @@ compatible TV, chi-square, KL, and Wasserstein rows. They still recompile when a
 scenario changes the hidden state space, minimum retained cell weight, public
 projection, or Wasserstein cost matrix.
 
+## Batched CVXPY Sweeps
+
+For sensitivity grids where adjacent scenarios share the same retained state
+space and Q family, use the batched backend:
+
+```python
+report = us.sensitivity_report(
+    rows,
+    public=["age_band", "sex"],
+    hidden=["age_band", "sex", "occupation"],
+    target="target",
+    q_presets=[
+        us.q_tv_budget(0.10, backend="batched_cvxpy"),
+        us.q_tv_budget(0.20, backend="batched_cvxpy"),
+    ],
+)
+```
+
+This uses CVXPY variables shaped like `q[scenario, state]` to solve contiguous
+compatible scenarios in one optimization problem. The first slice reuses the
+existing one-dimensional Q builders per scenario, so it is conservative and
+compatible with the current TV, chi-square, KL, and Wasserstein presets.
+
 ## Preset Aliases
 
 The compiler accepts both helper functions and string aliases:
