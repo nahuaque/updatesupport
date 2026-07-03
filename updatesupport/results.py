@@ -98,6 +98,50 @@ class TransportResult:
 
 
 @dataclass(frozen=True)
+class UncertainLinearConfidenceCoreResult:
+    """Common confidence-core interval for an uncertain linear target.
+
+    The lower endpoint is the maximum lower confidence bound over admissible
+    hidden compositions. The upper endpoint is the minimum upper confidence
+    bound. If ``lower > upper``, the composition-specific confidence bands have
+    no common overlap and ``empty_gap`` records the separation.
+    """
+
+    lower: float
+    upper: float
+    diameter: float
+    empty_gap: float
+    public_law: Mapping[Hashable, float]
+    q_lower: Distribution
+    q_upper: Distribution
+    duals: tuple[ConstraintDual, ...] = ()
+    method: str = "socp_confidence_core"
+
+    @property
+    def nonempty(self) -> bool:
+        return self.empty_gap <= 0.0
+
+    @property
+    def empty(self) -> bool:
+        return not self.nonempty
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "method": self.method,
+            "lower": self.lower,
+            "upper": self.upper,
+            "diameter": self.diameter,
+            "empty_gap": self.empty_gap,
+            "nonempty": self.nonempty,
+            "empty": self.empty,
+            "public_law": dict(self.public_law),
+            "q_lower": dict(self.q_lower),
+            "q_upper": dict(self.q_upper),
+            "duals": [row.as_dict() for row in self.duals],
+        }
+
+
+@dataclass(frozen=True)
 class CardinalGapResult:
     max_gap_bits: float
     total_gap_bits: float

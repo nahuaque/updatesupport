@@ -7,8 +7,18 @@ from math import isclose
 from typing import Any, Callable, Hashable, Mapping, Protocol, Sequence
 
 from .partition import Partition
-from .results import AdequacyResult, ConstraintDual, TransportResult, Witness
-from .targets import MomentTransformTarget, UnsupportedTargetError
+from .results import (
+    AdequacyResult,
+    ConstraintDual,
+    TransportResult,
+    UncertainLinearConfidenceCoreResult,
+    Witness,
+)
+from .targets import (
+    MomentTransformTarget,
+    UncertainLinearTarget,
+    UnsupportedTargetError,
+)
 
 
 class LPError(RuntimeError):
@@ -1384,6 +1394,41 @@ class CvxpyEnvironments:
             duals=self._constraint_duals(records, solve=solve),
         )
 
+    def uncertain_linear_confidence_core(
+        self,
+        problem,
+        *,
+        public_law: Mapping[Hashable, float],
+    ) -> UncertainLinearConfidenceCoreResult:
+        """Solve the SOCP common confidence core for an uncertain linear target."""
+
+        target = problem.target_functional
+        if not isinstance(target, UncertainLinearTarget):
+            raise TypeError("problem target is not an UncertainLinearTarget")
+        p = problem._coerce_public_law(public_law)
+        lower_result = self._solve_uncertain_linear_confidence_bound(
+            problem,
+            public_law=p,
+            bound="lower",
+        )
+        upper_result = self._solve_uncertain_linear_confidence_bound(
+            problem,
+            public_law=p,
+            bound="upper",
+        )
+        lower = lower_result.value
+        upper = upper_result.value
+        return UncertainLinearConfidenceCoreResult(
+            lower=lower,
+            upper=upper,
+            diameter=max(0.0, upper - lower),
+            empty_gap=max(0.0, lower - upper),
+            public_law=p,
+            q_lower=problem._distribution_from_vector(lower_result.vector),
+            q_upper=problem._distribution_from_vector(upper_result.vector),
+            duals=lower_result.duals + upper_result.duals,
+        )
+
     def _ratio_local_transport(
         self,
         problem,
@@ -1437,6 +1482,76 @@ class CvxpyEnvironments:
             public_law=public_law,
         )
         return result.vector, result.value
+
+    def _solve_uncertain_linear_confidence_bound(
+        self,
+        problem,
+        *,
+        public_law: Mapping[Hashable, float],
+        bound: str,
+    ) -> _CvxpySolveResult:
+        import numpy as np
+
+        target = problem.target_functional
+        if not isinstance(target, UncertainLinearTarget):
+            raise TypeError("problem target is not an UncertainLinearTarget")
+        if bound not in {"lower", "upper"}:
+            raise ValueError("bound must be 'lower' or 'upper'")
+
+        cp = self._cvxpy()
+        q = cp.Variable(len(problem.states))
+        means = np.array(
+            [target.value(state) for state in problem.states],
+            dtype=float,
+        )
+        standard_errors = np.array(
+            [target.standard_error(state) for state in problem.states],
+            dtype=float,
+        )
+        mean_expr = cp.sum(cp.multiply(means, q))
+        standard_error_expr = cp.norm(cp.multiply(standard_errors, q), 2)
+        confidence_expr = mean_expr - (
+            target.confidence_multiplier * standard_error_expr
+        )
+        if bound == "upper":
+            confidence_expr = mean_expr + (
+                target.confidence_multiplier * standard_error_expr
+            )
+        records = self._labeled_constraints_for_variable(
+            cp,
+            problem,
+            q,
+            variable="q",
+            public_law=public_law,
+        )
+        cvx_problem = cp.Problem(
+            cp.Maximize(confidence_expr)
+            if bound == "lower"
+            else cp.Minimize(confidence_expr),
+            [record.constraint for record in records],
+        )
+        if not cvx_problem.is_dcp():
+            raise CvxpyError(
+                "UncertainLinearTarget confidence-core endpoint is not DCP. "
+                "The lower endpoint should be a concave maximization and the "
+                "upper endpoint should be a convex minimization."
+            )
+        self._solve_problem(cvx_problem)
+        vector = self._clean_vector(problem, q.value)
+        mean = float(np.dot(means, vector))
+        standard_error = target.standard_error_for_distribution(
+            problem.states,
+            vector,
+        )
+        sign = -1.0 if bound == "lower" else 1.0
+        return _CvxpySolveResult(
+            vector=vector,
+            value=mean + sign * target.confidence_multiplier * standard_error,
+            duals=self._constraint_duals(
+                records,
+                solve=f"confidence_core_{bound}",
+            ),
+        )
 
     def _solve_single_result(
         self,
@@ -2650,6 +2765,95 @@ class ParameterizedCvxpyEnvironments(CvxpyEnvironments):
             q_lower=q_distribution,
             q_upper=q_distribution,
             duals=self._constraint_duals(records, solve=solve),
+        )
+
+    def uncertain_linear_confidence_core(
+        self,
+        problem,
+        *,
+        public_law: Mapping[Hashable, float],
+    ) -> UncertainLinearConfidenceCoreResult:
+        effective_public_law = self._effective_public_law(problem, public_law)
+        if effective_public_law is None:
+            raise ValueError("public_law is required for confidence-core solving")
+        return super().uncertain_linear_confidence_core(
+            problem,
+            public_law=effective_public_law,
+        )
+
+    def _solve_uncertain_linear_confidence_bound(
+        self,
+        problem,
+        *,
+        public_law: Mapping[Hashable, float],
+        bound: str,
+    ) -> _CvxpySolveResult:
+        import numpy as np
+
+        target = problem.target_functional
+        if not isinstance(target, UncertainLinearTarget):
+            raise TypeError("problem target is not an UncertainLinearTarget")
+        if bound not in {"lower", "upper"}:
+            raise ValueError("bound must be 'lower' or 'upper'")
+
+        cp = self._cvxpy()
+        q = cp.Variable(len(problem.states))
+        public_law_parameter = cp.Parameter(len(problem.public_values))
+        extra_parameters: dict[str, Any] = {}
+        records = self._parameterized_labeled_constraints_for_variable(
+            cp,
+            problem,
+            q,
+            variable="q",
+            public_law=public_law_parameter,
+            extra_parameters=extra_parameters,
+        )
+        means = np.array(
+            [target.value(state) for state in problem.states],
+            dtype=float,
+        )
+        standard_errors = np.array(
+            [target.standard_error(state) for state in problem.states],
+            dtype=float,
+        )
+        mean_expr = cp.sum(cp.multiply(means, q))
+        standard_error_expr = cp.norm(cp.multiply(standard_errors, q), 2)
+        confidence_expr = mean_expr - (
+            target.confidence_multiplier * standard_error_expr
+        )
+        if bound == "upper":
+            confidence_expr = mean_expr + (
+                target.confidence_multiplier * standard_error_expr
+            )
+        cvx_problem = cp.Problem(
+            cp.Maximize(confidence_expr)
+            if bound == "lower"
+            else cp.Minimize(confidence_expr),
+            [record.constraint for record in records],
+        )
+        if not cvx_problem.is_dcp():
+            raise CvxpyError(
+                "UncertainLinearTarget confidence-core endpoint is not DCP. "
+                "The lower endpoint should be a concave maximization and the "
+                "upper endpoint should be a convex minimization."
+            )
+        public_law_parameter.value = self._public_law_array(problem, public_law)
+        self._set_extra_parameter_values(extra_parameters)
+        self._solve_problem(cvx_problem)
+        vector = self._clean_vector(problem, q.value)
+        mean = float(np.dot(means, vector))
+        standard_error = target.standard_error_for_distribution(
+            problem.states,
+            vector,
+        )
+        sign = -1.0 if bound == "lower" else 1.0
+        return _CvxpySolveResult(
+            vector=vector,
+            value=mean + sign * target.confidence_multiplier * standard_error,
+            duals=self._constraint_duals(
+                records,
+                solve=f"confidence_core_{bound}",
+            ),
         )
 
     def _solve_single(

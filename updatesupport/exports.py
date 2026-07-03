@@ -182,6 +182,14 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
                 "estimator_uncertainty_conservative_diameter": None
                 if report.estimator_uncertainty is None
                 else report.estimator_uncertainty.conservative_diameter,
+                "estimator_uncertainty_confidence_core_nonempty": None
+                if report.estimator_uncertainty is None
+                or report.estimator_uncertainty.confidence_core is None
+                else report.estimator_uncertainty.confidence_core.nonempty,
+                "estimator_uncertainty_confidence_core_empty_gap": None
+                if report.estimator_uncertainty is None
+                or report.estimator_uncertainty.confidence_core is None
+                else report.estimator_uncertainty.confidence_core.empty_gap,
                 "diagnostic_count": len(report.diagnostics),
                 "diagnostic_warning_count": sum(
                     1 for row in report.diagnostics if row.severity == "warning"
@@ -197,6 +205,10 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
     }
     if report.estimator_uncertainty is not None:
         tables["estimator_uncertainty"] = (report.estimator_uncertainty.as_dict(),)
+        if report.estimator_uncertainty.confidence_core is not None:
+            tables["estimator_uncertainty_confidence_core"] = (
+                report.estimator_uncertainty.confidence_core.as_dict(),
+            )
     return tables
 
 

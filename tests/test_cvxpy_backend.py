@@ -881,6 +881,102 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.upper, 0.64142136, places=5)
         self.assertAlmostEqual(interval.diameter, 0.28284271, places=5)
 
+    def test_uncertain_linear_confidence_core_solves_socp(self):
+        _require_cvxpy()
+
+        rows = [
+            {"PUBLIC": "A", "HIDDEN": "x", "Y": 0.0, "SE": 0.1, "W": 3.0},
+            {"PUBLIC": "A", "HIDDEN": "y", "Y": 1.0, "SE": 0.2, "W": 3.0},
+            {"PUBLIC": "B", "HIDDEN": "z", "Y": 0.5, "SE": 0.3, "W": 4.0},
+        ]
+        grouped = us.from_dataframe(
+            rows,
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            target_standard_error="SE",
+            weight="W",
+            q=us.q_l2_budget(0.2),
+            target_confidence_multiplier=1.0,
+        )
+
+        core = grouped.problem.uncertain_linear_confidence_core(
+            public_law=grouped.public_law
+        )
+
+        self.assertIsInstance(core, us.UncertainLinearConfidenceCoreResult)
+        self.assertTrue(core.empty)
+        self.assertAlmostEqual(core.lower, 0.49160285, places=5)
+        self.assertAlmostEqual(core.upper, 0.49031480, places=5)
+        self.assertAlmostEqual(core.empty_gap, 0.00128805, places=5)
+        self.assertAlmostEqual(core.q_lower[("A", "x")], 0.15857864, places=5)
+        self.assertAlmostEqual(core.q_lower[("A", "y")], 0.44142136, places=5)
+        self.assertAlmostEqual(core.q_upper[("A", "x")], 0.44142136, places=5)
+        self.assertAlmostEqual(core.q_upper[("A", "y")], 0.15857864, places=5)
+        self.assertIn("l2_budget", {row.kind for row in core.duals})
+
+        report = us.public_descent_report(
+            rows,
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            target_standard_error="SE",
+            weight="W",
+            q=us.q_l2_budget(0.2),
+            target_confidence_multiplier=1.0,
+        )
+        markdown = report.to_markdown()
+        tables = report.to_tables()
+
+        self.assertIsNotNone(report.estimator_uncertainty.confidence_core)
+        self.assertIn("SOCP confidence core", markdown)
+        self.assertIn("estimator_uncertainty_confidence_core", tables)
+        self.assertTrue(tables["estimator_uncertainty_confidence_core"][0]["empty"])
+
+    def test_parameterized_uncertain_linear_confidence_core_matches_standard(self):
+        _require_cvxpy()
+
+        rows = [
+            {"PUBLIC": "A", "HIDDEN": "x", "Y": 0.0, "SE": 0.1, "W": 3.0},
+            {"PUBLIC": "A", "HIDDEN": "y", "Y": 1.0, "SE": 0.2, "W": 3.0},
+            {"PUBLIC": "B", "HIDDEN": "z", "Y": 0.5, "SE": 0.3, "W": 4.0},
+        ]
+        standard = us.from_dataframe(
+            rows,
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            target_standard_error="SE",
+            weight="W",
+            q=us.q_l2_budget(0.2),
+            target_confidence_multiplier=1.0,
+        )
+        parameterized = us.from_dataframe(
+            rows,
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            target_standard_error="SE",
+            weight="W",
+            q=us.q_l2_budget(0.2, backend="parameterized_cvxpy"),
+            target_confidence_multiplier=1.0,
+        )
+
+        standard_core = standard.problem.uncertain_linear_confidence_core(
+            public_law=standard.public_law
+        )
+        parameterized_core = parameterized.problem.uncertain_linear_confidence_core(
+            public_law=parameterized.public_law
+        )
+
+        self.assertAlmostEqual(parameterized_core.lower, standard_core.lower, places=5)
+        self.assertAlmostEqual(parameterized_core.upper, standard_core.upper, places=5)
+        self.assertAlmostEqual(
+            parameterized_core.empty_gap,
+            standard_core.empty_gap,
+            places=5,
+        )
+
     def test_mahalanobis_budget_with_identity_matches_l2_budget(self):
         _require_cvxpy()
 

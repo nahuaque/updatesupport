@@ -370,6 +370,22 @@ and target-estimation error. It is a transparent reporting adjustment that keeps
 statistical uncertainty and hidden-composition ambiguity visible as separate
 quantities.
 
+When the selected Q backend is CVXPY-compatible, the report may also include an
+SOCP confidence-core diagnostic:
+
+```text
+core_lower = sup { mu(q) - z se(q) : q in Q, pi#q = p }
+core_upper = inf { mu(q) + z se(q) : q in Q, pi#q = p }
+```
+
+The lower-core problem is a concave maximization and the upper-core problem is a
+convex minimization, so both are disciplined convex/SOCP-compatible. This
+diagnostic computes the intersection of all composition-specific
+estimator-adjusted confidence bands. It is not an outer partial-identification
+interval. A nonempty core means every admissible hidden composition shares a
+common estimator-adjusted value range. An empty core means hidden-composition
+shift can separate the estimator-adjusted bands.
+
 The `min_cell_weight` option changes the retained finite support. That can make
 reports less sensitive to one-off sparse cells, but it also changes the
 estimand to the retained support. Data diagnostics report dropped cells,
@@ -534,7 +550,8 @@ The test suite exercises the current mathematical contract directly:
 - affine moment-transform targets and capability guardrails for nonlinear
   moment transforms,
 - uncertain linear targets, including hidden-cell standard-error aggregation
-  and estimator-uncertainty-aware report intervals,
+  estimator-uncertainty-aware report intervals, and SOCP confidence-core
+  diagnostics,
 - procedure-target compilation and recompilation across tabular, report, and
   frontier workflows,
 - fixed public-law saturated witnesses and zero-mass public fibers,

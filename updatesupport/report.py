@@ -13,7 +13,7 @@ from .data import (
     TabularTarget,
     from_dataframe,
 )
-from .environments import BatchedCvxpyEnvironments, CvxpyEnvironments
+from .environments import BatchedCvxpyEnvironments, CvxpyEnvironments, CvxpyError
 from .metrics import target_description as describe_target
 from .problem import FiniteProblem
 from .presets import (
@@ -24,8 +24,12 @@ from .presets import (
     q_name,
     resolve_q_environment,
 )
-from .results import ConstraintDual, TransportResult
-from .targets import ProcedureTarget, UncertainLinearTarget
+from .results import (
+    ConstraintDual,
+    TransportResult,
+    UncertainLinearConfidenceCoreResult,
+)
+from .targets import ProcedureTarget, UncertainLinearTarget, UnsupportedTargetError
 
 
 _PARAMETERIZED_SENSITIVITY_PRESETS = frozenset(
@@ -597,6 +601,7 @@ class EstimatorUncertaintyAdjustment:
     conservative_lower: float
     conservative_upper: float
     conservative_diameter: float
+    confidence_core: UncertainLinearConfidenceCoreResult | None = None
     method: str = "endpoint_and_conservative"
 
     @property
@@ -641,6 +646,9 @@ class EstimatorUncertaintyAdjustment:
             "conservative_upper": self.conservative_upper,
             "conservative_diameter": self.conservative_diameter,
             "added_conservative_diameter": self.added_conservative_diameter,
+            "confidence_core": None
+            if self.confidence_core is None
+            else self.confidence_core.as_dict(),
         }
 
 
@@ -955,6 +963,14 @@ class PublicDescentReport:
                     f"{uncertainty.conservative_diameter:.4f}",
                 ]
             )
+            if uncertainty.confidence_core is not None:
+                core_status = (
+                    f"[{uncertainty.confidence_core.lower:.4f}, "
+                    f"{uncertainty.confidence_core.upper:.4f}]"
+                    if uncertainty.confidence_core.nonempty
+                    else f"empty by {uncertainty.confidence_core.empty_gap:.4f}"
+                )
+                lines.append(f"- SOCP confidence core: {core_status}")
         if self.fiber_decomposition_available:
             lines.append(
                 f"- Top {len(self.fibers)} fiber contribution share: "
@@ -3042,7 +3058,22 @@ def _estimator_uncertainty_adjustment(
         conservative_lower=interval.lower - conservative_margin,
         conservative_upper=interval.upper + conservative_margin,
         conservative_diameter=interval.diameter + 2.0 * conservative_margin,
+        confidence_core=_uncertain_linear_confidence_core(grouped, interval),
     )
+
+
+def _uncertain_linear_confidence_core(
+    grouped: GroupedProblem,
+    interval: TransportResult,
+) -> UncertainLinearConfidenceCoreResult | None:
+    solver = getattr(grouped.problem, "uncertain_linear_confidence_core", None)
+    if solver is None:
+        return None
+    public_law = interval.public_law or grouped.public_law
+    try:
+        return solver(public_law=public_law)
+    except (CvxpyError, TypeError, UnsupportedTargetError, ValueError):
+        return None
 
 
 def _fixed_public_law_standard_error_bound(
@@ -3180,6 +3211,19 @@ def _estimator_uncertainty_markdown(
             "- Endpoint witness distributions were not returned by this backend, "
             "so endpoint-specific standard errors are unavailable."
         )
+    if uncertainty.confidence_core is not None:
+        core = uncertainty.confidence_core
+        if core.nonempty:
+            lines.append(
+                "- SOCP confidence core: "
+                f"[{core.lower:.4f}, {core.upper:.4f}] "
+                f"(common-overlap width {core.diameter:.4f})."
+            )
+        else:
+            lines.append(
+                "- SOCP confidence core: empty; the highest lower confidence "
+                f"bound exceeds the lowest upper confidence bound by {core.empty_gap:.4f}."
+            )
     lines.extend(
         [
             "",
@@ -3195,6 +3239,13 @@ def _estimator_uncertainty_markdown(
             "and the largest supplied standard error inside each public fiber, "
             "so it is deliberately wider when endpoint witnesses may miss the "
             "highest-uncertainty hidden cells.",
+            "",
+            "When available, the SOCP confidence core is a different diagnostic: "
+            "it computes the intersection of composition-specific estimator "
+            "confidence bands over the admissible Q set. A nonempty core means "
+            "all admissible hidden compositions share at least one common "
+            "estimator-adjusted value; an empty core means the composition shift "
+            "can separate those bands.",
         ]
     )
     return lines

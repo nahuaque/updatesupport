@@ -69,7 +69,9 @@ sensitivity interval conditional on the retained support, target values, and
 chosen `Q`. It is not a confidence interval. If hidden-cell target standard
 errors are supplied, reports can add an estimator-uncertainty-aware outer
 interval, but causal, survey-design, and broader model uncertainty still belong
-to the upstream statistical workflow.
+to the upstream statistical workflow. With CVXPY-compatible Q sets, reports can
+also include an SOCP confidence-core diagnostic showing whether all admissible
+composition-specific confidence bands have a common overlap.
 
 The core solver target is fixed after compilation. Most tabular reports compile
 to the linear plug-in aggregate `sum_d h(d) q(d)`; `RatioTarget` covers

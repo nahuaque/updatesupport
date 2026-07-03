@@ -19,6 +19,7 @@ from .results import (
     CardinalGapResult,
     LeastSupportResult,
     TransportResult,
+    UncertainLinearConfidenceCoreResult,
     Witness,
 )
 from .targets import (
@@ -530,6 +531,32 @@ class FiniteProblem:
             )
         p = self._resolve_moment_public_law(public_law)
         return solver(self, public_law=p, maximize=not minimize)
+
+    def uncertain_linear_confidence_core(
+        self,
+        *,
+        public_law: Mapping[Hashable, float] | None = None,
+    ) -> UncertainLinearConfidenceCoreResult:
+        """Return the SOCP common confidence core for an uncertain linear target."""
+
+        if not isinstance(self.target_functional, UncertainLinearTarget):
+            raise UnsupportedTargetError(
+                "uncertain_linear_confidence_core requires an UncertainLinearTarget."
+            )
+        solver = getattr(self.environments, "uncertain_linear_confidence_core", None)
+        if solver is None:
+            raise UnsupportedTargetError(
+                "uncertain_linear_confidence_core requires a CVXPY-compatible "
+                "environment."
+            )
+        if public_law is None:
+            fixed_public_law = getattr(self.environments, "fixed_public_law", None)
+            if fixed_public_law is None:
+                raise ValueError(
+                    "public_law is required unless the environment fixes one"
+                )
+            public_law = fixed_public_law
+        return solver(self, public_law=public_law)
 
     def _has_nonlinear_moment_transform_target(self) -> bool:
         return (

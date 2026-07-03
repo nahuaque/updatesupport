@@ -159,6 +159,8 @@ then add estimator-uncertainty-aware intervals:
 - endpoint-adjusted bounds when lower/upper witness distributions are available;
 - a conservative fixed-public-law outer interval using the largest supplied
   standard error in each public fiber.
+- an SOCP confidence-core diagnostic when the selected Q backend is
+  CVXPY-compatible.
 
 For tabular workflows, pass `target_standard_error=...`:
 
@@ -182,6 +184,22 @@ optimization over both hidden composition and target-estimation error. It is
 intended to keep three quantities separate in model-review output: the causal or
 statistical point estimate, hidden-composition ambiguity, and estimator
 uncertainty in the hidden-cell target values.
+
+The SOCP confidence core is a different object. It solves:
+
+```text
+core_lower = sup_q  mu(q) - z se(q)
+core_upper = inf_q  mu(q) + z se(q)
+```
+
+over the same admissible Q set and fixed public law. The first problem is a
+concave maximization and the second is a convex minimization, so both are
+second-order cone compatible. If `core_lower <= core_upper`, every admissible
+hidden composition has an estimator-adjusted confidence band containing at
+least the common interval `[core_lower, core_upper]`. If `core_lower >
+core_upper`, the common core is empty and the report shows the separation gap.
+This is an exact common-overlap diagnostic, not a worst-case outer ambiguity
+bound.
 
 ## Ratio Targets
 

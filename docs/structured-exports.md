@@ -83,6 +83,11 @@ lower/upper/diameter fields. The table records the base point-estimate
 transport interval, endpoint-adjusted margins when witness distributions are
 available, and the conservative fixed-public-law outer interval.
 
+If the selected Q backend can solve the SOCP confidence-core diagnostic, exports
+also include `estimator_uncertainty_confidence_core`. That table records the
+common-overlap interval, whether it is empty, the empty-core gap, endpoint
+witness distributions, and available dual diagnostics.
+
 Public-descent exports also include `fiber_decomposition_available` and
 `fiber_diagnostic_kind`. When decomposition is unavailable, for example for a
 variable-denominator ratio target, fiber rows report point ranges and set

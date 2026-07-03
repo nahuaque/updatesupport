@@ -144,6 +144,7 @@ from .results import (
     ConstraintDual,
     LeastSupportResult,
     TransportResult,
+    UncertainLinearConfidenceCoreResult,
     Witness,
 )
 from .spec import AuditRun, AuditSpec, QSpec, run_audit
@@ -299,6 +300,7 @@ __all__ = [
     "UnsupportedTarget",
     "UnsupportedTargetError",
     "UncertainLinearTarget",
+    "UncertainLinearConfidenceCoreResult",
     "UncertaintyMetricSummary",
     "validate_plugin",
     "verify_claim",

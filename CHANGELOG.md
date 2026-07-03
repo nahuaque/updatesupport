@@ -102,6 +102,9 @@ All notable changes to `updatesupport` are documented here.
   `effect_standard_error=...` so public-descent and causal-effect reports can
   widen hidden-composition ambiguity with supplied hidden-cell estimator
   standard errors while keeping the base point-estimate interval separate.
+- Added an SOCP confidence-core diagnostic for `UncertainLinearTarget` under
+  CVXPY-compatible Q sets, solving the common-overlap interval of admissible
+  composition-specific estimator confidence bands and exporting it in reports.
 
 ### Fixed
 
