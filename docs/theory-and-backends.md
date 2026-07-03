@@ -4,7 +4,7 @@ This page collects details that are useful once you want to understand or
 extend the computational model behind `updatesupport`.
 
 For a quick product overview, installation instructions, and first report, see
-the top-level [README](../README.md).
+the top-level [README](https://github.com/nahuaque/updatesupport#readme).
 
 For a compact audit of assumptions, guarantees, and limitations, see
 [Mathematical and statistical soundness](mathematical-statistical-soundness.md).

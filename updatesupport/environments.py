@@ -781,7 +781,7 @@ class FiniteEnvironments:
 
 @dataclass(frozen=True)
 class LineSegment:
-    """Continuous environments q(t) = center + t * direction, |t| <= radius."""
+    """Continuous environments q(t) = center + t * direction with bounded t."""
 
     center: Mapping[Hashable, float] | Sequence[float]
     direction: Mapping[Hashable, float] | Sequence[float]

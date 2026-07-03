@@ -436,6 +436,8 @@ uv run pytest
 
 ## Documentation
 
+- [Sphinx documentation entry point](docs/index.rst)
+- [Local documentation build notes](docs/README.md)
 - [Representation adequacy guide](docs/representation-adequacy.md)
 - [Audit specs](docs/audit-specs.md)
 - [Structured exports](docs/structured-exports.md)
