@@ -51,6 +51,39 @@ class SaturatedSupportTests(unittest.TestCase):
 
         self.assertAlmostEqual(problem.global_transport_modulus().diameter, 2.2)
 
+    def test_fixed_public_zero_mass_fibers_do_not_break_adequacy(self):
+        problem = us.FiniteProblem(
+            states=["a", "b", "c"],
+            public={"a": "x", "b": "x", "c": "y"},
+            estimand={"a": 0.0, "b": 10.0, "c": 2.0},
+            environments=us.PublicFiberSaturated.fixed({"x": 0.0, "y": 1.0}),
+        )
+
+        result = problem.check_public()
+        least = problem.least_support()
+
+        self.assertTrue(result.adequate)
+        self.assertEqual(least.support, problem.public_partition())
+        self.assertAlmostEqual(problem.global_transport_modulus().diameter, 0.0)
+
+    def test_fixed_public_witness_uses_admissible_public_law(self):
+        problem = us.FiniteProblem(
+            states=["a", "b", "c"],
+            public={"a": "x", "b": "x", "c": "y"},
+            estimand={"a": 0.0, "b": 10.0, "c": 100.0},
+            environments=us.PublicFiberSaturated.fixed({"x": 0.2, "y": 0.8}),
+        )
+
+        result = problem.check_public()
+
+        self.assertFalse(result.adequate)
+        self.assertIsNotNone(result.witness)
+        self.assertAlmostEqual(result.gap, 2.0)
+        self.assertEqual(result.witness.public_law, {"x": 0.2, "y": 0.8})
+        self.assertAlmostEqual(result.witness.q1["c"], 0.8)
+        self.assertAlmostEqual(result.witness.q2["c"], 0.8)
+        self.assertAlmostEqual(problem.global_transport_modulus().diameter, 2.0)
+
 
 class FiniteEnvironmentTests(unittest.TestCase):
     def test_finite_environment_returns_witness_for_inadequate_support(self):

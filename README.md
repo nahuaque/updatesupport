@@ -45,6 +45,34 @@ The output is a review-ready Markdown audit with:
 This is not a replacement for causal identification, model validation, or
 sampling uncertainty. It is an audit layer for the reporting representation.
 
+## Why the Math Is Sound
+
+`updatesupport` reduces the review question to a finite optimization problem.
+Given hidden cells `D`, public buckets `pi(D)`, supplied hidden-cell target
+values `h`, and an explicit admissible distribution class `Q`, it computes:
+
+```text
+inf/sup  sum_d h(d) q(d)
+subject to q in Q and fixed public law pi#q
+```
+
+For saturated reweighting this has a closed-form public-fiber range formula.
+For linear `Q` it is solved as a linear program. For convex transport budgets
+such as TV, chi-square, KL, and Wasserstein, it is solved as a convex CVXPY
+problem with a linear objective.
+
+The interval is statistically meaningful as a partial-identification or
+sensitivity interval conditional on the retained support, target values, and
+chosen `Q`. It is not a confidence interval and does not estimate causal,
+survey-design, or model uncertainty.
+
+The current core target contract is a fixed linear plug-in aggregate,
+`sum_d h(d) q(d)`. Nonlinear or representation-dependent targets need an
+explicit reformulation or a future target-functional backend.
+
+See [docs/mathematical-statistical-soundness.md](docs/mathematical-statistical-soundness.md)
+for the full assumptions, formulas, backend checks, and limitations.
+
 ## Quickstart
 
 ```bash
@@ -327,6 +355,7 @@ uv run pytest
 - [Audit specs](docs/audit-specs.md)
 - [Structured exports](docs/structured-exports.md)
 - [Data diagnostics](docs/data-diagnostics.md)
+- [Mathematical and statistical soundness](docs/mathematical-statistical-soundness.md)
 - [Public representation frontier](docs/public-representation-frontier.md)
 - [Transport preset guide](docs/transport-presets.md)
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)

@@ -188,26 +188,25 @@ class PublicFiberSaturated:
 
     def check_support(self, problem, support: Partition) -> AdequacyResult:
         problem._validate_support_over_public(support)
-        worst_gap = 0.0
-        worst_pair: tuple[Hashable, Hashable] | None = None
-        for block in support.blocks:
-            values = [(state, problem.estimand_map[state]) for state in block]
-            for left_state, left_value in values:
-                for right_state, right_value in values:
-                    gap = abs(left_value - right_value)
-                    if gap > worst_gap:
-                        worst_gap = gap
-                        worst_pair = (left_state, right_state)
+        ranges = self._support_block_ranges(problem, support)
+        public_law, worst_public, worst_pair, worst_gap = self._worst_support_gap(
+            problem,
+            ranges,
+        )
 
-        if worst_gap <= problem.tol:
+        if worst_gap <= problem.tol or worst_public is None or worst_pair is None:
             return AdequacyResult(adequate=True, support=support)
-        if worst_pair is None:
-            raise RuntimeError("inadequate support did not produce a witness pair")
 
         q1 = {state: 0.0 for state in problem.states}
         q2 = {state: 0.0 for state in problem.states}
-        q1[worst_pair[0]] = 1.0
-        q2[worst_pair[1]] = 1.0
+        for public_value, mass in public_law.items():
+            if public_value == worst_public:
+                q1[worst_pair[0]] += mass
+                q2[worst_pair[1]] += mass
+            else:
+                state = problem.public_fibers[public_value][0]
+                q1[state] += mass
+                q2[state] += mass
         witness = Witness(
             q1=q1,
             q2=q2,
@@ -224,6 +223,107 @@ class PublicFiberSaturated:
             witness=witness,
             reason="support merges states with different estimand values inside a public fiber",
         )
+
+    def least_support(self, problem) -> Partition:
+        """Return the saturated least support for the configured public laws."""
+
+        relevant_public_values = self._relevant_public_values(problem)
+        blocks: list[list[Hashable]] = []
+        keys: list[tuple[Hashable, float | None]] = []
+        for state in problem.states:
+            public_value = problem.public_map[state]
+            h_value = (
+                problem.estimand_map[state]
+                if public_value in relevant_public_values
+                else None
+            )
+            for i, (existing_public, existing_h) in enumerate(keys):
+                if existing_public != public_value:
+                    continue
+                if h_value is None and existing_h is None:
+                    blocks[i].append(state)
+                    break
+                if (
+                    h_value is not None
+                    and existing_h is not None
+                    and abs(existing_h - h_value) <= problem.tol
+                ):
+                    blocks[i].append(state)
+                    break
+            else:
+                keys.append((public_value, h_value))
+                blocks.append([state])
+        return Partition.from_blocks(blocks, universe=problem.states)
+
+    def _support_block_ranges(
+        self, problem, support: Partition
+    ) -> dict[Hashable, tuple[float, tuple[Hashable, Hashable] | None]]:
+        ranges: dict[Hashable, tuple[float, tuple[Hashable, Hashable] | None]] = {
+            public_value: (0.0, None) for public_value in problem.public_values
+        }
+        for block in support.blocks:
+            public_value = problem.public_map[block[0]]
+            min_state = min(block, key=lambda state: problem.estimand_map[state])
+            max_state = max(block, key=lambda state: problem.estimand_map[state])
+            gap = problem.estimand_map[max_state] - problem.estimand_map[min_state]
+            current_gap, _ = ranges[public_value]
+            if gap > current_gap:
+                ranges[public_value] = (gap, (min_state, max_state))
+        return ranges
+
+    def _worst_support_gap(
+        self,
+        problem,
+        ranges: Mapping[Hashable, tuple[float, tuple[Hashable, Hashable] | None]],
+    ) -> tuple[
+        dict[Hashable, float],
+        Hashable | None,
+        tuple[Hashable, Hashable] | None,
+        float,
+    ]:
+        best_public_law: dict[Hashable, float] | None = None
+        best_public_value: Hashable | None = None
+        best_pair: tuple[Hashable, Hashable] | None = None
+        best_gap = 0.0
+
+        for public_law in self._candidate_public_laws(problem):
+            for public_value, mass in public_law.items():
+                gap, pair = ranges[public_value]
+                weighted_gap = mass * gap
+                if pair is not None and weighted_gap > best_gap:
+                    best_public_law = public_law
+                    best_public_value = public_value
+                    best_pair = pair
+                    best_gap = weighted_gap
+
+        if best_public_law is None:
+            best_public_law = {value: 0.0 for value in problem.public_values}
+        return best_public_law, best_public_value, best_pair, best_gap
+
+    def _candidate_public_laws(self, problem) -> tuple[dict[Hashable, float], ...]:
+        public_marginals = self.public_marginals
+        if public_marginals is None:
+            laws = []
+            for public_value in problem.public_values:
+                law = {value: 0.0 for value in problem.public_values}
+                law[public_value] = 1.0
+                laws.append(law)
+            return tuple(laws)
+        if isinstance(public_marginals, Mapping):
+            return (problem._coerce_public_law(public_marginals),)
+        if not public_marginals:
+            raise ValueError("public_marginals vertices must be non-empty")
+        return tuple(
+            problem._coerce_public_law(public_law) for public_law in public_marginals
+        )
+
+    def _relevant_public_values(self, problem) -> set[Hashable]:
+        relevant: set[Hashable] = set()
+        for public_law in self._candidate_public_laws(problem):
+            for public_value, mass in public_law.items():
+                if mass > problem.tol:
+                    relevant.add(public_value)
+        return relevant
 
     def local_transport(
         self, problem, public_law: Mapping[Hashable, float]

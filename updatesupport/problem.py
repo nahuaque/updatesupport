@@ -320,13 +320,16 @@ class FiniteProblem:
 
     def least_support(self, *, max_states: int = 9) -> LeastSupportResult:
         if isinstance(self.environments, PublicFiberSaturated):
-            support = self.estimand_partition()
+            support = self.environments.least_support(self)
             return LeastSupportResult(
                 exists=True,
                 support=support,
                 minimal_supports=(support,),
                 common_coarsening=support,
-                reason="public-fiber saturation gives the quotient by joint values of (public, h)",
+                reason=(
+                    "public-fiber saturation gives the quotient by joint values "
+                    "of (public, h) on public fibers with admissible positive mass"
+                ),
             )
 
         adequate = self.adequate_supports(max_states=max_states)

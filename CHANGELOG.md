@@ -20,6 +20,15 @@ All notable changes to `updatesupport` are documented here.
 - Added plugin SDK polish with `PluginMetadata`, plugin validation reports,
   duplicate-name protection, `validate_plugin(...)`, `assert_valid_plugin(...)`,
   and plugin descriptor serialization.
+- Added a mathematical/statistical soundness note documenting the fixed linear
+  target contract, nonlinear target boundary, finite optimization model, Q
+  preset semantics, backend guarantees, statistical assumptions, and
+  limitations.
+
+### Fixed
+
+- Fixed saturated fixed-public-law adequacy witnesses so zero-mass public fibers
+  are ignored and nonzero fixed public masses scale the witness gap correctly.
 
 ## 0.1.1 - 2026-07-02
 

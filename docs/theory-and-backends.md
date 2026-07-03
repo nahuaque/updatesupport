@@ -6,6 +6,9 @@ extend the computational model behind `updatesupport`.
 For a quick product overview, installation instructions, and first report, see
 the top-level [README](../README.md).
 
+For a compact audit of assumptions, guarantees, and limitations, see
+[Mathematical and statistical soundness](mathematical-statistical-soundness.md).
+
 ## Core Model
 
 `updatesupport` implements a finite-state computational version of the
