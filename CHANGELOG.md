@@ -117,6 +117,11 @@ All notable changes to `updatesupport` are documented here.
 - Added an SOCP confidence-core diagnostic for `UncertainLinearTarget` under
   CVXPY-compatible Q sets, solving the common-overlap interval of admissible
   composition-specific estimator confidence bands and exporting it in reports.
+- Hardened the finance plugin `ModelRiskReport` with explicit Markdown and
+  structured export sections for the reported portfolio risk estimate, supplied
+  statistical/model uncertainty, hidden-composition ambiguity,
+  concentration-stress ambiguity, refinement recommendations, dual diagnostics,
+  data diagnostics, limitations, and reviewer notes.
 
 ### Fixed
 

@@ -153,8 +153,87 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIn("## Review Status", markdown)
         self.assertIn("Status: attention required", markdown)
         self.assertIn("## Financial Model-Risk Interpretation", markdown)
+        self.assertIn("## Reported Portfolio Risk Estimate", markdown)
+        self.assertIn("## Supplied Statistical / Model Uncertainty", markdown)
+        self.assertIn("## Hidden-Composition Ambiguity", markdown)
+        self.assertIn("## Concentration-Stress Ambiguity", markdown)
+        self.assertIn("## Public Refinement Recommendations", markdown)
+        self.assertIn("## Dual Diagnostics", markdown)
+        self.assertIn("## Data Diagnostics", markdown)
+        self.assertIn("## Limitations / Reviewer Notes", markdown)
+        self.assertIn("## Core Update-Support Audit", markdown)
         self.assertIn("Reported portfolio risk estimate", markdown)
         self.assertIn("bounded_shift(radius=0.25)", markdown)
+        self.assertIn("not a concentration-balance preset", markdown)
+
+        tables = report.to_tables()
+        self.assertIn("finance_model_risk", tables)
+        self.assertIn("finance_concentration_stress", tables)
+        self.assertIn("finance_review_reasons", tables)
+        self.assertIn("finance_refinement_recommendations", tables)
+        self.assertIn("finance_dual_diagnostics", tables)
+        self.assertIn("finance_data_diagnostics", tables)
+        self.assertIn("finance_limitations", tables)
+        self.assertIn("core_summary", tables)
+
+    def test_model_risk_report_surfaces_uncertainty_and_reviewer_notes(self):
+        _require_cvxpy()
+        rows = [row | {"metric_se": 0.03} for row in _factor_rows()]
+        report = usf.model_risk_report(
+            rows,
+            public=["product"],
+            hidden=["product", "channel"],
+            metric=usf.expected_loss(pd="pd", lgd="lgd"),
+            metric_standard_error="metric_se",
+            exposure="ead",
+            q=usf.q_factor_exposure_shift(
+                0.2,
+                rows,
+                hidden=["product", "channel"],
+                factors={"macro": "macro_factor"},
+                exposure="ead",
+            ),
+            candidate_refinements=["channel"],
+            top=1,
+            statistical_estimate=0.45,
+            statistical_standard_error=0.02,
+            statistical_interval=(0.40, 0.50),
+            statistical_confidence_level=0.95,
+            statistical_method="validation bootstrap",
+            reviewer_notes=["Review concentration scenario with portfolio owners."],
+            limitations=["Synthetic unit-test portfolio."],
+        )
+        markdown = report.to_markdown()
+        tables = report.to_tables()
+        payload = report.as_dict()
+
+        self.assertIsNotNone(report.statistical_uncertainty)
+        self.assertIsNotNone(report.core.estimator_uncertainty)
+        self.assertEqual(
+            payload["concentration_stress"]["stress_type"],
+            "factor-exposure concentration stress",
+        )
+        self.assertIn("External interval: [0.4000, 0.5000]", markdown)
+        self.assertIn("validation bootstrap", markdown)
+        self.assertIn(
+            "Estimator-uncertainty-aware conservative interval",
+            markdown,
+        )
+        self.assertIn("factor-exposure concentration stress", markdown)
+        self.assertIn("Reviewer notes:", markdown)
+        self.assertIn("Review concentration scenario", markdown)
+        self.assertIn("Synthetic unit-test portfolio.", markdown)
+        self.assertIn("finance_statistical_uncertainty", tables)
+        self.assertIn("finance_estimator_uncertainty", tables)
+        self.assertIn("finance_concentration_stress", tables)
+        self.assertIn("finance_refinement_recommendations", tables)
+        self.assertIn("finance_dual_diagnostics", tables)
+        self.assertIn("finance_reviewer_notes", tables)
+        self.assertIn("core_estimator_uncertainty", tables)
+        self.assertEqual(
+            tables["finance_concentration_stress"][0]["stress_type"],
+            "factor-exposure concentration stress",
+        )
 
     def test_review_thresholds_can_pass(self):
         report = usf.model_risk_report(

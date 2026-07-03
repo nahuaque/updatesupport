@@ -2,13 +2,31 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 import updatesupport as us
 
 from .presets import finance_sensitivity_grid
+
+
+DEFAULT_MODEL_RISK_LIMITATIONS = (
+    "The report audits representation stability for a supplied portfolio risk "
+    "metric; it does not validate PD, LGD, EAD, calibration, discrimination, "
+    "backtesting, overrides, or governance controls.",
+    "The hidden-composition interval is a sensitivity or partial-identification "
+    "result under the selected Q stress test, not a sampling confidence interval.",
+    "Statistical or model-estimation uncertainty is included only when supplied "
+    "explicitly through report metadata or hidden-cell standard errors.",
+    "Conclusions depend on the retained hidden state space, exposure weights, "
+    "minimum-cell filtering, and the selected admissible-shift preset.",
+    "Refinement recommendations identify reporting variables that reduce "
+    "hidden-composition ambiguity; they are not automatically policy, pricing, "
+    "underwriting, or causal adjustment recommendations.",
+    "CVXPY dual diagnostics, when present, are local solver diagnostics rather "
+    "than global guarantees for every possible constraint relaxation.",
+)
 
 
 @dataclass(frozen=True)
@@ -62,6 +80,12 @@ class ReviewThresholds:
         status = "attention required" if reasons else "pass"
         return status, tuple(reasons)
 
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "ambiguity_limit": self.ambiguity_limit,
+            "public_adequacy_required": self.public_adequacy_required,
+        }
+
 
 @dataclass(frozen=True)
 class ModelRiskReport:
@@ -70,6 +94,13 @@ class ModelRiskReport:
     core: us.PublicDescentReport
     metadata: ModelRiskMetadata = ModelRiskMetadata()
     thresholds: ReviewThresholds = ReviewThresholds()
+    statistical_uncertainty: us.StatisticalUncertainty | None = None
+    reviewer_notes: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = DEFAULT_MODEL_RISK_LIMITATIONS
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "reviewer_notes", tuple(self.reviewer_notes))
+        object.__setattr__(self, "limitations", tuple(self.limitations))
 
     @property
     def review_status(self) -> str:
@@ -81,11 +112,109 @@ class ModelRiskReport:
         _status, reasons = self.thresholds.evaluate(self.core)
         return reasons
 
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.core.title,
+            "review_status": self.review_status,
+            "review_reasons": self.review_reasons,
+            "metadata": self.metadata.as_dict(),
+            "thresholds": self.thresholds.as_dict(),
+            "reported_portfolio_risk_estimate": self.core.observed_value,
+            "hidden_composition_lower": self.core.interval.lower,
+            "hidden_composition_upper": self.core.interval.upper,
+            "hidden_composition_ambiguity": self.core.interval.diameter,
+            "concentration_stress": _concentration_stress_summary(self.core),
+            "statistical_uncertainty": None
+            if self.statistical_uncertainty is None
+            else self.statistical_uncertainty.as_dict(),
+            "estimator_uncertainty": None
+            if self.core.estimator_uncertainty is None
+            else self.core.estimator_uncertainty.as_dict(),
+            "top_refinements": [row.as_dict() for row in self.core.refinements[:5]],
+            "top_dual_diagnostics": [
+                row.as_dict()
+                for row in self.core.interval.dual_summary(top=8, min_magnitude=1e-8)
+            ],
+            "data_diagnostics": [row.as_dict() for row in self.core.diagnostics],
+            "limitations": self.limitations,
+            "reviewer_notes": self.reviewer_notes,
+            "core": self.core.as_dict(),
+        }
+
+    def to_json(self, **kwargs: Any) -> str:
+        return us.report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        tables = {
+            "finance_model_risk": (
+                {
+                    "title": self.core.title,
+                    "review_status": self.review_status,
+                    "model_id": self.metadata.model_id,
+                    "portfolio_name": self.metadata.portfolio_name,
+                    "as_of_date": self.metadata.as_of_date,
+                    "intended_use": self.metadata.intended_use,
+                    "owner": self.metadata.owner,
+                    "reviewer": self.metadata.reviewer,
+                    "reported_portfolio_risk_estimate": self.core.observed_value,
+                    "hidden_composition_lower": self.core.interval.lower,
+                    "hidden_composition_upper": self.core.interval.upper,
+                    "hidden_composition_ambiguity": self.core.interval.diameter,
+                    "public_adequate": self.core.public_adequate,
+                    "q_name": self.core.grouped.q_name,
+                    "q_description": self.core.grouped.q_description,
+                },
+            )
+        }
+        tables["finance_review_reasons"] = tuple(
+            {"reason": reason} for reason in self.review_reasons
+        )
+        tables["finance_concentration_stress"] = (
+            _concentration_stress_summary(self.core),
+        )
+        if self.statistical_uncertainty is not None:
+            tables["finance_statistical_uncertainty"] = (
+                self.statistical_uncertainty.as_dict(),
+            )
+        if self.core.estimator_uncertainty is not None:
+            tables["finance_estimator_uncertainty"] = (
+                self.core.estimator_uncertainty.as_dict(),
+            )
+        tables["finance_refinement_recommendations"] = tuple(
+            row.as_dict() for row in self.core.refinements
+        )
+        duals = self.core.interval.dual_summary(top=8, min_magnitude=1e-8)
+        tables["finance_dual_diagnostics"] = tuple(row.as_dict() for row in duals)
+        tables["finance_data_diagnostics"] = tuple(
+            row.as_dict() for row in self.core.diagnostics
+        )
+        tables["finance_reviewer_notes"] = tuple(
+            {"note": note} for note in self.reviewer_notes
+        )
+        tables["finance_limitations"] = tuple(
+            {"limitation": limitation} for limitation in self.limitations
+        )
+        tables.update(
+            {f"core_{name}": rows for name, rows in self.core.to_tables().items()}
+        )
+        return tables
+
+    def to_dataframes(self) -> dict[str, Any]:
+        return us.tables_to_dataframes(self.to_tables())
+
     def to_markdown(self) -> str:
         lines = [f"# {self.core.title}", ""]
         lines.extend(self._metadata_markdown())
         lines.extend(self._threshold_markdown())
         lines.extend(self._finance_interpretation_markdown())
+        lines.extend(self._reported_estimate_markdown())
+        lines.extend(self._uncertainty_markdown())
+        lines.extend(self._hidden_ambiguity_markdown())
+        lines.extend(self._concentration_stress_markdown())
+        lines.extend(self._refinement_markdown())
+        lines.extend(self._dual_diagnostics_markdown())
+        lines.extend(self._data_diagnostics_markdown())
+        lines.extend(self._limitations_and_notes_markdown())
         core_markdown = self.core.to_markdown().splitlines()
         if core_markdown and core_markdown[0].startswith("# "):
             core_markdown = core_markdown[2:]
@@ -149,6 +278,172 @@ class ModelRiskReport:
             "leave material hidden-composition ambiguity for this metric and "
             "stress-test choice.",
         ]
+
+    def _reported_estimate_markdown(self) -> list[str]:
+        core = self.core
+        grouped = core.grouped
+        return [
+            "",
+            "## Reported Portfolio Risk Estimate",
+            "",
+            f"- {core.observed_label}: {core.observed_value:.4f}",
+            f"- Metric: aggregate {core.target_description}.",
+            f"- Public segmentation: `{_column_label(grouped.public_columns)}`.",
+            f"- Hidden state definition: `{_column_label(grouped.hidden_columns)}`.",
+            f"- Retained hidden cells: {len(grouped.problem.states)}.",
+            f"- Public cells: {len(grouped.problem.public_values)}.",
+            f"- Exposure/row weight total retained by compiler: {grouped.total_weight:.4f}.",
+        ]
+
+    def _uncertainty_markdown(self) -> list[str]:
+        lines = ["", "## Supplied Statistical / Model Uncertainty", ""]
+        if self.statistical_uncertainty is None:
+            lines.append(
+                "- No external statistical or model uncertainty summary was supplied."
+            )
+        else:
+            row = self.statistical_uncertainty
+            lines.append(f"- Label: {row.label}.")
+            if row.estimate is not None:
+                lines.append(f"- External estimate: {row.estimate:.4f}.")
+            if row.standard_error is not None:
+                lines.append(f"- Standard error: {row.standard_error:.4f}.")
+            if row.lower is not None and row.upper is not None:
+                lines.append(
+                    f"- External interval: [{row.lower:.4f}, {row.upper:.4f}]."
+                )
+            if row.confidence_level is not None:
+                lines.append(f"- Confidence level: {row.confidence_level:.3f}.")
+            if row.method is not None:
+                lines.append(f"- Method: {row.method}.")
+
+        uncertainty = self.core.estimator_uncertainty
+        if uncertainty is None:
+            lines.append(
+                "- No hidden-cell metric standard errors were supplied, so no "
+                "estimator-uncertainty-aware hidden ambiguity adjustment is shown."
+            )
+        else:
+            lines.extend(
+                [
+                    "- Hidden-cell metric standard errors were supplied.",
+                    "- Estimator-uncertainty-aware conservative interval: "
+                    f"[{uncertainty.conservative_lower:.4f}, "
+                    f"{uncertainty.conservative_upper:.4f}].",
+                    "- Estimator-uncertainty-aware conservative ambiguity: "
+                    f"{uncertainty.conservative_diameter:.4f}.",
+                ]
+            )
+            if uncertainty.confidence_core is not None:
+                core = uncertainty.confidence_core
+                if core.nonempty:
+                    lines.append(
+                        f"- SOCP confidence core: [{core.lower:.4f}, {core.upper:.4f}]."
+                    )
+                else:
+                    lines.append(
+                        f"- SOCP confidence core: empty by {core.empty_gap:.4f}."
+                    )
+        return lines
+
+    def _hidden_ambiguity_markdown(self) -> list[str]:
+        core = self.core
+        return [
+            "",
+            "## Hidden-Composition Ambiguity",
+            "",
+            "- Fixed-public-law interval: "
+            f"[{core.interval.lower:.4f}, {core.interval.upper:.4f}].",
+            f"- Hidden-composition ambiguity: {core.interval.diameter:.4f}.",
+            f"- Public segmentation adequate: {'yes' if core.public_adequate else 'no'}.",
+            "- Observed estimate position: "
+            f"{'inside' if core.interval_contains_observed else 'outside'} the "
+            "fixed-public-law interval.",
+            f"- Q preset: `{core.grouped.q_name}`.",
+            f"- Q interpretation: {core.grouped.q_description}.",
+        ]
+
+    def _concentration_stress_markdown(self) -> list[str]:
+        summary = _concentration_stress_summary(self.core)
+        lines = ["", "## Concentration-Stress Ambiguity", ""]
+        lines.append(f"- Stress type: {summary['stress_type']}.")
+        lines.append(f"- Q preset: `{summary['q_name']}`.")
+        lines.append(f"- Interval width under this stress: {summary['ambiguity']:.4f}.")
+        if summary["moment_count"] is not None:
+            lines.append(f"- Balance/concentration moments: {summary['moment_count']}.")
+        if summary["moment_names"]:
+            lines.append(
+                "- Moment examples: "
+                + ", ".join(f"`{name}`" for name in summary["moment_names"][:5])
+                + "."
+            )
+        lines.append(
+            "- Interpretation: this is the same hidden-composition interval "
+            "reported above, labeled in portfolio-concentration terms when the "
+            "selected Q preset constrains factor or concentration moments."
+        )
+        return lines
+
+    def _refinement_markdown(self) -> list[str]:
+        lines = ["", "## Public Refinement Recommendations", ""]
+        if not self.core.refinements:
+            lines.append(
+                "- No one-column refinement recommendations were computed or no "
+                "candidate refinement reduced ambiguity."
+            )
+            return lines
+        for row in self.core.refinements[:5]:
+            lines.append(
+                f"- Add `{row.column}`: ambiguity {row.before_ambiguity:.4f} -> "
+                f"{row.after_ambiguity:.4f}; reduction {row.reduction:.4f} "
+                f"({row.reduction_percent:.1f}%), public_cells={row.public_cells}."
+            )
+        return lines
+
+    def _dual_diagnostics_markdown(self) -> list[str]:
+        lines = ["", "## Dual Diagnostics", ""]
+        duals = self.core.interval.dual_summary(top=8, min_magnitude=1e-8)
+        if not duals:
+            lines.append(
+                "- No CVXPY dual diagnostics are available for this report. "
+                "This is expected for non-CVXPY or mixed-integer solver paths."
+            )
+            return lines
+        lines.append(
+            "- Largest local solver multipliers; use as constraint-sensitivity "
+            "diagnostics, not as standalone validation evidence."
+        )
+        for row in duals:
+            lines.append(
+                f"- {row.kind}: {row.name}, solve={row.solve}, "
+                f"magnitude={row.magnitude:.4g}."
+            )
+        return lines
+
+    def _data_diagnostics_markdown(self) -> list[str]:
+        lines = ["", "## Data Diagnostics", ""]
+        if not self.core.diagnostics:
+            lines.append("- No pre-solve data diagnostics were raised.")
+            return lines
+        for row in self.core.diagnostics:
+            columns = f" columns={', '.join(row.columns)}" if row.columns else ""
+            count = "" if row.count is None else f" count={row.count}"
+            lines.append(
+                f"- {row.severity}: `{row.code}`{count}{columns} - {row.message}"
+            )
+        return lines
+
+    def _limitations_and_notes_markdown(self) -> list[str]:
+        lines = ["", "## Limitations / Reviewer Notes", ""]
+        if self.limitations:
+            lines.append("Limitations:")
+            lines.extend(f"- {limitation}" for limitation in self.limitations)
+        if self.reviewer_notes:
+            lines.extend(["", "Reviewer notes:"])
+            lines.extend(f"- {note}" for note in self.reviewer_notes)
+        else:
+            lines.extend(["", "Reviewer notes:", "- None supplied."])
+        return lines
 
 
 @dataclass(frozen=True)
@@ -289,25 +584,34 @@ def from_portfolio(
     public: Sequence[str],
     hidden: Sequence[str],
     metric: str | us.RowMetric,
+    metric_standard_error: str | us.RowMetric | None = None,
+    target_standard_error: str | us.RowMetric | None = None,
     exposure: str | None = None,
     weight: str | None = None,
     min_cell_weight: float = 1.0,
     q: Any = "saturated",
     q_radius: float | None = None,
+    target_confidence_multiplier: float = 1.96,
 ) -> us.GroupedProblem:
     """Compile a financial portfolio into an update-support grouped problem."""
 
     if exposure is not None and weight is not None and exposure != weight:
         raise ValueError("use either exposure or weight, not both")
+    resolved_standard_error = _resolve_metric_standard_error(
+        metric_standard_error,
+        target_standard_error,
+    )
     return us.from_dataframe(
         data,
         public=public,
         hidden=hidden,
         target=metric,
+        target_standard_error=resolved_standard_error,
         weight=weight if weight is not None else exposure,
         min_cell_weight=min_cell_weight,
         q=q,
         q_radius=q_radius,
+        target_confidence_multiplier=target_confidence_multiplier,
     )
 
 
@@ -318,6 +622,8 @@ def model_risk_report(
     public: Sequence[str] | None = None,
     hidden: Sequence[str] | None = None,
     metric: str | us.RowMetric | None = None,
+    metric_standard_error: str | us.RowMetric | None = None,
+    target_standard_error: str | us.RowMetric | None = None,
     exposure: str | None = None,
     weight: str | None = None,
     candidate_refinements: Sequence[str] | None = None,
@@ -327,6 +633,7 @@ def model_risk_report(
     observed_label: str = "Reported portfolio risk estimate",
     q: Any | None = None,
     q_radius: float | None = None,
+    target_confidence_multiplier: float = 1.96,
     metadata: ModelRiskMetadata | None = None,
     thresholds: ReviewThresholds | None = None,
     model_id: str | None = None,
@@ -337,14 +644,32 @@ def model_risk_report(
     reviewer: str | None = None,
     ambiguity_limit: float | None = None,
     public_adequacy_required: bool = False,
+    statistical_estimate: float | None = None,
+    statistical_standard_error: float | None = None,
+    statistical_interval: Sequence[float] | None = None,
+    statistical_confidence_level: float | None = None,
+    statistical_method: str | None = None,
+    statistical_label: str = "Supplied statistical/model uncertainty",
+    reviewer_notes: Sequence[str] = (),
+    limitations: Sequence[str] | None = None,
 ) -> ModelRiskReport:
     """Build a model-risk report for a financial portfolio segmentation."""
 
     if exposure is not None and weight is not None and exposure != weight:
         raise ValueError("use either exposure or weight, not both")
     effective_weight = weight if weight is not None else exposure
+    resolved_standard_error = _resolve_metric_standard_error(
+        metric_standard_error,
+        target_standard_error,
+    )
     if isinstance(data, us.GroupedProblem):
         target_description = "portfolio risk metric"
+        if resolved_standard_error is not None:
+            raise ValueError(
+                "metric_standard_error can only be supplied when data contains "
+                "raw portfolio rows; precompiled GroupedProblem inputs must "
+                "already include target standard errors"
+            )
     else:
         if metric is None:
             raise TypeError(
@@ -362,6 +687,7 @@ def model_risk_report(
         public=public,
         hidden=hidden,
         target=metric,
+        target_standard_error=resolved_standard_error,
         weight=effective_weight,
         candidate_refinements=candidate_refinements,
         top=top,
@@ -372,6 +698,7 @@ def model_risk_report(
         row_count_label="Portfolio rows",
         q=q,
         q_radius=q_radius,
+        target_confidence_multiplier=target_confidence_multiplier,
     )
     report_metadata = metadata or ModelRiskMetadata(
         model_id=model_id,
@@ -389,6 +716,20 @@ def model_risk_report(
         core=core_report,
         metadata=report_metadata,
         thresholds=report_thresholds,
+        statistical_uncertainty=_statistical_uncertainty(
+            estimate=statistical_estimate,
+            standard_error=statistical_standard_error,
+            interval=statistical_interval,
+            confidence_level=statistical_confidence_level,
+            method=statistical_method,
+            label=statistical_label,
+        ),
+        reviewer_notes=tuple(reviewer_notes),
+        limitations=(
+            DEFAULT_MODEL_RISK_LIMITATIONS
+            if limitations is None
+            else tuple(limitations)
+        ),
     )
 
 
@@ -496,6 +837,99 @@ def certify_portfolio_segmentation(
         metadata=certificate_metadata,
         q_profile=q_profile,
         title=title,
+    )
+
+
+def _concentration_stress_summary(
+    core: us.PublicDescentReport,
+) -> dict[str, Any]:
+    q = core.grouped.q
+    moment_names: tuple[str, ...] = ()
+    if q is not None and getattr(q, "name", None) == "covariate_balance":
+        cost = getattr(q, "cost", None)
+        if isinstance(cost, Mapping):
+            moment_names = tuple(str(name) for name in cost)
+        has_factor = any(name.startswith("factor:") for name in moment_names)
+        has_region = any(name.startswith("region:") for name in moment_names)
+        if has_factor and has_region:
+            stress_type = "factor and regional concentration stress"
+        elif has_factor:
+            stress_type = "factor-exposure concentration stress"
+        elif has_region:
+            stress_type = "regional concentration stress"
+        else:
+            stress_type = "covariate-balance concentration stress"
+        moment_count = len(moment_names)
+    else:
+        stress_type = "not a concentration-balance preset"
+        moment_count = None
+    return {
+        "stress_type": stress_type,
+        "q_name": core.grouped.q_name,
+        "ambiguity": core.interval.diameter,
+        "moment_count": moment_count,
+        "moment_names": moment_names,
+    }
+
+
+def _resolve_metric_standard_error(
+    metric_standard_error: str | us.RowMetric | None,
+    target_standard_error: str | us.RowMetric | None,
+) -> str | us.RowMetric | None:
+    if (
+        metric_standard_error is not None
+        and target_standard_error is not None
+        and metric_standard_error != target_standard_error
+    ):
+        raise TypeError(
+            "use either 'metric_standard_error' or 'target_standard_error', not both"
+        )
+    return (
+        metric_standard_error
+        if metric_standard_error is not None
+        else target_standard_error
+    )
+
+
+def _statistical_uncertainty(
+    *,
+    estimate: float | None,
+    standard_error: float | None,
+    interval: Sequence[float] | None,
+    confidence_level: float | None,
+    method: str | None,
+    label: str,
+) -> us.StatisticalUncertainty | None:
+    lower = None
+    upper = None
+    if interval is not None:
+        values = tuple(float(value) for value in interval)
+        if len(values) != 2:
+            raise ValueError("statistical_interval must contain exactly two values")
+        lower, upper = values
+        if lower > upper:
+            raise ValueError("statistical_interval lower bound exceeds upper bound")
+    if confidence_level is not None:
+        confidence_level = float(confidence_level)
+        if not 0.0 < confidence_level < 1.0:
+            raise ValueError("statistical_confidence_level must be between 0 and 1")
+    if (
+        estimate is None
+        and standard_error is None
+        and lower is None
+        and upper is None
+        and confidence_level is None
+        and method is None
+    ):
+        return None
+    return us.StatisticalUncertainty(
+        estimate=None if estimate is None else float(estimate),
+        standard_error=None if standard_error is None else float(standard_error),
+        lower=lower,
+        upper=upper,
+        confidence_level=confidence_level,
+        method=method,
+        label=label,
     )
 
 

@@ -80,11 +80,18 @@ The package is intentionally narrow. It separates:
 - reported risk estimate: the supplied metric, such as expected loss or default
   rate
 - statistical uncertainty: confidence intervals or model uncertainty supplied by
-  other workflows
+  other workflows, plus optional hidden-cell metric standard errors
 - hidden-composition ambiguity: how far the reported metric can move when hidden
   mix shifts inside fixed public buckets
+- concentration-stress ambiguity: the same ambiguity translated into
+  factor-exposure or regional-concentration stress language when those Q presets
+  are used
 - refinement recommendations: hidden fields that would make the public
   representation more stable
+- dual diagnostics and data diagnostics: solver-sensitivity signals and
+  pre-solve data warnings that reviewers can attach to validation evidence
+- limitations and reviewer notes: explicit boundaries around what the report
+  does and does not validate
 
 This is not a confidence interval and not a full model-risk-management system.
 It is a reviewable control for one practical question: whether the reporting
@@ -125,6 +132,7 @@ report = usf.model_risk_report(
     ],
     metric=usf.expected_loss(pd="pd", lgd="lgd"),
     exposure="ead",
+    metric_standard_error="expected_loss_se",
     q=usf.q_portfolio_mix_shift(radius=0.25),
     model_id="EL_RETAIL_2026Q2",
     portfolio_name="Retail credit portfolio",
@@ -132,6 +140,12 @@ report = usf.model_risk_report(
     intended_use="Expected-loss segmentation model review",
     ambiguity_limit=0.0025,
     public_adequacy_required=False,
+    statistical_interval=(0.018, 0.024),
+    statistical_confidence_level=0.95,
+    statistical_method="validation bootstrap",
+    reviewer_notes=[
+        "Review portfolio-mix stress with the portfolio monitoring owner.",
+    ],
 )
 
 print(report.to_markdown())
@@ -140,10 +154,13 @@ print(report.to_markdown())
 The report answers:
 
 - What is the reported portfolio risk estimate?
+- What statistical or model uncertainty was supplied separately?
 - What range is still possible under hidden mix shifts?
+- How should the ambiguity be interpreted under concentration-stress presets?
 - Does the ambiguity exceed the review threshold?
 - Which public buckets drive the instability?
 - Which hidden fields are most valuable as public refinements?
+- Which solver duals and data diagnostics should reviewers inspect?
 - Which small public segmentation sits on the stability frontier, and why did
   it beat nearby alternatives?
 
