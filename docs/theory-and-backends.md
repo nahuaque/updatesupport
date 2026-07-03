@@ -460,6 +460,28 @@ ambiguity. It is not a generic mixed-integer wrapper around every Q preset. Use
 it when the design question is which named hidden columns to promote into the
 public representation under saturated stress tests.
 
+For convex Q presets, use the MIP master / support-function oracle mode:
+
+```python
+frontier = us.public_representation_frontier(
+    rows,
+    base_public=["region"],
+    hidden=["region", "occupation", "channel"],
+    target="outcome",
+    candidate_refinements=["occupation", "channel"],
+    q_presets=[us.q_tv_budget(0.10)],
+    ambiguity_limit=0.02,
+    bucket_budget=20,
+    search="mip_oracle",
+)
+```
+
+Here SCIP proposes public representations under the discrete search constraints,
+then each proposal is evaluated by the support-function oracle for the declared
+convex Q grid. Failing proposals receive no-good cuts. This is useful when a
+saturated master is too conservative, but you still want a solver-guided search
+over public-report designs.
+
 ## Parameterized CVXPY Sweeps
 
 For repeated radius sweeps on the same compiled finite problem, use the

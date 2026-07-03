@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import combinations
 from math import comb
 from typing import Any, Mapping, Sequence
 
 from .data import TabularTarget, from_dataframe
 from .environments import CvxpyError
-from .presets import q_description, q_name
+from .presets import normalize_q_preset, q_description, q_name
 from .targets import ProcedureTarget
 
 
@@ -34,6 +34,19 @@ _SCALARIZED_WEIGHT_ALIASES = {
     "hidden_cell_count": "hidden_cells",
     "added_columns": "added_columns",
     "added_column_count": "added_columns",
+}
+
+_SUPPORT_FUNCTION_ORACLE_Q_PRESETS = {
+    "chi_square_budget",
+    "kl_budget",
+    "tv_budget",
+    "wasserstein",
+}
+
+_MIP_ORACLE_ALLOWED_Q_PRESETS = {
+    "observed",
+    "saturated",
+    *_SUPPORT_FUNCTION_ORACLE_Q_PRESETS,
 }
 
 
@@ -92,6 +105,8 @@ class FrontierSearchTrace:
     solver_status: str | None = None
     objective_value: float | None = None
     optimization_guarantee: str | None = None
+    oracle_iterations: int = 0
+    oracle_rejections: int = 0
     stopping_reason: str = "completed"
 
     def as_dict(self) -> dict[str, Any]:
@@ -113,6 +128,8 @@ class FrontierSearchTrace:
             "solver_status": self.solver_status,
             "objective_value": self.objective_value,
             "optimization_guarantee": self.optimization_guarantee,
+            "oracle_iterations": self.oracle_iterations,
+            "oracle_rejections": self.oracle_rejections,
             "stopping_reason": self.stopping_reason,
         }
 
@@ -572,6 +589,15 @@ class PublicRepresentationFrontier:
                     "- Search optimization guarantee: "
                     f"{self.search_trace.optimization_guarantee}"
                 )
+            if self.search_trace.oracle_iterations:
+                lines.append(
+                    "- Support-function oracle evaluations: "
+                    f"{self.search_trace.oracle_iterations}"
+                )
+                lines.append(
+                    "- Support-function oracle rejections: "
+                    f"{self.search_trace.oracle_rejections}"
+                )
         if self.ambiguity_limit is not None:
             lines.append(f"- Ambiguity limit: {self.ambiguity_limit:.4f}")
         if self.bucket_budget is not None:
@@ -774,14 +800,17 @@ def public_representation_frontier(
     if len(required_columns) > max_added_columns:
         raise ValueError("must_include contains more columns than max_added_columns")
 
+    search_mode = _normalize_search(search)
     repeatable_data, row_count = _repeatable_data(data)
-    q_grid = tuple(q_presets)
+    q_grid = _resolve_frontier_q_grid(q_presets, search=search_mode)
     scenario_specs = _frontier_scenarios(
         hidden_sets=hidden_grid,
         min_cell_weights=min_cell_weight_grid,
         q_presets=q_grid,
     )
-    search_mode = _normalize_search(search)
+    effective_enforce_bucket_budget = (
+        enforce_bucket_budget or search_mode == "mip_oracle"
+    )
     candidate_space_size = _candidate_space_size(
         candidate_tuple,
         max_added_columns=max_added_columns,
@@ -810,7 +839,7 @@ def public_representation_frontier(
         scalarized_weights=normalized_scalarized_weights,
         mip_solver=mip_solver,
         mip_solver_options=mip_solver_options,
-        enforce_bucket_budget=enforce_bucket_budget,
+        enforce_bucket_budget=effective_enforce_bucket_budget,
         candidate_space_size=candidate_space_size,
     )
 
@@ -850,6 +879,8 @@ class _MipSearchOutcome:
     solver_status: str | None
     objective_value: float | None
     optimization_guarantee: str | None
+    oracle_iterations: int = 0
+    oracle_rejections: int = 0
 
 
 @dataclass(frozen=True)
@@ -1025,6 +1056,17 @@ def _search_candidates(
             scalarized_weights=scalarized_weights,
         )
         stopping_reason = mip_outcome.stopping_reason
+    elif search == "mip_oracle":
+        mip_outcome = _mip_support_function_oracle_search(
+            state,
+            required_columns=required_columns,
+            max_added_columns=max_added_columns,
+            include_base=include_base,
+            solver=mip_solver,
+            solver_options=mip_solver_options,
+            scalarized_weights=scalarized_weights,
+        )
+        stopping_reason = mip_outcome.stopping_reason
     else:
         stopping_reason, pruned_by_dominance, pruned_by_beam = _beam_search(
             state,
@@ -1036,14 +1078,23 @@ def _search_candidates(
         )
 
     exact = (
-        search == "exhaustive"
-        and not state.evaluation_limit_hit
-        and not enforce_bucket_budget
-    ) or (
-        search == "mip"
-        and mip_outcome is not None
-        and mip_outcome.exact
-        and not state.evaluation_limit_hit
+        (
+            search == "exhaustive"
+            and not state.evaluation_limit_hit
+            and not enforce_bucket_budget
+        )
+        or (
+            search == "mip"
+            and mip_outcome is not None
+            and mip_outcome.exact
+            and not state.evaluation_limit_hit
+        )
+        or (
+            search == "mip_oracle"
+            and mip_outcome is not None
+            and mip_outcome.exact
+            and not state.evaluation_limit_hit
+        )
     )
     if state.evaluation_limit_hit:
         stopping_reason = "max_evaluations reached"
@@ -1071,6 +1122,12 @@ def _search_candidates(
             optimization_guarantee=None
             if mip_outcome is None
             else mip_outcome.optimization_guarantee,
+            oracle_iterations=0
+            if mip_outcome is None
+            else mip_outcome.oracle_iterations,
+            oracle_rejections=0
+            if mip_outcome is None
+            else mip_outcome.oracle_rejections,
             stopping_reason=stopping_reason,
         ),
     )
@@ -1344,6 +1401,159 @@ def _mip_search(
     )
 
 
+def _mip_support_function_oracle_search(
+    state: _EvaluationState,
+    *,
+    required_columns: tuple[str, ...],
+    max_added_columns: int,
+    include_base: bool,
+    solver: str | None,
+    solver_options: Mapping[str, Any] | None,
+    scalarized_weights: dict[str, float] | None,
+) -> _MipSearchOutcome:
+    _validate_mip_oracle_search(
+        state,
+        required_columns=required_columns,
+        include_base=include_base,
+    )
+    if not state.candidate_refinements:
+        candidate = state.evaluate(
+            required_columns,
+            include_result=include_base or bool(required_columns),
+        )
+        stable = candidate is not None and _is_stable(candidate, state.ambiguity_limit)
+        return _MipSearchOutcome(
+            stopping_reason="support-function oracle stable representation found"
+            if stable
+            else "no oracle-stable representation",
+            exact=candidate is not None,
+            solver=None,
+            solver_status=None,
+            objective_value=None,
+            optimization_guarantee="no candidate refinements required a MIP solve",
+            oracle_iterations=1 if candidate is not None else 0,
+            oracle_rejections=0 if stable else int(candidate is not None),
+        )
+    if max_added_columns == 0 and not include_base and not required_columns:
+        return _MipSearchOutcome(
+            stopping_reason="no candidates",
+            exact=True,
+            solver=None,
+            solver_status=None,
+            objective_value=None,
+            optimization_guarantee="no feasible candidate subsets under search bounds",
+        )
+    scenario_data = _mip_scenario_data(state)
+    solver_name = _normalized_mip_solver(solver)
+    excluded_subsets: list[tuple[str, ...]] = []
+    best: PublicRepresentationCandidate | None = None
+    last_solve: _MipSolveResult | None = None
+    oracle_iterations = 0
+    oracle_rejections = 0
+
+    while True:
+        if (
+            state.max_evaluations is not None
+            and state.evaluated_count >= state.max_evaluations
+        ):
+            state.evaluation_limit_hit = True
+            return _MipSearchOutcome(
+                stopping_reason="max_evaluations reached",
+                exact=False,
+                solver=solver_name,
+                solver_status=None if last_solve is None else last_solve.status,
+                objective_value=None
+                if last_solve is None
+                else last_solve.objective_value,
+                optimization_guarantee=_mip_oracle_guarantee(
+                    state,
+                    scalarized_weights=scalarized_weights,
+                    exhausted=False,
+                ),
+                oracle_iterations=oracle_iterations,
+                oracle_rejections=oracle_rejections,
+            )
+
+        solve = _solve_mip_column_selection(
+            scenario_data,
+            candidate_refinements=state.candidate_refinements,
+            required_columns=required_columns,
+            max_added_columns=max_added_columns,
+            include_base=include_base,
+            ambiguity_limit=None,
+            bucket_budget=state.bucket_budget,
+            scalarized_weights=scalarized_weights,
+            solver=solver_name,
+            solver_options=solver_options,
+            excluded_subsets=tuple(excluded_subsets),
+            objective_mode="budgeted",
+        )
+        last_solve = solve
+        if solve.added_columns is None:
+            if _is_infeasible_status(solve.status):
+                return _MipSearchOutcome(
+                    stopping_reason="no oracle-stable representation",
+                    exact=True,
+                    solver=solver_name,
+                    solver_status=solve.status,
+                    objective_value=solve.objective_value,
+                    optimization_guarantee=_mip_oracle_guarantee(
+                        state,
+                        scalarized_weights=scalarized_weights,
+                        exhausted=True,
+                    ),
+                    oracle_iterations=oracle_iterations,
+                    oracle_rejections=oracle_rejections,
+                )
+            raise CvxpyError(
+                "MIP oracle master did not converge to an optimal solution; "
+                f"solver status was {solve.status!r}."
+            )
+
+        candidate = state.evaluate(solve.added_columns)
+        if candidate is None:
+            return _MipSearchOutcome(
+                stopping_reason="max_evaluations reached",
+                exact=False,
+                solver=solver_name,
+                solver_status=solve.status,
+                objective_value=solve.objective_value,
+                optimization_guarantee=_mip_oracle_guarantee(
+                    state,
+                    scalarized_weights=scalarized_weights,
+                    exhausted=False,
+                ),
+                oracle_iterations=oracle_iterations,
+                oracle_rejections=oracle_rejections,
+            )
+        oracle_iterations += 1
+        if best is None or _oracle_candidate_rank(
+            candidate,
+            scalarized_weights=scalarized_weights,
+        ) < _oracle_candidate_rank(best, scalarized_weights=scalarized_weights):
+            best = candidate
+
+        if _is_stable(candidate, state.ambiguity_limit) and state.is_allowed(candidate):
+            exact = scalarized_weights is None
+            return _MipSearchOutcome(
+                stopping_reason="support-function oracle stable representation found",
+                exact=exact,
+                solver=solver_name,
+                solver_status=solve.status,
+                objective_value=solve.objective_value,
+                optimization_guarantee=_mip_oracle_guarantee(
+                    state,
+                    scalarized_weights=scalarized_weights,
+                    exhausted=False,
+                ),
+                oracle_iterations=oracle_iterations,
+                oracle_rejections=oracle_rejections,
+            )
+
+        excluded_subsets.append(solve.added_columns)
+        oracle_rejections += 1
+
+
 def _validate_mip_search(
     state: _EvaluationState,
     *,
@@ -1366,6 +1576,26 @@ def _validate_mip_search(
         )
     if not include_base and not required_columns and not state.candidate_refinements:
         raise ValueError("search='mip' has no candidate representation to evaluate")
+
+
+def _validate_mip_oracle_search(
+    state: _EvaluationState,
+    *,
+    required_columns: tuple[str, ...],
+    include_base: bool,
+) -> None:
+    if state.ambiguity_limit is None:
+        raise ValueError("search='mip_oracle' requires ambiguity_limit")
+    if isinstance(state.target, ProcedureTarget):
+        raise ValueError(
+            "search='mip_oracle' currently supports fixed row/column targets only; "
+            "ProcedureTarget depends on the public representation and must be "
+            "evaluated by exhaustive, greedy, beam, or scalarized search."
+        )
+    if not include_base and not required_columns and not state.candidate_refinements:
+        raise ValueError(
+            "search='mip_oracle' has no candidate representation to evaluate"
+        )
 
 
 def _mip_scenario_data(state: _EvaluationState) -> tuple[_MipScenarioData, ...]:
@@ -1413,6 +1643,8 @@ def _solve_mip_column_selection(
     scalarized_weights: dict[str, float] | None,
     solver: str | None,
     solver_options: Mapping[str, Any] | None,
+    excluded_subsets: Sequence[tuple[str, ...]] = (),
+    objective_mode: str = "auto",
 ) -> _MipSolveResult:
     cp = _import_cvxpy_for_mip()
     column_count = len(candidate_refinements)
@@ -1422,6 +1654,14 @@ def _solve_mip_column_selection(
         constraints.append(x[candidate_refinements.index(column)] == 1)
     if not include_base and not required_columns:
         constraints.append(cp.sum(x) >= 1)
+    for subset in excluded_subsets:
+        constraints.append(
+            _mip_exclude_subset_constraint(
+                x,
+                candidate_refinements=candidate_refinements,
+                subset=subset,
+            )
+        )
 
     max_ambiguity = cp.Variable(nonneg=True)
     max_public_cells = cp.Variable(nonneg=True)
@@ -1456,6 +1696,7 @@ def _solve_mip_column_selection(
         target_scale=target_scale,
         ambiguity_limit=ambiguity_limit,
         scalarized_weights=scalarized_weights,
+        objective_mode=objective_mode,
     )
     problem = cp.Problem(cp.Minimize(objective), constraints)
     options = dict(solver_options or {})
@@ -1584,6 +1825,20 @@ def _mip_same_fiber_indicator(
     return indicator
 
 
+def _mip_exclude_subset_constraint(
+    x: Any,
+    *,
+    candidate_refinements: tuple[str, ...],
+    subset: tuple[str, ...],
+) -> Any:
+    selected = set(subset)
+    matching_terms = [
+        x[index] if column in selected else 1 - x[index]
+        for index, column in enumerate(candidate_refinements)
+    ]
+    return sum(matching_terms) <= len(candidate_refinements) - 1
+
+
 def _mip_objective(
     *,
     max_ambiguity: Any,
@@ -1594,6 +1849,7 @@ def _mip_objective(
     target_scale: float,
     ambiguity_limit: float | None,
     scalarized_weights: dict[str, float] | None,
+    objective_mode: str = "auto",
 ) -> Any:
     if scalarized_weights is not None:
         return (
@@ -1604,7 +1860,7 @@ def _mip_objective(
             + scalarized_weights.get("added_columns", 0.0) * selected_count
         )
     scaled_ambiguity = max_ambiguity / max(target_scale, 1.0)
-    if ambiguity_limit is not None:
+    if ambiguity_limit is not None or objective_mode == "budgeted":
         return max_public_cells + 1e-6 * selected_count + 1e-9 * scaled_ambiguity
     return scaled_ambiguity + 1e-6 * max_public_cells + 1e-9 * selected_count
 
@@ -1656,6 +1912,55 @@ def _mip_guarantee(state: _EvaluationState) -> str:
     return (
         "SCIP solved the saturated column-selection MIP over the declared "
         "candidate space and search bounds."
+    )
+
+
+def _mip_oracle_guarantee(
+    state: _EvaluationState,
+    *,
+    scalarized_weights: dict[str, float] | None,
+    exhausted: bool,
+) -> str:
+    if exhausted:
+        return (
+            "SCIP exhausted the discrete master problem under the declared "
+            "search bounds and hard bucket budget; the support-function oracle "
+            "found no representation satisfying the ambiguity limit."
+        )
+    if scalarized_weights is not None:
+        return (
+            "SCIP generated candidate representations with a scalarized proxy "
+            "objective and the support-function oracle evaluated the declared Q "
+            "grid. The result is oracle-verified for the selected candidate, "
+            "but not globally exact for the actual scalarized oracle objective."
+        )
+    return (
+        "SCIP generated candidate representations in budgeted-complexity order; "
+        "the support-function oracle evaluated each candidate against the "
+        "declared Q grid until it found a representation satisfying the "
+        "ambiguity limit."
+    )
+
+
+def _oracle_candidate_rank(
+    candidate: PublicRepresentationCandidate,
+    *,
+    scalarized_weights: dict[str, float] | None,
+) -> tuple[Any, ...]:
+    if scalarized_weights is not None and candidate.scalarized_score is not None:
+        return (
+            candidate.scalarized_score,
+            candidate.public_cells,
+            candidate.added_column_count,
+            candidate.max_ambiguity,
+            candidate.added_columns,
+        )
+    return (
+        candidate.max_ambiguity,
+        candidate.mean_ambiguity,
+        candidate.public_cells,
+        candidate.added_column_count,
+        candidate.added_columns,
     )
 
 
@@ -2197,11 +2502,46 @@ def _resolve_optional_int_arg(
 
 def _normalize_search(search: str) -> str:
     search_mode = search.strip().lower()
-    if search_mode not in {"exhaustive", "greedy", "beam", "scalarized", "mip"}:
+    if search_mode not in {
+        "exhaustive",
+        "greedy",
+        "beam",
+        "scalarized",
+        "mip",
+        "mip_oracle",
+    }:
         raise ValueError(
-            "search must be one of: 'exhaustive', 'greedy', 'beam', 'scalarized', 'mip'"
+            "search must be one of: "
+            "'exhaustive', 'greedy', 'beam', 'scalarized', 'mip', 'mip_oracle'"
         )
     return search_mode
+
+
+def _resolve_frontier_q_grid(
+    q_presets: Sequence[Any],
+    *,
+    search: str,
+) -> tuple[Any, ...]:
+    if search != "mip_oracle":
+        return tuple(q_presets)
+    resolved = []
+    for q in q_presets:
+        preset = normalize_q_preset(q)
+        if preset is None:
+            raise ValueError(
+                "search='mip_oracle' requires named Q presets that expose a "
+                "support-function oracle"
+            )
+        if preset.name not in _MIP_ORACLE_ALLOWED_Q_PRESETS:
+            allowed = ", ".join(sorted(_MIP_ORACLE_ALLOWED_Q_PRESETS))
+            raise ValueError(
+                "search='mip_oracle' supports only saturated, observed, and "
+                f"support-function-compatible convex Q presets: {allowed}"
+            )
+        if preset.name in _SUPPORT_FUNCTION_ORACLE_Q_PRESETS:
+            preset = replace(preset, backend="support_function")
+        resolved.append(preset)
+    return tuple(resolved)
 
 
 def _normalize_scalarized_weights(
@@ -2312,6 +2652,13 @@ def _frontier_interpretation(report: PublicRepresentationFrontier) -> list[str]:
             "problem over the declared candidate columns. The candidate table "
             "contains evaluated evidence candidates, not an exhaustive Pareto "
             "frontier unless every candidate was also evaluated."
+        )
+    if report.search_trace is not None and report.search_trace.search == "mip_oracle":
+        lines.append(
+            "- MIP-oracle search uses SCIP as a discrete master problem and then "
+            "evaluates proposed representations with the declared transport "
+            "oracle. Compatible convex Q presets are routed through the "
+            "support-function backend."
         )
     if report.scalarized_weights is not None:
         lines.append(

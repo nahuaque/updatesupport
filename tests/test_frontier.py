@@ -515,6 +515,105 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
                 search="mip",
             )
 
+    def test_public_representation_frontier_supports_mip_oracle_search(self):
+        _require_cvxpy_solver("SCIP")
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0, "weight": 30},
+            {"segment": "A", "driver": "high", "target": 1.0, "weight": 30},
+            {"segment": "B", "driver": "flat", "target": 0.5, "weight": 40},
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            q_presets=[us.q_tv_budget(0.15)],
+            ambiguity_limit=0.31,
+            bucket_budget=2,
+            search="mip_oracle",
+            max_added_columns=1,
+        )
+        markdown = report.to_markdown()
+
+        self.assertTrue(report.search_trace.exact)
+        self.assertEqual(report.search_trace.search, "mip_oracle")
+        self.assertEqual(report.search_trace.solver.upper(), "SCIP")
+        self.assertEqual(report.search_trace.oracle_iterations, 1)
+        self.assertEqual(report.search_trace.oracle_rejections, 0)
+        self.assertEqual(report.minimal_stable.added_columns, ())
+        self.assertAlmostEqual(report.minimal_stable.max_ambiguity, 0.3, places=4)
+        self.assertEqual(report.search_trace.scalarized_weights, None)
+        self.assertTrue(report.search_trace.enforce_bucket_budget)
+        self.assertIn("support-function oracle", markdown)
+        self.assertIn("Support-function oracle evaluations: 1", markdown)
+
+    def test_public_representation_frontier_mip_oracle_adds_no_good_cuts(self):
+        _require_cvxpy_solver("SCIP")
+        rows = [
+            {
+                "segment": "A",
+                "driver": "low",
+                "noise": "n",
+                "target": 0.0,
+                "weight": 30,
+            },
+            {
+                "segment": "A",
+                "driver": "high",
+                "noise": "n",
+                "target": 1.0,
+                "weight": 30,
+            },
+            {
+                "segment": "B",
+                "driver": "flat",
+                "noise": "n",
+                "target": 0.5,
+                "weight": 40,
+            },
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver", "noise"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["noise", "driver"],
+            q_presets=[us.q_tv_budget(0.15)],
+            ambiguity_limit=0.05,
+            bucket_budget=3,
+            search="mip_oracle",
+            max_added_columns=1,
+        )
+
+        self.assertTrue(report.search_trace.exact)
+        self.assertEqual(report.minimal_stable.added_columns, ("driver",))
+        self.assertGreaterEqual(report.search_trace.oracle_iterations, 2)
+        self.assertGreaterEqual(report.search_trace.oracle_rejections, 1)
+        self.assertIn(("noise",), [row.added_columns for row in report.candidates])
+
+    def test_public_representation_frontier_mip_oracle_rejects_unsupported_q(self):
+        rows = [
+            {"segment": "A", "driver": "low", "target": 0.0},
+            {"segment": "A", "driver": "high", "target": 1.0},
+        ]
+
+        with self.assertRaisesRegex(ValueError, "support-function-compatible"):
+            us.public_representation_frontier(
+                rows,
+                base_public=["segment"],
+                hidden=["segment", "driver"],
+                target="target",
+                candidate_refinements=["driver"],
+                q_presets=[us.q_bounded_shift(0.5)],
+                ambiguity_limit=0.05,
+                search="mip_oracle",
+            )
+
     def test_public_representation_frontier_rejects_bad_scalarized_weights(self):
         rows = [
             {"segment": "A", "driver": "low", "target": 0.0},

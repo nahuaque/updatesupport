@@ -239,6 +239,38 @@ Limitations:
   budget is still reporting-only and the MIP guarantee is not a full
   budget-constrained certificate.
 
+Use `search="mip_oracle"` when you want SCIP to act as a discrete master
+problem and a support-function oracle to evaluate the actual convex transport
+stress test:
+
+```python
+frontier = us.public_representation_frontier(
+    rows_or_frame,
+    base_public=["product", "region"],
+    hidden=["product", "region", "score_band", "ltv_band", "channel"],
+    target="expected_loss",
+    weight="ead",
+    candidate_refinements=["score_band", "ltv_band", "channel"],
+    q_presets=[us.q_tv_budget(0.10), us.q_chi_square_budget(0.25)],
+    ambiguity_limit=0.005,
+    bucket_budget=40,
+    search="mip_oracle",
+    max_added_columns=3,
+)
+```
+
+The master MIP proposes candidate public representations under the declared
+column and bucket constraints. Each proposed candidate is then evaluated against
+the declared Q grid. Compatible convex presets are routed through
+`backend="support_function"` automatically. If a candidate fails the oracle
+ambiguity limit, the master receives a no-good cut and proposes the next
+candidate.
+
+`search="mip_oracle"` currently requires `ambiguity_limit`. It supports
+`saturated`, `observed`, `tv_budget`, `chi_square_budget`, `kl_budget`, and
+`wasserstein` presets. The public-cell `bucket_budget`, when supplied, is a hard
+master constraint in this mode.
+
 The returned report includes `frontier.search_trace` with:
 
 - `search`: the selected search mode.
@@ -253,6 +285,7 @@ The returned report includes `frontier.search_trace` with:
 - pruning counts for beam and optional bucket-budget enforcement.
 - MIP-specific solver metadata, including `solver`, `solver_status`,
   `objective_value`, and `optimization_guarantee`.
+- MIP-oracle counters, including `oracle_iterations` and `oracle_rejections`.
 
 Useful constraints:
 

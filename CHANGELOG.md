@@ -75,6 +75,10 @@ All notable changes to `updatesupport` are documented here.
   under saturated Q presets, including ambiguity limits, scalarized objectives,
   public-cell counting, hard bucket-budget constraints, and solver metadata in
   the frontier trace.
+- Added `search="mip_oracle"` for budgeted stable reporting design: SCIP acts
+  as a discrete public-representation master, compatible convex Q presets are
+  evaluated through support-function oracles, and failed proposals receive
+  no-good cuts.
 
 ### Fixed
 
