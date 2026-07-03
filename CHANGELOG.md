@@ -95,6 +95,9 @@ All notable changes to `updatesupport` are documented here.
   hidden composition, including Bayesian-bootstrap and multinomial bootstrap
   draw methods, public-law-preserving within-fiber draws, quantile summaries,
   Markdown output, and structured exports.
+- Added SOCP-compatible `q_l2_budget(...)` and
+  `q_mahalanobis_budget(...)` presets for Euclidean and covariance-aware
+  ellipsoidal hidden-composition stress tests through the CVXPY backends.
 
 ### Fixed
 

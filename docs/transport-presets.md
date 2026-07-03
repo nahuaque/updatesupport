@@ -18,6 +18,8 @@ different presets.
 | `q=us.q_tv_budget(radius)` | Overall churn budget | Total variation distance from the observed hidden distribution is bounded | Needs CVXPY and can concentrate the budget on the most influential cells |
 | `q=us.q_chi_square_budget(radius)` | Variance-scaled divergence budget | Pearson chi-square divergence from the observed hidden distribution is bounded | Needs CVXPY and penalizes shifts out of small observed cells strongly |
 | `q=us.q_kl_budget(radius)` | Information-divergence budget | KL divergence from the observed hidden distribution is bounded | Needs CVXPY and the radius is less intuitive than direct mass movement |
+| `q=us.q_l2_budget(radius)` | Smooth Euclidean shift budget | L2 distance from the observed hidden distribution is bounded | Needs CVXPY and is scale-sensitive across cells |
+| `q=us.q_mahalanobis_budget(radius, covariance=...)` | Covariance-aware ellipsoidal shifts | Covariance-standardized distance from the observed hidden distribution is bounded | Needs a defensible positive definite covariance matrix and CVXPY |
 | `q=us.q_wasserstein(cost, radius)` | Similarity-aware shifts | Hidden mass can move cheaply between similar cells and expensively between dissimilar cells | Requires a defensible cost matrix and CVXPY |
 | `q=us.q_fiber_support_floor(min_active, min_share=...)` | MIP support-diversity floor | Each public bucket must keep several active hidden cells above a minimum share | Needs SCIP or another MIP-capable CVXPY solver |
 | `q="observed"` | Baseline or sanity check | No hidden-composition shift | Always reports zero hidden-composition ambiguity |
@@ -69,8 +71,8 @@ how the retained cells may be reweighted.
 ## CVXPY Solver Choice
 
 CVXPY-backed presets use CVXPY's default solver unless a solver is named
-explicitly. The TV, chi-square, KL, and Wasserstein preset helpers accept
-`solver` and `solver_options`:
+explicitly. The TV, chi-square, KL, L2, Mahalanobis, and Wasserstein preset
+helpers accept `solver` and `solver_options`:
 
 ```python
 q = us.q_tv_budget(0.15, solver="SCIP")
@@ -396,6 +398,109 @@ Interpretation:
 > candidate hidden mix had KL divergence at most this radius from the observed
 > hidden mix?
 
+## L2 Budget
+
+Use:
+
+```python
+q = us.q_l2_budget(0.10)
+```
+
+Install the CVXPY extra first:
+
+```bash
+# with pip
+pip install "updatesupport[cvxpy]"
+
+# with uv
+uv add "updatesupport[cvxpy]"
+```
+
+This constrains the Euclidean distance from the observed hidden distribution:
+
+```text
+||q - p_observed||_2 <= radius
+```
+
+The public totals are still fixed. This is an SOCP-compatible stress test.
+
+Use `l2_budget` when:
+
+- You want a smooth norm budget rather than a TV, KL, or chi-square divergence.
+- You want hidden-composition changes to spread more naturally than a pure TV
+  budget, which can concentrate movement on a few cells.
+- You need a simple conic stress test before specifying a richer covariance or
+  cost structure.
+
+Be cautious when:
+
+- Hidden cells have very different natural scales or uncertainty levels; plain
+  L2 treats one unit of mass movement the same across cells.
+- You need a direct mass-moved interpretation. TV is more direct for that.
+- You need a dependency-light workflow without CVXPY.
+
+Interpretation:
+
+> Holding public cell shares fixed, how much could the answer move if the
+> candidate hidden mix stayed within this Euclidean radius of the observed
+> hidden mix?
+
+## Mahalanobis Budget
+
+Use:
+
+```python
+covariance = [
+    [1.0, 0.2, 0.0],
+    [0.2, 1.0, 0.1],
+    [0.0, 0.1, 1.0],
+]
+
+q = us.q_mahalanobis_budget(0.10, covariance=covariance)
+```
+
+Install the CVXPY extra first:
+
+```bash
+# with pip
+pip install "updatesupport[cvxpy]"
+
+# with uv
+uv add "updatesupport[cvxpy]"
+```
+
+This constrains covariance-standardized distance from the observed hidden
+distribution:
+
+```text
+sqrt((q - p_observed)' Sigma^-1 (q - p_observed)) <= radius
+```
+
+The public totals are still fixed. `covariance` must be a symmetric positive
+definite matrix in retained hidden-state order, or a mapping from
+`(left_state, right_state)` pairs to covariance entries.
+
+Use `mahalanobis_budget` when:
+
+- You have a defensible covariance model for hidden-composition shifts.
+- You want correlated hidden-cell movements to be treated differently from
+  independent movements.
+- You want an ellipsoidal stress test that maps naturally to model-risk,
+  survey-weight, or portfolio-composition uncertainty language.
+
+Be cautious when:
+
+- The covariance matrix is estimated from sparse cells or is not positive
+  definite.
+- The covariance model is harder to explain than the underlying report.
+- You need a dependency-light workflow without CVXPY.
+
+Interpretation:
+
+> Holding public cell shares fixed, how much could the answer move if hidden
+> composition shifted within this covariance-standardized ellipsoid around the
+> observed hidden mix?
+
 ## Wasserstein Budget
 
 Use:
@@ -460,9 +565,11 @@ A practical workflow:
    within-public-cell reweighting.
 3. If the conclusion changes under small bounded shifts, refine the public
    representation or report the ambiguity prominently.
-4. If you have a substantive churn, divergence, or distance scale, add
-   `q_tv_budget(...)`, `q_chi_square_budget(...)`, `q_kl_budget(...)`, or
-   `q_wasserstein(...)` as domain-specific robustness checks.
+4. If you have a substantive churn, divergence, norm, covariance, or distance
+   scale, add `q_tv_budget(...)`, `q_chi_square_budget(...)`,
+   `q_kl_budget(...)`, `q_l2_budget(...)`,
+   `q_mahalanobis_budget(...)`, or `q_wasserstein(...)` as domain-specific
+   robustness checks.
 
 Good reports state:
 
@@ -477,8 +584,8 @@ Good reports state:
 
 ## Parameterized CVXPY Sweeps
 
-The CVXPY-backed TV, chi-square, KL, and Wasserstein presets can use an opt-in
-parameterized backend:
+The CVXPY-backed TV, chi-square, KL, L2, Mahalanobis, and Wasserstein presets
+can use an opt-in parameterized backend:
 
 ```python
 grouped = us.from_dataframe(
@@ -502,9 +609,10 @@ the runtime. If the hidden state space, public projection, or cost matrix
 changes, compile a new problem.
 
 The sensitivity-grid helpers apply this optimization automatically for
-compatible TV, chi-square, KL, and Wasserstein rows. They still recompile when a
-scenario changes the hidden state space, minimum retained cell weight, public
-projection, or Wasserstein cost matrix.
+compatible TV, chi-square, KL, L2, Mahalanobis, and Wasserstein rows. They still
+recompile when a scenario changes the hidden state space, minimum retained cell
+weight, public projection, Mahalanobis covariance matrix, or Wasserstein cost
+matrix.
 
 ## Batched CVXPY Sweeps
 
@@ -527,7 +635,8 @@ report = us.sensitivity_report(
 This uses CVXPY variables shaped like `q[scenario, state]` to solve contiguous
 compatible scenarios in one optimization problem. The first slice reuses the
 existing one-dimensional Q builders per scenario, so it is conservative and
-compatible with the current TV, chi-square, KL, and Wasserstein presets.
+compatible with the current TV, chi-square, KL, L2, Mahalanobis, and
+Wasserstein presets.
 
 ## Preset Aliases
 
@@ -541,6 +650,8 @@ The compiler accepts both helper functions and string aliases:
 | `tv_budget` | `"tv"`, `"total-variation"`, `"total_variation"`, `"tv_budget"` |
 | `chi_square_budget` | `"chi-square"`, `"chi_square"`, `"chi-square-budget"`, `"chi_square_budget"`, `"chi2"`, `"chisquare"` |
 | `kl_budget` | `"kl"`, `"kl-budget"`, `"kl_budget"`, `"kullback-leibler"`, `"relative-entropy"`, `"relative_entropy"` |
+| `l2_budget` | `"l2"`, `"l2-budget"`, `"l2_budget"`, `"euclidean"`, `"euclidean_budget"` |
+| `mahalanobis_budget` | `"mahalanobis"`, `"mahalanobis-budget"`, `"mahalanobis_budget"`, `"ellipsoid"`, `"ellipsoidal"` |
 | `wasserstein` | `"w1"`, `"wasserstein"` |
 
 For named presets with a radius, either call the helper function or pass

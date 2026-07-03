@@ -279,6 +279,44 @@ def q_kl_budget(
     )
 
 
+def q_l2_budget(
+    radius: float,
+    *,
+    backend: str = "cvxpy",
+    solver: str | None = None,
+    solver_options: Mapping[str, Any] | None = None,
+) -> QPreset:
+    """Constrain L2 distance from the observed hidden distribution."""
+
+    return QPreset(
+        "l2_budget",
+        radius=float(radius),
+        backend=backend,
+        solver=solver,
+        solver_options=None if solver_options is None else dict(solver_options),
+    )
+
+
+def q_mahalanobis_budget(
+    radius: float,
+    *,
+    covariance: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
+    backend: str = "cvxpy",
+    solver: str | None = None,
+    solver_options: Mapping[str, Any] | None = None,
+) -> QPreset:
+    """Constrain Mahalanobis distance from the observed hidden distribution."""
+
+    return QPreset(
+        "mahalanobis_budget",
+        radius=float(radius),
+        cost=covariance,
+        backend=backend,
+        solver=solver,
+        solver_options=None if solver_options is None else dict(solver_options),
+    )
+
+
 def q_wasserstein(
     cost: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
     radius: float,
@@ -488,6 +526,49 @@ def resolve_q_environment(
         )
         return _q_environment_from_cvxpy_spec(spec, backend=backend)
 
+    if preset.name == "l2_budget":
+        radius = _l2_radius(preset)
+        if radius == 0.0:
+            return _point_environment(
+                cell_weights,
+                preset,
+                description=(
+                    "fixed observed public law with L2 distance from the observed "
+                    "hidden distribution <= 0"
+                ),
+            )
+        backend = _backend_name(preset, default="cvxpy")
+        spec = _cvxpy_admissible_set_spec_from_preset(
+            preset,
+            public_law=public_law,
+            public_map=public_map,
+            cell_weights=cell_weights,
+        )
+        return _q_environment_from_cvxpy_spec(spec, backend=backend)
+
+    if preset.name == "mahalanobis_budget":
+        radius = _mahalanobis_radius(preset)
+        if preset.cost is None:
+            raise ValueError("q_mahalanobis_budget requires a covariance matrix")
+        _mahalanobis_transform(preset.cost, tuple(cell_weights))
+        if radius == 0.0:
+            return _point_environment(
+                cell_weights,
+                preset,
+                description=(
+                    "fixed observed public law with Mahalanobis distance from "
+                    "the observed hidden distribution <= 0"
+                ),
+            )
+        backend = _backend_name(preset, default="cvxpy")
+        spec = _cvxpy_admissible_set_spec_from_preset(
+            preset,
+            public_law=public_law,
+            public_map=public_map,
+            cell_weights=cell_weights,
+        )
+        return _q_environment_from_cvxpy_spec(spec, backend=backend)
+
     if preset.name == "wasserstein":
         if preset.cost is None:
             raise ValueError("q_wasserstein requires an explicit cost matrix")
@@ -555,6 +636,45 @@ def _cvxpy_admissible_set_spec_from_preset(
             constraint_builders=(_kl_constraint_builder(cell_weights, radius),),
             parameterized_constraint_builders=(
                 _kl_parameterized_constraint_builder(cell_weights),
+            ),
+            parameter_values={"radius": radius},
+            solver=preset.solver,
+            solver_options=preset.solver_options,
+            name=q_name(preset),
+            description=q_description(preset),
+        )
+
+    if preset.name == "l2_budget":
+        radius = _l2_radius(preset)
+        return CvxpyAdmissibleSetSpec(
+            preset=preset,
+            fixed_public_law=public_law,
+            constraint_builders=(_l2_constraint_builder(cell_weights, radius),),
+            parameterized_constraint_builders=(
+                _l2_parameterized_constraint_builder(cell_weights),
+            ),
+            parameter_values={"radius": radius},
+            solver=preset.solver,
+            solver_options=preset.solver_options,
+            name=q_name(preset),
+            description=q_description(preset),
+        )
+
+    if preset.name == "mahalanobis_budget":
+        radius = _mahalanobis_radius(preset)
+        if preset.cost is None:
+            raise ValueError("q_mahalanobis_budget requires a covariance matrix")
+        return CvxpyAdmissibleSetSpec(
+            preset=preset,
+            fixed_public_law=public_law,
+            constraint_builders=(
+                _mahalanobis_constraint_builder(cell_weights, preset.cost, radius),
+            ),
+            parameterized_constraint_builders=(
+                _mahalanobis_parameterized_constraint_builder(
+                    cell_weights,
+                    preset.cost,
+                ),
             ),
             parameter_values={"radius": radius},
             solver=preset.solver,
@@ -656,12 +776,14 @@ def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | No
             "bounded_shift",
             "chi_square_budget",
             "kl_budget",
+            "l2_budget",
+            "mahalanobis_budget",
             "tv_budget",
             "wasserstein",
         }:
             raise ValueError(
-                "q_radius is only valid for bounded, chi-square, KL, TV, "
-                "or Wasserstein Q presets"
+                "q_radius is only valid for bounded, chi-square, KL, L2, "
+                "Mahalanobis, TV, or Wasserstein Q presets"
             )
         if preset.radius is not None and float(preset.radius) != float(q_radius):
             raise ValueError("q_radius conflicts with the QPreset radius")
@@ -680,6 +802,12 @@ def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | No
         preset = replace(preset, radius=radius)
     elif preset.name == "kl_budget":
         radius = _kl_radius(preset)
+        preset = replace(preset, radius=radius)
+    elif preset.name == "l2_budget":
+        radius = _l2_radius(preset)
+        preset = replace(preset, radius=radius)
+    elif preset.name == "mahalanobis_budget":
+        radius = _mahalanobis_radius(preset)
         preset = replace(preset, radius=radius)
     elif preset.name == "wasserstein":
         radius = _wasserstein_radius(preset)
@@ -706,6 +834,10 @@ def q_name(q: Any, *, q_radius: float | None = None) -> str:
         return f"chi_square_budget(radius={_chi_square_radius(preset):g})"
     if preset.name == "kl_budget":
         return f"kl_budget(radius={_kl_radius(preset):g})"
+    if preset.name == "l2_budget":
+        return f"l2_budget(radius={_l2_radius(preset):g})"
+    if preset.name == "mahalanobis_budget":
+        return f"mahalanobis_budget(radius={_mahalanobis_radius(preset):g})"
     if preset.name == "wasserstein":
         return f"wasserstein(radius={_wasserstein_radius(preset):g})"
     return preset.name
@@ -756,6 +888,18 @@ def q_description(q: Any, *, q_radius: float | None = None) -> str:
             "fixed observed public law with KL divergence from the observed "
             f"hidden distribution <= {radius:g}"
         )
+    if preset.name == "l2_budget":
+        radius = _l2_radius(preset)
+        return (
+            "fixed observed public law with L2 distance from the observed "
+            f"hidden distribution <= {radius:g}"
+        )
+    if preset.name == "mahalanobis_budget":
+        radius = _mahalanobis_radius(preset)
+        return (
+            "fixed observed public law with covariance-standardized Mahalanobis "
+            f"distance from the observed hidden distribution <= {radius:g}"
+        )
     if preset.name == "wasserstein":
         radius = _wasserstein_radius(preset)
         return (
@@ -797,6 +941,16 @@ def _canonical_preset(preset: QPreset) -> QPreset:
         "kullback-leibler": "kl_budget",
         "relative-entropy": "kl_budget",
         "relative_entropy": "kl_budget",
+        "l2": "l2_budget",
+        "l2-budget": "l2_budget",
+        "l2_budget": "l2_budget",
+        "euclidean": "l2_budget",
+        "euclidean_budget": "l2_budget",
+        "mahalanobis": "mahalanobis_budget",
+        "mahalanobis-budget": "mahalanobis_budget",
+        "mahalanobis_budget": "mahalanobis_budget",
+        "ellipsoid": "mahalanobis_budget",
+        "ellipsoidal": "mahalanobis_budget",
         "w1": "wasserstein",
         "wasserstein": "wasserstein",
     }
@@ -899,6 +1053,24 @@ def _kl_radius(preset: QPreset) -> float:
     radius = float(preset.radius)
     if radius < 0:
         raise ValueError("kl_budget radius must be non-negative")
+    return radius
+
+
+def _l2_radius(preset: QPreset) -> float:
+    if preset.radius is None:
+        raise ValueError("l2_budget radius is required")
+    radius = float(preset.radius)
+    if radius < 0:
+        raise ValueError("l2_budget radius must be non-negative")
+    return radius
+
+
+def _mahalanobis_radius(preset: QPreset) -> float:
+    if preset.radius is None:
+        raise ValueError("mahalanobis_budget radius is required")
+    radius = float(preset.radius)
+    if radius < 0:
+        raise ValueError("mahalanobis_budget radius must be non-negative")
     return radius
 
 
@@ -1125,6 +1297,99 @@ def _kl_parameterized_constraint_builder(
     return build
 
 
+def _l2_constraint_builder(cell_weights: Mapping[Hashable, float], radius: float):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        return (
+            cvxpy_constraint(
+                cp.norm(q - observed, 2) <= radius,
+                name="L2 budget",
+                kind="l2_budget",
+                sense="<=",
+            ),
+        )
+
+    return build
+
+
+def _l2_parameterized_constraint_builder(
+    cell_weights: Mapping[Hashable, float],
+    *,
+    parameter_name: str = "radius",
+):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index, parameter):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        radius = parameter(parameter_name, nonneg=True)
+        return (
+            cvxpy_constraint(
+                cp.norm(q - observed, 2) <= radius,
+                name="L2 budget",
+                kind="l2_budget",
+                sense="<=",
+            ),
+        )
+
+    return build
+
+
+def _mahalanobis_constraint_builder(
+    cell_weights: Mapping[Hashable, float],
+    covariance: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
+    radius: float,
+):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        transform = _mahalanobis_transform(covariance, states)
+        return (
+            cvxpy_constraint(
+                cp.norm(transform @ (q - observed), 2) <= radius,
+                name="Mahalanobis budget",
+                kind="mahalanobis_budget",
+                sense="<=",
+            ),
+        )
+
+    return build
+
+
+def _mahalanobis_parameterized_constraint_builder(
+    cell_weights: Mapping[Hashable, float],
+    covariance: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
+    *,
+    parameter_name: str = "radius",
+):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index, parameter):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        transform = _mahalanobis_transform(covariance, states)
+        radius = parameter(parameter_name, nonneg=True)
+        return (
+            cvxpy_constraint(
+                cp.norm(transform @ (q - observed), 2) <= radius,
+                name="Mahalanobis budget",
+                kind="mahalanobis_budget",
+                sense="<=",
+            ),
+        )
+
+    return build
+
+
 def _wasserstein_constraint_builder(
     cell_weights: Mapping[Hashable, float],
     cost: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
@@ -1251,6 +1516,79 @@ def _coerce_cost_matrix(
     return np.array(rows, dtype=float)
 
 
+def _mahalanobis_transform(
+    covariance: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
+    states: Sequence[Hashable],
+):
+    import numpy as np
+
+    covariance_matrix = _coerce_covariance_matrix(covariance, states)
+    try:
+        cholesky = np.linalg.cholesky(covariance_matrix)
+    except np.linalg.LinAlgError as exc:
+        raise ValueError(
+            "mahalanobis covariance matrix must be positive definite"
+        ) from exc
+    identity = np.eye(len(states), dtype=float)
+    return np.linalg.solve(cholesky, identity)
+
+
+def _coerce_covariance_matrix(
+    covariance: Mapping[tuple[Hashable, Hashable], float] | Sequence[Sequence[float]],
+    states: Sequence[Hashable],
+):
+    import numpy as np
+
+    n = len(states)
+    if isinstance(covariance, Mapping):
+        rows = []
+        missing = []
+        for left_state in states:
+            row = []
+            for right_state in states:
+                key = (left_state, right_state)
+                if key in covariance:
+                    row.append(_finite_covariance(covariance[key], key=key))
+                else:
+                    missing.append(key)
+                    row.append(0.0)
+            rows.append(row)
+        if missing:
+            preview = ", ".join(repr(key) for key in missing[:3])
+            if len(missing) > 3:
+                preview += ", ..."
+            raise ValueError(
+                f"mahalanobis covariance matrix is missing pairs: {preview}"
+            )
+        matrix = np.array(rows, dtype=float)
+    else:
+        if len(covariance) != n:
+            raise ValueError(
+                "mahalanobis covariance matrix must have one row per hidden state"
+            )
+        rows = []
+        for row_index, row in enumerate(covariance):
+            if len(row) != n:
+                raise ValueError(
+                    "mahalanobis covariance matrix must have one column per hidden "
+                    "state"
+                )
+            rows.append(
+                [
+                    _finite_covariance(
+                        value,
+                        key=(states[row_index], states[column_index]),
+                    )
+                    for column_index, value in enumerate(row)
+                ]
+            )
+        matrix = np.array(rows, dtype=float)
+
+    if not np.allclose(matrix, matrix.T, atol=1e-10, rtol=1e-10):
+        raise ValueError("mahalanobis covariance matrix must be symmetric")
+    return matrix
+
+
 def _nonnegative_cost(value: float, *, key: tuple[Hashable, Hashable]) -> float:
     cost = float(value)
     if not isfinite(cost) or cost < 0:
@@ -1258,6 +1596,13 @@ def _nonnegative_cost(value: float, *, key: tuple[Hashable, Hashable]) -> float:
             f"wasserstein cost for {key!r} must be finite and non-negative"
         )
     return cost
+
+
+def _finite_covariance(value: float, *, key: tuple[Hashable, Hashable]) -> float:
+    covariance = float(value)
+    if not isfinite(covariance):
+        raise ValueError(f"mahalanobis covariance for {key!r} must be finite")
+    return covariance
 
 
 def _public_law_constraints(

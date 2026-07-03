@@ -22,7 +22,14 @@ from .targets import ProcedureTarget
 
 
 _PARAMETERIZED_SENSITIVITY_PRESETS = frozenset(
-    {"tv_budget", "chi_square_budget", "kl_budget", "wasserstein"}
+    {
+        "tv_budget",
+        "chi_square_budget",
+        "kl_budget",
+        "l2_budget",
+        "mahalanobis_budget",
+        "wasserstein",
+    }
 )
 
 
@@ -1776,7 +1783,13 @@ def _parameterized_sensitivity_q(q: Any) -> QPreset | None:
     backend = (preset.backend or "cvxpy").strip().lower()
     if backend not in {"cvxpy", "parameterized_cvxpy"}:
         return None
-    if preset.name in {"tv_budget", "chi_square_budget", "kl_budget"}:
+    if preset.name in {
+        "tv_budget",
+        "chi_square_budget",
+        "kl_budget",
+        "l2_budget",
+        "mahalanobis_budget",
+    }:
         if preset.radius is None or float(preset.radius) == 0.0:
             return None
     return QPreset(
@@ -1795,7 +1808,11 @@ def _can_reuse_parameterized_problem(target: TabularTarget) -> bool:
 
 
 def _parameterized_sensitivity_key(preset: QPreset) -> tuple[Any, ...]:
-    cost_key = id(preset.cost) if preset.name == "wasserstein" else None
+    cost_key = (
+        id(preset.cost)
+        if preset.name in {"mahalanobis_budget", "wasserstein"}
+        else None
+    )
     return (
         preset.name,
         cost_key,
@@ -1817,7 +1834,13 @@ def _batched_sensitivity_key(q: Any) -> tuple[Any, ...] | None:
     backend = (preset.backend or "cvxpy").strip().lower()
     if backend != "batched_cvxpy":
         return None
-    if preset.name in {"tv_budget", "chi_square_budget", "kl_budget"}:
+    if preset.name in {
+        "tv_budget",
+        "chi_square_budget",
+        "kl_budget",
+        "l2_budget",
+        "mahalanobis_budget",
+    }:
         if preset.radius is None or float(preset.radius) == 0.0:
             return None
     return _parameterized_sensitivity_key(preset)

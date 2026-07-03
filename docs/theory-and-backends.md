@@ -81,6 +81,8 @@ Tabular and reporting helpers:
 - `recommend_refinements(...)`
 - `recommend_refinements_sensitivity(...)`
 - `public_representation_frontier(...)`
+- `q_l2_budget(...)`
+- `q_mahalanobis_budget(...)`
 
 Causal and estimator helpers:
 

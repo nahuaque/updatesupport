@@ -133,6 +133,70 @@ class QPresetTests(unittest.TestCase):
         self.assertEqual(env.solver, "SCIP")
         self.assertEqual(env.solver_options, {"limits/time": 5})
 
+    def test_soc_q_presets_name_and_describe_their_budget(self):
+        l2 = us.q_l2_budget(0.2)
+        mahalanobis = us.q_mahalanobis_budget(
+            0.2,
+            covariance=[
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+        )
+
+        l2_grouped = us.from_dataframe(
+            _rows(),
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            q=l2,
+        )
+        mahalanobis_grouped = us.from_dataframe(
+            _rows(),
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            q=mahalanobis,
+        )
+        alias_grouped = us.from_dataframe(
+            _rows(),
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            q="l2",
+            q_radius=0.2,
+        )
+
+        self.assertEqual(l2_grouped.q_name, "l2_budget(radius=0.2)")
+        self.assertIn("L2 distance", l2_grouped.q_description)
+        self.assertEqual(
+            mahalanobis_grouped.q_name,
+            "mahalanobis_budget(radius=0.2)",
+        )
+        self.assertIn("Mahalanobis", mahalanobis_grouped.q_description)
+        self.assertEqual(alias_grouped.q_name, "l2_budget(radius=0.2)")
+
+    def test_mahalanobis_rejects_invalid_covariance_matrix(self):
+        with self.assertRaisesRegex(ValueError, "positive definite"):
+            us.from_dataframe(
+                _rows(),
+                public=["public"],
+                hidden=["public", "hidden"],
+                target="target",
+                weight="weight",
+                q=us.q_mahalanobis_budget(
+                    0.2,
+                    covariance=[
+                        [1.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0],
+                    ],
+                ),
+            ).problem.global_transport_modulus()
+
     def test_sensitivity_report_runs_q_and_min_cell_weight_grid(self):
         report = us.sensitivity_report(
             _rows(),

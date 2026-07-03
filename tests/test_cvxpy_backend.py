@@ -213,6 +213,26 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.upper, 0.65, places=5)
         self.assertAlmostEqual(interval.diameter, 0.30, places=5)
 
+    def test_support_function_backend_handles_l2_budget_preset(self):
+        _require_cvxpy()
+
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_l2_budget(0.2, backend="support_function"),
+        )
+
+        interval = grouped.problem.global_transport_modulus()
+
+        self.assertIsInstance(grouped.problem.environments, us.SupportFunctionBackend)
+        self.assertEqual(grouped.q_name, "l2_budget(radius=0.2)")
+        self.assertAlmostEqual(interval.lower, 0.35857864, places=5)
+        self.assertAlmostEqual(interval.upper, 0.64142136, places=5)
+        self.assertIn("l2_budget", {row.kind for row in interval.duals})
+
     def test_cvxpy_q_preset_exposes_admissible_set_spec(self):
         _require_cvxpy()
 
@@ -506,11 +526,30 @@ class CvxpyBackendTests(unittest.TestCase):
         parameterized = [
             us.q_chi_square_budget(0.15, backend="parameterized_cvxpy"),
             us.q_kl_budget(0.08, backend="parameterized_cvxpy"),
+            us.q_l2_budget(0.2, backend="parameterized_cvxpy"),
+            us.q_mahalanobis_budget(
+                0.2,
+                covariance=[
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                backend="parameterized_cvxpy",
+            ),
             us.q_wasserstein(cost, radius=0.15, backend="parameterized_cvxpy"),
         ]
         standard = [
             us.q_chi_square_budget(0.15),
             us.q_kl_budget(0.08),
+            us.q_l2_budget(0.2),
+            us.q_mahalanobis_budget(
+                0.2,
+                covariance=[
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+            ),
             us.q_wasserstein(cost, radius=0.15),
         ]
 
@@ -823,6 +862,65 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertGreater(interval.upper, 0.5)
         self.assertLess(interval.diameter, 0.6)
 
+    def test_l2_budget_preset_limits_euclidean_shift_from_observed(self):
+        _require_cvxpy()
+
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_l2_budget(0.2),
+        )
+
+        interval = grouped.problem.global_transport_modulus()
+
+        self.assertEqual(grouped.q_name, "l2_budget(radius=0.2)")
+        self.assertAlmostEqual(interval.lower, 0.35857864, places=5)
+        self.assertAlmostEqual(interval.upper, 0.64142136, places=5)
+        self.assertAlmostEqual(interval.diameter, 0.28284271, places=5)
+
+    def test_mahalanobis_budget_with_identity_matches_l2_budget(self):
+        _require_cvxpy()
+
+        covariance = [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+        l2_grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_l2_budget(0.2),
+        )
+        mahalanobis_grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q=us.q_mahalanobis_budget(0.2, covariance=covariance),
+        )
+
+        l2_interval = l2_grouped.problem.global_transport_modulus()
+        mahalanobis_interval = mahalanobis_grouped.problem.global_transport_modulus()
+
+        self.assertEqual(
+            mahalanobis_grouped.q_name,
+            "mahalanobis_budget(radius=0.2)",
+        )
+        self.assertAlmostEqual(mahalanobis_interval.lower, l2_interval.lower, places=5)
+        self.assertAlmostEqual(mahalanobis_interval.upper, l2_interval.upper, places=5)
+        self.assertAlmostEqual(
+            mahalanobis_interval.diameter,
+            l2_interval.diameter,
+            places=5,
+        )
+
     def test_wasserstein_budget_preset_uses_explicit_hidden_cost(self):
         _require_cvxpy()
 
@@ -859,6 +957,15 @@ class CvxpyBackendTests(unittest.TestCase):
         for q in (
             us.q_chi_square_budget(0.0),
             us.q_kl_budget(0.0),
+            us.q_l2_budget(0.0),
+            us.q_mahalanobis_budget(
+                0.0,
+                covariance=[
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+            ),
             us.q_tv_budget(0.0),
         ):
             with self.subTest(q=q):
