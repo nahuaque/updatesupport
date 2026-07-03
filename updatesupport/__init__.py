@@ -110,7 +110,12 @@ from .results import (
     Witness,
 )
 from .spec import AuditRun, AuditSpec, QSpec, run_audit
-from .targets import LinearTarget, TargetContract
+from .targets import (
+    LinearTarget,
+    TargetContract,
+    UnsupportedTarget,
+    UnsupportedTargetError,
+)
 
 try:
     __version__ = version("updatesupport")
@@ -218,6 +223,8 @@ __all__ = [
     "TargetContract",
     "unregister_plugin",
     "UpdateSupportPlugin",
+    "UnsupportedTarget",
+    "UnsupportedTargetError",
     "validate_plugin",
     "Witness",
 ]

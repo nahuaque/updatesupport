@@ -377,6 +377,12 @@ Until that target-functional layer exists, nonlinear targets should either be:
   limitation stated,
 - kept out of the core soundness claim.
 
+The current API includes guardrails for this boundary. `UnsupportedTarget` can
+be used as an explicit marker for ratio, quantile, distributional,
+representation-dependent, or other nonlinear target objects that are not yet
+supported. Passing one into `FiniteProblem` or `from_dataframe(...)` raises
+`UnsupportedTargetError` instead of silently treating it as a linear target.
+
 ## Implementation Checks
 
 The test suite exercises the current mathematical contract directly:

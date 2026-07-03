@@ -177,6 +177,25 @@ class FromDataFrameTests(unittest.TestCase):
         self.assertAlmostEqual(grouped.problem.estimand_map[("A", "y")], 0.02)
         self.assertAlmostEqual(grouped.problem.estimand_map[("B", "z")], 0.004)
 
+    def test_from_dataframe_rejects_unsupported_nonlinear_target(self):
+        target = us.UnsupportedTarget(
+            name="approval_quantile",
+            kind="quantile",
+            formula="Q_0.9(Y)",
+            reason="Quantile targets need a dedicated target-functional backend.",
+        )
+
+        with self.assertRaisesRegex(
+            us.UnsupportedTargetError,
+            "supports only fixed linear plug-in targets",
+        ):
+            us.from_dataframe(
+                [{"public": "A", "hidden": "x", "target": 1.0}],
+                public=["public"],
+                hidden=["public", "hidden"],
+                target=target,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

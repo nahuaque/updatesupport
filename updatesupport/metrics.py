@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Any
 
+from .targets import raise_if_unsupported_target
+
 
 @dataclass(frozen=True)
 class RowMetric:
@@ -49,16 +51,22 @@ def row_metric(
 def target_name(target: str | RowMetric) -> str:
     """Return the display name for a column or row metric target."""
 
+    raise_if_unsupported_target(target, context="from_dataframe(target)")
     if isinstance(target, RowMetric):
         return target.name
+    if not isinstance(target, str):
+        raise TypeError("target must be a column name string or RowMetric")
     return target
 
 
 def target_description(target: str | RowMetric) -> str:
     """Return a human-readable description for a target."""
 
+    raise_if_unsupported_target(target, context="from_dataframe(target)")
     if isinstance(target, RowMetric):
         return target.description or target.name
+    if not isinstance(target, str):
+        raise TypeError("target must be a column name string or RowMetric")
     return target
 
 
@@ -70,8 +78,11 @@ def evaluate_target(
 ) -> float:
     """Evaluate a column target or row metric against one record."""
 
+    raise_if_unsupported_target(target, context="from_dataframe(target)")
     if isinstance(target, RowMetric):
         return target.evaluate(row)
+    if not isinstance(target, str):
+        raise TypeError("target must be a column name string or RowMetric")
     value = float(get_value(row, target))
     if not isfinite(value):
         raise ValueError(f"target {target!r} evaluated to a non-finite value")

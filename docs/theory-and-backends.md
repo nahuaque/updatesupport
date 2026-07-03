@@ -33,6 +33,8 @@ Core finite objects:
 - `FiniteProblem`
 - `LinearTarget`
 - `TargetContract`
+- `UnsupportedTarget`
+- `UnsupportedTargetError`
 - `Partition`
 - `PublicFiberSaturated`
 - `FiniteEnvironments`

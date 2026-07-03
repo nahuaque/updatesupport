@@ -30,6 +30,49 @@ class LinearTargetTests(unittest.TestCase):
         self.assertEqual(problem.target_contract.formula, "psi(q) = sum_d h(d) q(d)")
         self.assertAlmostEqual(problem.psi({"a": 0.25, "b": 0.75}), 1.5)
 
+    def test_finite_problem_rejects_unsupported_nonlinear_target(self):
+        target = us.UnsupportedTarget(
+            name="loss_ratio",
+            kind="ratio",
+            formula="sum loss / sum exposure",
+            reason="Ratio targets need a dedicated target-functional backend.",
+        )
+
+        with self.assertRaisesRegex(
+            us.UnsupportedTargetError,
+            "supports only fixed linear plug-in targets",
+        ):
+            us.FiniteProblem(
+                states=["a", "b"],
+                public={"a": "o", "b": "o"},
+                estimand=target,
+            )
+
+    def test_finite_problem_rejects_future_linear_target_shape(self):
+        class FutureLinearTarget:
+            @property
+            def contract(self):
+                return us.TargetContract(
+                    kind="linear",
+                    name="future_linear",
+                    formula="psi(q) = sum_d h(d) q(d)",
+                    description="future linear target object",
+                    fixed_after_compilation=True,
+                    supports_adequacy=True,
+                    supports_interval=True,
+                    supports_fiber_decomposition=True,
+                )
+
+        with self.assertRaisesRegex(
+            us.UnsupportedTargetError,
+            "is not a `LinearTarget`",
+        ):
+            us.FiniteProblem(
+                states=["a", "b"],
+                public={"a": "o", "b": "o"},
+                estimand=FutureLinearTarget(),
+            )
+
 
 class SaturatedSupportTests(unittest.TestCase):
     def test_public_descent_succeeds_when_estimand_is_constant_on_fibers(self):

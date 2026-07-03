@@ -27,6 +27,9 @@ All notable changes to `updatesupport` are documented here.
 - Added `LinearTarget` and `TargetContract` as the first internal target
   functional layer, with target-contract metadata in public-descent structured
   exports and Markdown reports.
+- Added `UnsupportedTarget` and `UnsupportedTargetError` guardrails so nonlinear
+  or representation-dependent target objects fail explicitly instead of being
+  silently interpreted as fixed linear targets.
 
 ### Fixed
 
