@@ -21,6 +21,8 @@ Lower-level evidence and search entry points:
    updatesupport.causal_reporting_stability
    updatesupport.sensitivity_report
    updatesupport.recommend_refinements
+   updatesupport.recommend_refinement_interactions
+   updatesupport.attribute_refinement_ambiguity
    updatesupport.recommend_refinements_sensitivity
    updatesupport.public_representation_frontier
    updatesupport.certify_public_representation
@@ -36,6 +38,9 @@ Core result objects:
    updatesupport.ClaimTree
    updatesupport.ClaimTreeAudit
    updatesupport.ClaimRefinementRecommendation
+   updatesupport.RefinementAttributionReport
+   updatesupport.RefinementAttribution
+   updatesupport.RefinementCoalitionEvaluation
    updatesupport.GroupedProblem
    updatesupport.PublicDescentReport
    updatesupport.PublicRepresentationFrontier

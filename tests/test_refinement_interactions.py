@@ -87,6 +87,92 @@ class InteractionRefinementTests(unittest.TestCase):
                 max_order=0,
             )
 
+    def test_refinement_attribution_splits_xor_interaction(self):
+        report = us.attribute_refinement_ambiguity(
+            _xor_rows(),
+            public=["public"],
+            hidden=["public", "a", "b"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["public", "a", "missing", "a", "b"],
+            q="saturated",
+        )
+
+        self.assertIsInstance(report, us.RefinementAttributionReport)
+        self.assertEqual(report.candidate_refinements, ("a", "b"))
+        self.assertTrue(report.exact)
+        self.assertEqual(report.method, "exact")
+        self.assertAlmostEqual(report.baseline_ambiguity, 1.0)
+        self.assertAlmostEqual(report.full_ambiguity, 0.0)
+        self.assertAlmostEqual(report.full_reduction, 1.0)
+        self.assertAlmostEqual(report.shapley_total, 1.0)
+        self.assertEqual(len(report.coalitions), 4)
+        self.assertEqual(len(report.attributions), 2)
+
+        by_column = {row.column: row for row in report.attributions}
+        self.assertAlmostEqual(by_column["a"].shapley_value, 0.5)
+        self.assertAlmostEqual(by_column["b"].shapley_value, 0.5)
+        self.assertAlmostEqual(by_column["a"].singleton_reduction, 0.0)
+        self.assertAlmostEqual(by_column["b"].singleton_reduction, 0.0)
+        self.assertAlmostEqual(by_column["a"].interaction_lift, 0.5)
+        self.assertAlmostEqual(by_column["a"].marginal_min, 0.0)
+        self.assertAlmostEqual(by_column["a"].marginal_max, 1.0)
+
+        markdown = report.to_markdown()
+        tables = report.to_tables()
+        helper_tables = us.report_tables(report)
+        payload = json.loads(report.to_json())
+
+        self.assertIn("Shapley Attribution", markdown)
+        self.assertIn("interaction_lift", markdown)
+        self.assertIn("attributions", tables)
+        self.assertIn("coalitions", helper_tables)
+        self.assertEqual(payload["top_attribution"]["shapley_value"], 0.5)
+
+    def test_refinement_attribution_supports_permutation_sampling(self):
+        rows = [{**row, "c": row["a"]} for row in _xor_rows()]
+
+        report = us.attribute_refinement_ambiguity(
+            rows,
+            public=["public"],
+            hidden=["public", "a", "b", "c"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["a", "b", "c"],
+            max_exact_columns=1,
+            n_permutations=7,
+            seed=123,
+        )
+
+        self.assertFalse(report.exact)
+        self.assertEqual(report.method, "permutation_sample")
+        self.assertEqual(report.n_permutations, 7)
+        self.assertEqual(report.seed, 123)
+        self.assertEqual(len(report.attributions), 3)
+        self.assertTrue(
+            all(row.evaluated_marginals == 7 for row in report.attributions)
+        )
+
+    def test_refinement_attribution_rejects_invalid_sampling_limits(self):
+        with self.assertRaisesRegex(ValueError, "max_exact_columns"):
+            us.attribute_refinement_ambiguity(
+                _xor_rows(),
+                public=["public"],
+                hidden=["public", "a", "b"],
+                target="target",
+                candidate_refinements=["a", "b"],
+                max_exact_columns=-1,
+            )
+        with self.assertRaisesRegex(ValueError, "n_permutations"):
+            us.attribute_refinement_ambiguity(
+                _xor_rows(),
+                public=["public"],
+                hidden=["public", "a", "b"],
+                target="target",
+                candidate_refinements=["a", "b"],
+                n_permutations=0,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

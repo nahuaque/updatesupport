@@ -50,6 +50,8 @@ Use these directly only when you intentionally want a lower-level artifact:
 - `recommend_refinements(...)`: one-column ambiguity-reduction screening.
 - `recommend_refinement_interactions(...)`: small interaction-aware refinement
   search.
+- `attribute_refinement_ambiguity(...)`: Shapley-style attribution of joint
+  ambiguity reduction across candidate refinements.
 - `recommend_refinements_sensitivity(...)`: refinement ranking aggregated over
   a sensitivity grid.
 - `public_representation_frontier(...)`: public-bucket design frontier.

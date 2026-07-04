@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import combinations
-from math import sqrt
+from math import comb, sqrt
 from typing import Any, Hashable, Mapping, Sequence
+
+import numpy as np
 
 from .data import (
     DataDiagnostic,
@@ -561,6 +563,321 @@ class InteractionRefinementReport:
                 "candidate set or at a higher order.",
                 "- As elsewhere, the result is relative to the chosen refinement "
                 "space and Q preset.",
+            ]
+        )
+        return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class RefinementCoalitionEvaluation:
+    """Ambiguity result for one candidate refinement coalition."""
+
+    columns: tuple[str, ...]
+    ambiguity: float
+    reduction: float
+    reduction_percent: float
+    public_cells: int
+
+    @property
+    def order(self) -> int:
+        return len(self.columns)
+
+    @property
+    def label(self) -> str:
+        return "base" if not self.columns else " + ".join(self.columns)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "columns": self.columns,
+            "column": self.label,
+            "order": self.order,
+            "ambiguity": self.ambiguity,
+            "reduction": self.reduction,
+            "reduction_percent": self.reduction_percent,
+            "public_cells": self.public_cells,
+        }
+
+
+@dataclass(frozen=True)
+class RefinementAttribution:
+    """Shapley-style ambiguity-reduction attribution for one refinement column."""
+
+    column: str
+    shapley_value: float
+    baseline_ambiguity: float
+    full_reduction: float
+    singleton_reduction: float
+    singleton_after_ambiguity: float
+    marginal_min: float
+    marginal_max: float
+    marginal_mean: float
+    evaluated_marginals: int
+
+    @property
+    def shapley_share(self) -> float:
+        if self.full_reduction <= 0:
+            return 0.0
+        return self.shapley_value / self.full_reduction
+
+    @property
+    def shapley_percent(self) -> float:
+        return 100.0 * self.shapley_share
+
+    @property
+    def baseline_percent(self) -> float:
+        if self.baseline_ambiguity <= 0:
+            return 0.0
+        return 100.0 * self.shapley_value / self.baseline_ambiguity
+
+    @property
+    def singleton_percent(self) -> float:
+        if self.baseline_ambiguity <= 0:
+            return 0.0
+        return 100.0 * self.singleton_reduction / self.baseline_ambiguity
+
+    @property
+    def interaction_lift(self) -> float:
+        """Shapley attribution beyond the one-column reduction."""
+
+        return self.shapley_value - self.singleton_reduction
+
+    @property
+    def interaction_lift_percent(self) -> float:
+        if self.baseline_ambiguity <= 0:
+            return 0.0
+        return 100.0 * self.interaction_lift / self.baseline_ambiguity
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "column": self.column,
+            "shapley_value": self.shapley_value,
+            "shapley_share": self.shapley_share,
+            "shapley_percent": self.shapley_percent,
+            "baseline_percent": self.baseline_percent,
+            "singleton_reduction": self.singleton_reduction,
+            "singleton_after_ambiguity": self.singleton_after_ambiguity,
+            "singleton_percent": self.singleton_percent,
+            "interaction_lift": self.interaction_lift,
+            "interaction_lift_percent": self.interaction_lift_percent,
+            "marginal_min": self.marginal_min,
+            "marginal_max": self.marginal_max,
+            "marginal_mean": self.marginal_mean,
+            "evaluated_marginals": self.evaluated_marginals,
+        }
+
+
+@dataclass(frozen=True)
+class RefinementAttributionReport:
+    """Shapley-style attribution of ambiguity reduction across refinements."""
+
+    attributions: tuple[RefinementAttribution, ...]
+    coalitions: tuple[RefinementCoalitionEvaluation, ...]
+    title: str
+    public_columns: tuple[str, ...]
+    hidden_columns: tuple[str, ...]
+    candidate_refinements: tuple[str, ...]
+    target: str
+    q_name: str
+    q_description: str
+    baseline_ambiguity: float
+    full_ambiguity: float
+    full_reduction: float
+    method: str
+    exact: bool
+    max_exact_columns: int
+    n_permutations: int | None = None
+    seed: int | None = None
+    evaluated_sets: int = 0
+    row_count: int | None = None
+
+    @property
+    def residual_ambiguity(self) -> float:
+        return self.full_ambiguity
+
+    @property
+    def top_attribution(self) -> RefinementAttribution | None:
+        return self.attributions[0] if self.attributions else None
+
+    @property
+    def shapley_total(self) -> float:
+        return sum(row.shapley_value for row in self.attributions)
+
+    @property
+    def approximation_gap(self) -> float:
+        return self.full_reduction - self.shapley_total
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "public_columns": self.public_columns,
+            "hidden_columns": self.hidden_columns,
+            "candidate_refinements": self.candidate_refinements,
+            "target": self.target,
+            "q_name": self.q_name,
+            "q_description": self.q_description,
+            "baseline_ambiguity": self.baseline_ambiguity,
+            "full_ambiguity": self.full_ambiguity,
+            "residual_ambiguity": self.residual_ambiguity,
+            "full_reduction": self.full_reduction,
+            "shapley_total": self.shapley_total,
+            "approximation_gap": self.approximation_gap,
+            "method": self.method,
+            "exact": self.exact,
+            "max_exact_columns": self.max_exact_columns,
+            "n_permutations": self.n_permutations,
+            "seed": self.seed,
+            "evaluated_sets": self.evaluated_sets,
+            "row_count": self.row_count,
+            "top_attribution": None
+            if self.top_attribution is None
+            else self.top_attribution.as_dict(),
+            "attributions": [row.as_dict() for row in self.attributions],
+            "coalitions": [row.as_dict() for row in self.coalitions],
+        }
+
+    def to_json(self, **kwargs: Any) -> str:
+        """Serialize the report to JSON."""
+
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        """Return named tables for structured export."""
+
+        return {
+            "summary": (
+                {
+                    "title": self.title,
+                    "public_columns": self.public_columns,
+                    "hidden_columns": self.hidden_columns,
+                    "candidate_refinements": self.candidate_refinements,
+                    "target": self.target,
+                    "q_name": self.q_name,
+                    "q_description": self.q_description,
+                    "baseline_ambiguity": self.baseline_ambiguity,
+                    "full_ambiguity": self.full_ambiguity,
+                    "full_reduction": self.full_reduction,
+                    "shapley_total": self.shapley_total,
+                    "approximation_gap": self.approximation_gap,
+                    "method": self.method,
+                    "exact": self.exact,
+                    "max_exact_columns": self.max_exact_columns,
+                    "n_permutations": self.n_permutations,
+                    "seed": self.seed,
+                    "evaluated_sets": self.evaluated_sets,
+                    "row_count": self.row_count,
+                    "top_attribution": None
+                    if self.top_attribution is None
+                    else self.top_attribution.column,
+                },
+            ),
+            "attributions": tuple(row.as_dict() for row in self.attributions),
+            "coalitions": tuple(row.as_dict() for row in self.coalitions),
+        }
+
+    def to_dataframes(self) -> dict[str, Any]:
+        """Return named pandas DataFrames for the report tables."""
+
+        from .exports import tables_to_dataframes
+
+        return tables_to_dataframes(self.to_tables())
+
+    def to_markdown(self) -> str:
+        lines = [
+            f"# {self.title}",
+            "",
+            "## Summary",
+            "",
+            f"- Baseline ambiguity: {self.baseline_ambiguity:.4f}",
+            f"- Ambiguity after all candidate refinements: {self.full_ambiguity:.4f}",
+            f"- Attributed reduction: {self.full_reduction:.4f}",
+            f"- Q preset: {self.q_name}",
+            f"- Candidate refinements: {', '.join(self.candidate_refinements)}",
+            f"- Attribution method: {self.method}",
+            f"- Exact Shapley values: {'yes' if self.exact else 'no'}",
+            f"- Evaluated refinement sets: {self.evaluated_sets}",
+        ]
+        if self.n_permutations is not None:
+            lines.append(f"- Permutation samples: {self.n_permutations}")
+        if self.top_attribution is not None:
+            lines.append(
+                f"- Largest attribution: `{self.top_attribution.column}` "
+                f"({self.top_attribution.shapley_value:.4f}, "
+                f"{self.top_attribution.shapley_percent:.1f}% of attributed reduction)"
+            )
+
+        lines.extend(
+            [
+                "",
+                "## Interpretation",
+                "",
+                "This report treats ambiguity reduction as a cooperative value "
+                "function over candidate public refinements. A column's Shapley "
+                "value is its average marginal ambiguity reduction across the "
+                "coalitions in which it could be added.",
+                "",
+                "Use this as attribution for reporting-design intelligence, not "
+                "as causal feature importance. The result is conditional on the "
+                "chosen public representation, retained hidden refinement, target, "
+                "candidate columns, sparse-cell filtering, and Q stress test.",
+                "",
+                "`interaction_lift` compares the Shapley attribution with the "
+                "one-column reduction. Positive values mean the column matters "
+                "more inside coalitions than it appears to matter alone; negative "
+                "values mean its solo reduction overlaps with other refinements.",
+                "",
+                "## Shapley Attribution",
+                "",
+                "| column | Shapley value | Shapley share | singleton reduction | "
+                "interaction lift | marginal range |",
+                "|:---|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for row in self.attributions:
+            lines.append(
+                "| "
+                f"{_escape_table(row.column)} | "
+                f"{row.shapley_value:.4f} | "
+                f"{row.shapley_percent:.1f}% | "
+                f"{row.singleton_reduction:.4f} | "
+                f"{row.interaction_lift:.4f} | "
+                f"[{row.marginal_min:.4f}, {row.marginal_max:.4f}] |"
+            )
+
+        lines.extend(
+            [
+                "",
+                "## Coalition Evaluations",
+                "",
+                "| columns | order | ambiguity | reduction | public cells |",
+                "|:---|---:|---:|---:|---:|",
+            ]
+        )
+        for row in self.coalitions[:20]:
+            lines.append(
+                "| "
+                f"{_escape_table(row.label)} | "
+                f"{row.order} | "
+                f"{row.ambiguity:.4f} | "
+                f"{row.reduction:.4f} | "
+                f"{row.public_cells} |"
+            )
+        if len(self.coalitions) > 20:
+            lines.append(f"| ... {len(self.coalitions) - 20} more |  |  |  |  |")
+
+        lines.extend(
+            [
+                "",
+                "## Limitations",
+                "",
+                "- Exact Shapley attribution enumerates all candidate-refinement "
+                "coalitions and can become expensive as the candidate set grows.",
+                "- Permutation-sampled attribution is approximate; increase "
+                "`n_permutations` or reduce the candidate set for a tighter audit.",
+                "- Attributions allocate ambiguity reduction among supplied "
+                "candidate refinements. They do not measure instability from "
+                "variables outside that candidate set.",
             ]
         )
         return "\n".join(lines)
@@ -2324,6 +2641,481 @@ def recommend_refinement_interactions(
         max_evaluations=max_evaluations,
         row_count=row_count,
     )
+
+
+def attribute_refinement_ambiguity(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    candidate_refinements: Sequence[str] | None = None,
+    candidate_columns: Sequence[str] | None = None,
+    weight: str | None = None,
+    min_cell_weight: float = 1.0,
+    q: Any = "saturated",
+    q_radius: float | None = None,
+    max_exact_columns: int = 8,
+    n_permutations: int | None = None,
+    seed: int | None = None,
+    title: str = "Refinement Ambiguity Attribution Report",
+) -> RefinementAttributionReport:
+    """Attribute joint ambiguity reduction to refinement columns.
+
+    The value function is the ambiguity reduction achieved by adding a set of
+    hidden columns to the public representation. For small candidate sets this
+    computes exact Shapley values by enumerating all coalitions. For larger
+    candidate sets it defaults to permutation-sampled Shapley attribution.
+    """
+
+    if max_exact_columns < 0:
+        raise ValueError("max_exact_columns must be non-negative")
+    if n_permutations is not None and n_permutations < 1:
+        raise ValueError("n_permutations must be positive or None")
+    candidate_refinements = _resolve_sequence_arg(
+        candidate_refinements,
+        candidate_columns,
+        primary_name="candidate_refinements",
+        alias_name="candidate_columns",
+    )
+    if candidate_refinements is None:
+        candidate_refinements = ()
+    valid_candidates = _valid_interaction_refinement_columns(
+        candidate_refinements,
+        public=public,
+        hidden=hidden,
+    )
+
+    repeatable_data, row_count = _repeatable_data(data)
+    rank = {column: index for index, column in enumerate(valid_candidates)}
+    cache: dict[tuple[str, ...], RefinementCoalitionEvaluation] = {}
+    baseline = _refinement_coalition_evaluation(
+        repeatable_data,
+        public=public,
+        hidden=hidden,
+        target=target,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
+        columns=(),
+        baseline_ambiguity=None,
+        rank=rank,
+        cache=cache,
+    )
+    full_key = tuple(valid_candidates)
+    full = _refinement_coalition_evaluation(
+        repeatable_data,
+        public=public,
+        hidden=hidden,
+        target=target,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
+        columns=full_key,
+        baseline_ambiguity=baseline.ambiguity,
+        rank=rank,
+        cache=cache,
+    )
+
+    if len(valid_candidates) <= max_exact_columns:
+        method = "exact"
+        exact = True
+        marginal_values = _exact_refinement_shapley_marginals(
+            repeatable_data,
+            public=public,
+            hidden=hidden,
+            target=target,
+            weight=weight,
+            min_cell_weight=min_cell_weight,
+            q=q,
+            q_radius=q_radius,
+            candidates=valid_candidates,
+            baseline_ambiguity=baseline.ambiguity,
+            rank=rank,
+            cache=cache,
+        )
+        permutations_used = None
+    else:
+        method = "permutation_sample"
+        exact = False
+        permutations_used = 256 if n_permutations is None else int(n_permutations)
+        marginal_values = _sampled_refinement_shapley_marginals(
+            repeatable_data,
+            public=public,
+            hidden=hidden,
+            target=target,
+            weight=weight,
+            min_cell_weight=min_cell_weight,
+            q=q,
+            q_radius=q_radius,
+            candidates=valid_candidates,
+            baseline_ambiguity=baseline.ambiguity,
+            rank=rank,
+            cache=cache,
+            n_permutations=permutations_used,
+            seed=seed,
+        )
+
+    attributions = _refinement_attribution_rows(
+        repeatable_data,
+        public=public,
+        hidden=hidden,
+        target=target,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
+        candidates=valid_candidates,
+        baseline_ambiguity=baseline.ambiguity,
+        full_reduction=full.reduction,
+        rank=rank,
+        cache=cache,
+        marginal_values=marginal_values,
+    )
+    coalitions = tuple(
+        sorted(
+            cache.values(),
+            key=lambda row: (row.order, row.columns),
+        )
+    )
+
+    return RefinementAttributionReport(
+        attributions=attributions,
+        coalitions=coalitions,
+        title=title,
+        public_columns=tuple(public),
+        hidden_columns=tuple(hidden),
+        candidate_refinements=valid_candidates,
+        target=_target_label(target),
+        q_name=_q_name_for_evaluations(
+            repeatable_data,
+            public=public,
+            hidden=hidden,
+            target=target,
+            weight=weight,
+            min_cell_weight=min_cell_weight,
+            q=q,
+            q_radius=q_radius,
+        ),
+        q_description=_q_description_for_evaluations(
+            repeatable_data,
+            public=public,
+            hidden=hidden,
+            target=target,
+            weight=weight,
+            min_cell_weight=min_cell_weight,
+            q=q,
+            q_radius=q_radius,
+        ),
+        baseline_ambiguity=baseline.ambiguity,
+        full_ambiguity=full.ambiguity,
+        full_reduction=full.reduction,
+        method=method,
+        exact=exact,
+        max_exact_columns=max_exact_columns,
+        n_permutations=permutations_used,
+        seed=seed,
+        evaluated_sets=len(cache),
+        row_count=row_count,
+    )
+
+
+def _refinement_coalition_evaluation(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    weight: str | None,
+    min_cell_weight: float,
+    q: Any,
+    q_radius: float | None,
+    columns: Sequence[str],
+    baseline_ambiguity: float | None,
+    rank: Mapping[str, int],
+    cache: dict[tuple[str, ...], RefinementCoalitionEvaluation],
+) -> RefinementCoalitionEvaluation:
+    key = _normalize_refinement_coalition(columns, rank)
+    if key in cache:
+        return cache[key]
+    refined = from_dataframe(
+        data,
+        public=tuple(public) + key,
+        hidden=hidden,
+        target=target,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
+    )
+    ambiguity = refined.problem.global_transport_modulus().diameter
+    baseline = ambiguity if baseline_ambiguity is None else baseline_ambiguity
+    reduction = baseline - ambiguity
+    reduction_percent = 100.0 * reduction / baseline if baseline > 0 else 0.0
+    row = RefinementCoalitionEvaluation(
+        columns=key,
+        ambiguity=ambiguity,
+        reduction=reduction,
+        reduction_percent=reduction_percent,
+        public_cells=len(refined.problem.public_values),
+    )
+    cache[key] = row
+    return row
+
+
+def _exact_refinement_shapley_marginals(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    weight: str | None,
+    min_cell_weight: float,
+    q: Any,
+    q_radius: float | None,
+    candidates: tuple[str, ...],
+    baseline_ambiguity: float,
+    rank: Mapping[str, int],
+    cache: dict[tuple[str, ...], RefinementCoalitionEvaluation],
+) -> dict[str, list[tuple[float, float]]]:
+    marginal_values = {column: [] for column in candidates}
+    n = len(candidates)
+    if n == 0:
+        return marginal_values
+
+    for order in range(0, n + 1):
+        for columns in combinations(candidates, order):
+            _refinement_coalition_evaluation(
+                data,
+                public=public,
+                hidden=hidden,
+                target=target,
+                weight=weight,
+                min_cell_weight=min_cell_weight,
+                q=q,
+                q_radius=q_radius,
+                columns=columns,
+                baseline_ambiguity=baseline_ambiguity,
+                rank=rank,
+                cache=cache,
+            )
+
+    for column in candidates:
+        others = tuple(candidate for candidate in candidates if candidate != column)
+        for order in range(0, n):
+            weight_factor = 1.0 / (n * comb(n - 1, order))
+            for predecessor in combinations(others, order):
+                predecessor_key = _normalize_refinement_coalition(predecessor, rank)
+                successor_key = _normalize_refinement_coalition(
+                    (*predecessor_key, column),
+                    rank,
+                )
+                marginal = (
+                    cache[successor_key].reduction - cache[predecessor_key].reduction
+                )
+                marginal_values[column].append((weight_factor, marginal))
+    return marginal_values
+
+
+def _sampled_refinement_shapley_marginals(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    weight: str | None,
+    min_cell_weight: float,
+    q: Any,
+    q_radius: float | None,
+    candidates: tuple[str, ...],
+    baseline_ambiguity: float,
+    rank: Mapping[str, int],
+    cache: dict[tuple[str, ...], RefinementCoalitionEvaluation],
+    n_permutations: int,
+    seed: int | None,
+) -> dict[str, list[tuple[float, float]]]:
+    marginal_values = {column: [] for column in candidates}
+    rng = np.random.default_rng(seed)
+    candidate_list = list(candidates)
+    for _ in range(n_permutations):
+        permutation = list(rng.permutation(candidate_list))
+        predecessor: tuple[str, ...] = ()
+        predecessor_value = _refinement_coalition_evaluation(
+            data,
+            public=public,
+            hidden=hidden,
+            target=target,
+            weight=weight,
+            min_cell_weight=min_cell_weight,
+            q=q,
+            q_radius=q_radius,
+            columns=predecessor,
+            baseline_ambiguity=baseline_ambiguity,
+            rank=rank,
+            cache=cache,
+        )
+        for column in permutation:
+            successor = _normalize_refinement_coalition(
+                (*predecessor, column),
+                rank,
+            )
+            successor_value = _refinement_coalition_evaluation(
+                data,
+                public=public,
+                hidden=hidden,
+                target=target,
+                weight=weight,
+                min_cell_weight=min_cell_weight,
+                q=q,
+                q_radius=q_radius,
+                columns=successor,
+                baseline_ambiguity=baseline_ambiguity,
+                rank=rank,
+                cache=cache,
+            )
+            marginal_values[column].append(
+                (
+                    1.0 / n_permutations,
+                    successor_value.reduction - predecessor_value.reduction,
+                )
+            )
+            predecessor = successor
+            predecessor_value = successor_value
+    return marginal_values
+
+
+def _refinement_attribution_rows(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    weight: str | None,
+    min_cell_weight: float,
+    q: Any,
+    q_radius: float | None,
+    candidates: tuple[str, ...],
+    baseline_ambiguity: float,
+    full_reduction: float,
+    rank: Mapping[str, int],
+    cache: dict[tuple[str, ...], RefinementCoalitionEvaluation],
+    marginal_values: Mapping[str, Sequence[tuple[float, float]]],
+) -> tuple[RefinementAttribution, ...]:
+    rows: list[RefinementAttribution] = []
+    for column in candidates:
+        singleton = _refinement_coalition_evaluation(
+            data,
+            public=public,
+            hidden=hidden,
+            target=target,
+            weight=weight,
+            min_cell_weight=min_cell_weight,
+            q=q,
+            q_radius=q_radius,
+            columns=(column,),
+            baseline_ambiguity=baseline_ambiguity,
+            rank=rank,
+            cache=cache,
+        )
+        marginal_terms = tuple(marginal_values.get(column, ()))
+        raw_marginals = tuple(float(value) for _weight, value in marginal_terms)
+        shapley_value = sum(weight * value for weight, value in marginal_terms)
+        if raw_marginals:
+            marginal_min = min(raw_marginals)
+            marginal_max = max(raw_marginals)
+            marginal_mean = sum(raw_marginals) / len(raw_marginals)
+        else:
+            marginal_min = 0.0
+            marginal_max = 0.0
+            marginal_mean = 0.0
+        rows.append(
+            RefinementAttribution(
+                column=column,
+                shapley_value=shapley_value,
+                baseline_ambiguity=baseline_ambiguity,
+                full_reduction=full_reduction,
+                singleton_reduction=singleton.reduction,
+                singleton_after_ambiguity=singleton.ambiguity,
+                marginal_min=marginal_min,
+                marginal_max=marginal_max,
+                marginal_mean=marginal_mean,
+                evaluated_marginals=len(raw_marginals),
+            )
+        )
+    rows.sort(
+        key=lambda row: (
+            row.shapley_value,
+            row.singleton_reduction,
+            row.column,
+        ),
+        reverse=True,
+    )
+    return tuple(rows)
+
+
+def _normalize_refinement_coalition(
+    columns: Sequence[str],
+    rank: Mapping[str, int],
+) -> tuple[str, ...]:
+    seen: set[str] = set()
+    valid = []
+    for column in columns:
+        if column in seen:
+            continue
+        seen.add(column)
+        if column in rank:
+            valid.append(column)
+    return tuple(sorted(valid, key=lambda column: rank[column]))
+
+
+def _q_name_for_evaluations(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    weight: str | None,
+    min_cell_weight: float,
+    q: Any,
+    q_radius: float | None,
+) -> str:
+    grouped = from_dataframe(
+        data,
+        public=public,
+        hidden=hidden,
+        target=target,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
+    )
+    return grouped.q_name
+
+
+def _q_description_for_evaluations(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    weight: str | None,
+    min_cell_weight: float,
+    q: Any,
+    q_radius: float | None,
+) -> str:
+    grouped = from_dataframe(
+        data,
+        public=public,
+        hidden=hidden,
+        target=target,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
+    )
+    return grouped.q_description
 
 
 def _interaction_refinement_candidate(

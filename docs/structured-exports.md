@@ -122,6 +122,12 @@ Interaction-aware refinement reports expose:
 - `interaction_candidates`
 - `singletons`
 
+Refinement attribution reports expose:
+
+- `summary`
+- `attributions`
+- `coalitions`
+
 Public-representation frontier reports expose:
 
 - `summary`

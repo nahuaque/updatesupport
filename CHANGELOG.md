@@ -4,6 +4,10 @@ All notable changes to `updatesupport` are documented here.
 
 ## Unreleased
 
+- Added Shapley-style refinement attribution for allocating joint
+  hidden-composition ambiguity reduction across candidate public refinements,
+  with exact enumeration for small candidate sets and permutation sampling for
+  larger sets.
 - Added nested/hierarchical claim trees for auditing multi-level reporting
   claims, including recursive markdown reports and flat summary/node/edge
   exports for hierarchical Bayesian model-review workflows.

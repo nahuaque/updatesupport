@@ -52,6 +52,54 @@ Positive `additive_synergy` is stronger. It means the combined refinement beats
 the sum of the individual one-column reductions. Negative values are common and
 usually indicate overlapping or redundant refinements.
 
+## Shapley Attribution
+
+Use `attribute_refinement_ambiguity(...)` when you want to allocate joint
+ambiguity reduction back to the candidate columns:
+
+```python
+attribution = us.attribute_refinement_ambiguity(
+    rows,
+    public=["age_band", "sex"],
+    hidden=["age_band", "sex", "channel", "tenure_band", "device"],
+    target="uplift",
+    weight="n",
+    candidate_refinements=["channel", "tenure_band", "device"],
+)
+
+print(attribution.to_markdown())
+```
+
+The value function is:
+
+> ambiguity reduction after adding a set of hidden columns to the public
+> representation.
+
+The Shapley value for a column is its average marginal reduction across the
+coalitions in which it could be added. This answers a different question from
+the interaction table:
+
+- `recommend_refinements(...)`: which column helps most by itself?
+- `recommend_refinement_interactions(...)`: which small column sets work well
+  together?
+- `attribute_refinement_ambiguity(...)`: how should the joint reduction be
+  attributed across the supplied columns?
+
+For small candidate sets, the attribution is exact and enumerates all
+coalitions. For larger sets, the function uses permutation sampling unless you
+raise `max_exact_columns`.
+
+The attribution table includes:
+
+- `shapley_value`: allocated ambiguity reduction,
+- `shapley_percent`: share of the full candidate-set reduction,
+- `singleton_reduction`: reduction from adding the column alone,
+- `interaction_lift`: Shapley value minus singleton reduction.
+
+Positive `interaction_lift` means a column matters more in combination than it
+appears to matter alone. Negative `interaction_lift` usually means the column's
+solo effect overlaps with other refinements.
+
 ## Search Bounds
 
 The default search uses `max_order=2` and `max_evaluations=128`. This keeps the
@@ -103,6 +151,12 @@ The main tables are:
 - `summary`
 - `interaction_candidates`
 - `singletons`
+
+Refinement attribution reports expose:
+
+- `summary`
+- `attributions`
+- `coalitions`
 
 As elsewhere in `updatesupport`, the result is relative to the chosen hidden
 refinement, target, and Q preset. It does not certify that no useful interaction
