@@ -246,13 +246,13 @@ def build_launch_claim(
     *,
     ambiguity_limit: float = 0.01,
     max_added_columns: int = 1,
-) -> us.ClaimVerificationReport:
-    """Verify whether the positive-lift launch decision is invariant."""
+) -> us.ClaimAudit:
+    """Audit whether the positive-lift launch decision is invariant."""
 
     rows = synthetic_experiment_rows() if rows is None else rows
     positive_lift_label = "launch_or_continue"
     nonpositive_lift_label = "hold_or_roll_back"
-    claim = us.ReportingClaim(
+    claim = us.claim(
         estimate_name="Positive product-experiment lift claim",
         public=PUBLIC_COLUMNS,
         hidden=HIDDEN_COLUMNS,
@@ -271,9 +271,9 @@ def build_launch_claim(
         max_added_columns=max_added_columns,
         target_description="treatment minus control conversion lift",
         observed_label="Observed experiment lift",
-        title="Product Experiment Launch Claim Verification",
+        title="Product Experiment Launch Claim Audit",
     )
-    return claim.verify(rows)
+    return claim.audit(rows)
 
 
 def build_frontier(

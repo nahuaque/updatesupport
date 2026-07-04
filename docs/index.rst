@@ -26,6 +26,7 @@ This documentation has three layers:
    :caption: Core Guides
 
    representation-adequacy
+   api-surface
    positioning-and-lineage
    mathematical-statistical-soundness
    theory-and-backends

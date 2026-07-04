@@ -6,7 +6,7 @@ Common entry points imported from ``updatesupport``:
 .. autosummary::
 
    updatesupport.claim
-   updatesupport.verify_claim
+   updatesupport.audit_claim
    updatesupport.from_dataframe
    updatesupport.run_audit
 
@@ -34,6 +34,5 @@ Core result objects:
    updatesupport.PublicDescentReport
    updatesupport.PublicRepresentationFrontier
    updatesupport.RepresentationStabilityCertificate
-   updatesupport.ClaimVerificationReport
    updatesupport.AuditSpec
    updatesupport.AuditRun

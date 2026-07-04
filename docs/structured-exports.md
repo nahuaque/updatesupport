@@ -152,7 +152,7 @@ Representation-stability certificates expose:
 - prefixed frontier evidence such as `frontier_summary`,
   `frontier_candidates`, and `frontier_candidate_scenarios`
 
-Claim verification reports expose:
+Claim audit reports expose:
 
 - `summary`
 - `claim`

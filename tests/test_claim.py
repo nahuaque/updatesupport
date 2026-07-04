@@ -14,7 +14,21 @@ def _rows() -> list[dict[str, object]]:
     ]
 
 
-class ReportingClaimTests(unittest.TestCase):
+class ClaimSpecTests(unittest.TestCase):
+    def test_old_claim_names_are_not_top_level_api(self):
+        self.assertFalse(hasattr(us, "verify_claim"))
+        self.assertFalse(hasattr(us, "ReportingClaim"))
+        self.assertFalse(hasattr(us, "ClaimVerificationReport"))
+
+    def test_curated_star_import_surface_uses_claim_names(self):
+        self.assertIn("claim", us.__all__)
+        self.assertIn("audit_claim", us.__all__)
+        self.assertIn("ClaimSpec", us.__all__)
+        self.assertIn("ClaimAudit", us.__all__)
+        self.assertNotIn("verify_claim", us.__all__)
+        self.assertNotIn("ReportingClaim", us.__all__)
+        self.assertNotIn("ClaimVerificationReport", us.__all__)
+
     def test_claim_factory_and_audit_alias_return_claim_audit(self):
         claim = us.claim(
             "Factory claim",
@@ -56,16 +70,16 @@ class ReportingClaimTests(unittest.TestCase):
 
         report = grouped.to_report(title="Grouped Evidence")
         claim = grouped.claim("Grouped claim")
-        verdict = claim.verify(grouped)
+        verdict = claim.audit(grouped)
 
         self.assertIsInstance(report, us.PublicDescentReport)
         self.assertEqual(report.title, "Grouped Evidence")
-        self.assertIsInstance(claim, us.ReportingClaim)
+        self.assertIsInstance(claim, us.ClaimSpec)
         self.assertTrue(verdict.inconclusive)
         self.assertEqual(verdict.claim.public, ("segment",))
 
-    def test_verify_claim_passes_when_current_public_representation_is_stable(self):
-        claim = us.ReportingClaim(
+    def test_audit_claim_passes_when_current_public_representation_is_stable(self):
+        claim = us.ClaimSpec(
             estimate_name="Demo target rate",
             public=["segment"],
             hidden=["segment", "driver"],
@@ -77,11 +91,11 @@ class ReportingClaimTests(unittest.TestCase):
             statistical_interval=(0.45, 0.55),
         )
 
-        report = us.verify_claim(_rows(), claim)
+        report = us.audit_claim(_rows(), claim)
         markdown = report.to_markdown()
         payload = report.as_dict()
 
-        self.assertIsInstance(report, us.ClaimVerificationReport)
+        self.assertIsInstance(report, us.ClaimAudit)
         self.assertTrue(report.passed)
         self.assertEqual(report.status, "pass")
         self.assertAlmostEqual(report.primary.interval.diameter, 0.3)
@@ -93,8 +107,8 @@ class ReportingClaimTests(unittest.TestCase):
         self.assertIn("Statistical uncertainty", markdown)
         self.assertIn("Counterexample Witness", markdown)
 
-    def test_verify_claim_fails_and_reports_repair_when_current_claim_breaks(self):
-        claim = us.ReportingClaim(
+    def test_audit_claim_fails_and_reports_repair_when_current_claim_breaks(self):
+        claim = us.ClaimSpec(
             estimate_name="Strict target rate",
             public=["segment"],
             hidden=["segment", "driver"],
@@ -105,7 +119,7 @@ class ReportingClaimTests(unittest.TestCase):
             ambiguity_limit=0.05,
         )
 
-        report = us.verify_claim(_rows(), claim)
+        report = us.audit_claim(_rows(), claim)
         tables = report.to_tables()
 
         self.assertTrue(report.failed)
@@ -120,8 +134,8 @@ class ReportingClaimTests(unittest.TestCase):
         self.assertIn("certificate_summary", tables)
         self.assertIn("witness_cell_shifts", tables)
 
-    def test_verify_claim_is_inconclusive_without_ambiguity_limit(self):
-        report = us.verify_claim(
+    def test_audit_claim_is_inconclusive_without_ambiguity_limit(self):
+        report = us.audit_claim(
             _rows(),
             {
                 "estimate_name": "Exploratory target rate",
@@ -137,8 +151,8 @@ class ReportingClaimTests(unittest.TestCase):
         self.assertIsNotNone(report.certificate)
         self.assertIn("cannot issue a pass/fail", report.to_markdown())
 
-    def test_claim_verification_exports_json_and_tables(self):
-        claim = us.ReportingClaim(
+    def test_claim_audit_exports_json_and_tables(self):
+        claim = us.ClaimSpec(
             estimate_name="Exported claim",
             public=["segment"],
             hidden=["segment", "driver"],
@@ -146,7 +160,7 @@ class ReportingClaimTests(unittest.TestCase):
             candidate_refinements=["driver"],
             ambiguity_limit=0.05,
         )
-        report = claim.verify(_rows())
+        report = claim.audit(_rows())
 
         payload = json.loads(report.to_json())
         tables = us.report_tables(report)
@@ -157,8 +171,8 @@ class ReportingClaimTests(unittest.TestCase):
         self.assertIn("reasons", tables)
         self.assertIn("primary_refinements", tables)
 
-    def test_verify_claim_passes_when_decision_is_invariant(self):
-        claim = us.ReportingClaim(
+    def test_audit_claim_passes_when_decision_is_invariant(self):
+        claim = us.ClaimSpec(
             estimate_name="Decision-stable target",
             public=["segment"],
             hidden=["segment", "driver"],
@@ -168,7 +182,7 @@ class ReportingClaimTests(unittest.TestCase):
             decision=us.threshold_decision("<=", 0.9, label="target within limit"),
         )
 
-        report = us.verify_claim(_rows(), claim)
+        report = us.audit_claim(_rows(), claim)
         markdown = report.to_markdown()
         tables = report.to_tables()
 
@@ -181,10 +195,10 @@ class ReportingClaimTests(unittest.TestCase):
         self.assertEqual(tables["summary"][0]["decision_invariant"], True)
         self.assertEqual(tables["decision"][0]["certified_decision"], "pass")
 
-    def test_verify_claim_fails_and_reports_decision_repair_when_threshold_crosses(
+    def test_audit_claim_fails_and_reports_decision_repair_when_threshold_crosses(
         self,
     ):
-        claim = us.ReportingClaim(
+        claim = us.ClaimSpec(
             estimate_name="Decision-crossing target",
             public=["segment"],
             hidden=["segment", "driver"],
@@ -199,7 +213,7 @@ class ReportingClaimTests(unittest.TestCase):
             },
         )
 
-        report = us.verify_claim(_rows(), claim)
+        report = us.audit_claim(_rows(), claim)
         payload = json.loads(report.to_json())
         tables = report.to_tables()
 
@@ -217,8 +231,8 @@ class ReportingClaimTests(unittest.TestCase):
             ("driver",),
         )
 
-    def test_verify_claim_supports_model_assisted_joint_draws(self):
-        claim = us.ReportingClaim(
+    def test_audit_claim_supports_model_assisted_joint_draws(self):
+        claim = us.ClaimSpec(
             estimate_name="Model-assisted claim",
             public=["segment"],
             hidden=["segment", "driver"],
@@ -237,7 +251,7 @@ class ReportingClaimTests(unittest.TestCase):
             effective_sample_size=10,
         )
 
-        report = us.verify_claim(
+        report = us.audit_claim(
             _rows(),
             claim,
             joint_model=joint,
@@ -258,8 +272,8 @@ class ReportingClaimTests(unittest.TestCase):
         self.assertIn("model_assisted_draws", tables)
         self.assertEqual(len(tables["model_assisted_draws"]), 5)
 
-    def test_verify_claim_can_fit_model_assisted_joint_model_implicitly(self):
-        claim = us.ReportingClaim(
+    def test_audit_claim_can_fit_model_assisted_joint_model_implicitly(self):
+        claim = us.ClaimSpec(
             estimate_name="Implicit joint claim",
             public=["segment"],
             hidden=["segment", "driver"],
@@ -268,7 +282,7 @@ class ReportingClaimTests(unittest.TestCase):
             min_cell_weight=0,
         )
 
-        report = claim.verify(_rows(), joint_draws=3, joint_seed=99)
+        report = claim.audit(_rows(), joint_draws=3, joint_seed=99)
 
         self.assertIsNotNone(report.model_assisted)
         self.assertEqual(report.model_assisted.draw_count, 3)

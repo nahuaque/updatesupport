@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 from .certificate import RepresentationStabilityCertificate
 from .breakdown import BreakdownPointReport
-from .claim import ClaimVerificationReport
+from .claim import ClaimAudit
 from .comparison import RobustComparisonReport
 from .frontier import (
     FrontierCandidateExplanation,
@@ -78,8 +78,8 @@ def report_tables(report: Any) -> ReportTables:
     if isinstance(report, RepresentationStabilityCertificate):
         return _certificate_tables(report)
 
-    if isinstance(report, ClaimVerificationReport):
-        return _claim_verification_tables(report)
+    if isinstance(report, ClaimAudit):
+        return _claim_audit_tables(report)
 
     if isinstance(report, HiddenCompositionUncertaintyReport):
         return _hidden_composition_uncertainty_tables(report)
@@ -461,7 +461,7 @@ def _certificate_tables(
     return tables
 
 
-def _claim_verification_tables(report: ClaimVerificationReport) -> ReportTables:
+def _claim_audit_tables(report: ClaimAudit) -> ReportTables:
     repair = report.repair_candidate
     tables: ReportTables = {
         "summary": (

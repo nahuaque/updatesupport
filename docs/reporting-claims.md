@@ -4,9 +4,9 @@ Claims are the highest-level review artifact in `updatesupport`. Instead of
 choosing individual diagnostics up front, declare the aggregate claim you want
 to defend and call `.audit(...)`.
 
-`us.claim(...)` is the preferred constructor. `ReportingClaim` remains the
-underlying dataclass, and `ClaimSpec` / `ClaimAudit` are clearer aliases for
-the main public workflow.
+`us.claim(...)` is the preferred constructor. `ClaimSpec` is the underlying
+dataclass when you want to instantiate or serialize the spec directly, and
+`ClaimAudit` is the report object returned by `.audit(...)`.
 
 ```python
 import updatesupport as us
@@ -36,10 +36,10 @@ print(verdict.to_markdown())
 The function form is still available when it is more convenient:
 
 ```python
-verdict = us.verify_claim(rows_or_frame, claim)
+verdict = us.audit_claim(rows_or_frame, claim)
 ```
 
-The verifier produces one report that separates:
+The auditor produces one report that separates:
 
 - the reported causal or statistical estimate,
 - statistical uncertainty, if supplied,
@@ -73,7 +73,7 @@ Use `decision=...` when the practical claim is a conclusion or action rather
 than a raw interval width:
 
 ```python
-claim = us.ReportingClaim(
+claim = us.claim(
     estimate_name="Expected-loss estimate",
     public=["product", "region", "score_band"],
     hidden=["product", "region", "score_band", "channel", "vintage"],
@@ -94,7 +94,7 @@ of the hidden-composition interval is still at or below the threshold. It is
 certified failed when the lower endpoint is already above the threshold. It is
 not invariant when the interval crosses the threshold.
 
-The verifier reports:
+The auditor reports:
 
 - the observed decision,
 - lower- and upper-endpoint decisions,
@@ -129,12 +129,12 @@ to the claim being reviewed, not as a detached optimizer output.
 
 ## Exact Minimum Repairs
 
-By default, claim verification uses exhaustive certificate search because it is
+By default, claim audit uses exhaustive certificate search because it is
 portable. When SCIP is installed and the Q presets are compatible convex
 presets, request the exact-minimum repair path:
 
 ```python
-claim = us.ReportingClaim(
+claim = us.claim(
     estimate_name="Expected-loss estimate",
     public=["product", "region"],
     hidden=["product", "region", "score_band", "ltv_band", "channel"],
@@ -153,7 +153,7 @@ path and records the exact-minimum guarantee in the embedded certificate trace.
 
 ## Structured Output
 
-Claim verification reports support:
+Claim audit reports support:
 
 ```python
 verdict.as_dict()
@@ -169,7 +169,7 @@ certificate or witness evidence when those components are present.
 ## Model-Assisted Joint Draws
 
 For plausibility analysis, fit a nonparametric joint distribution and pass it to
-the verifier:
+the auditor:
 
 ```python
 joint = us.fit_joint_distribution(
@@ -180,7 +180,7 @@ joint = us.fit_joint_distribution(
     weight=claim.weight,
 )
 
-verdict = us.verify_claim(
+verdict = us.audit_claim(
     rows_or_frame,
     claim,
     joint_model=joint,

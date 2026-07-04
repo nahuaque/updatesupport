@@ -248,13 +248,13 @@ def build_leaderboard_claim(
     ambiguity_limit: float = 0.025,
     max_added_columns: int = 2,
     max_evaluations: int = 64,
-) -> us.ClaimVerificationReport:
-    """Verify whether the benchmark winner is invariant to recomposition."""
+) -> us.ClaimAudit:
+    """Audit whether the benchmark winner is invariant to recomposition."""
 
     rows = synthetic_eval_rows() if rows is None else rows
     challenger_label = "challenger_wins_or_ties"
     baseline_label = "baseline_can_win"
-    claim = us.ReportingClaim(
+    claim = us.claim(
         estimate_name="Challenger beats baseline benchmark claim",
         public=PUBLIC_COLUMNS,
         hidden=HIDDEN_COLUMNS,
@@ -277,9 +277,9 @@ def build_leaderboard_claim(
         exact_required=False,
         target_description="challenger minus baseline benchmark score",
         observed_label="Observed benchmark margin",
-        title="AI Benchmark Leaderboard Claim Verification",
+        title="AI Benchmark Leaderboard Claim Audit",
     )
-    return claim.verify(rows)
+    return claim.audit(rows)
 
 
 def build_frontier(

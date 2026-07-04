@@ -99,10 +99,10 @@ uncertainty.to_tables()["draws"]
 uncertainty.to_tables()["joint_cells"]
 ```
 
-## Verify A Claim With Joint Draws
+## Audit A Claim With Joint Draws
 
 ```python
-claim = us.ReportingClaim(
+claim = us.claim(
     estimate_name="Income-threshold target rate",
     public=["AGE_BAND", "EDU_BAND", "SEX"],
     hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND", "RAC1P"],
@@ -113,7 +113,7 @@ claim = us.ReportingClaim(
     ambiguity_limit=0.015,
 )
 
-verdict = us.verify_claim(
+verdict = us.audit_claim(
     rows_or_frame,
     claim,
     joint_model=joint,
@@ -132,7 +132,7 @@ The claim report adds a **Model-Assisted Joint Analysis** section with:
 - ambiguity range and mean ambiguity across draws,
 - per-draw status rows.
 
-If `joint_model` is omitted but `joint_draws` is positive, `verify_claim(...)`
+If `joint_model` is omitted but `joint_draws` is positive, `audit_claim(...)`
 fits the joint model from the same data using the claim's public, hidden,
 target, weight, and `min_cell_weight` settings.
 

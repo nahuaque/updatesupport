@@ -69,9 +69,9 @@ Tabular and reporting helpers:
 - `AuditRun`
 - `QSpec`
 - `run_audit(...)`
-- `ReportingClaim`
-- `ClaimVerificationReport`
-- `verify_claim(...)`
+- `ClaimSpec`
+- `ClaimAudit`
+- `audit_claim(...)`
 - `fit_joint_distribution(...)`
 - `NonparametricJointDistribution`
 - `hidden_composition_uncertainty(...)`

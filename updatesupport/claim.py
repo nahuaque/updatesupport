@@ -1,4 +1,4 @@
-"""Claim-level reporting-stability verification."""
+"""Claim-level reporting-stability audits."""
 
 from __future__ import annotations
 
@@ -169,7 +169,7 @@ def threshold_decision(
     pass_label: str = "pass",
     fail_label: str = "fail",
 ) -> DecisionRule:
-    """Create a threshold decision rule for claim verification."""
+    """Create a threshold decision rule for claim audits."""
 
     if pass_if is not None:
         if operator is not None and _normalize_decision_operator(operator) != (
@@ -342,7 +342,7 @@ class ClaimRefinementRecommendation:
 
 
 @dataclass(frozen=True)
-class ReportingClaim:
+class ClaimSpec:
     """Declarative claim that a reported aggregate is stable enough to defend."""
 
     estimate_name: str
@@ -457,7 +457,7 @@ class ReportingClaim:
         )
 
     @classmethod
-    def from_dict(cls, payload: Mapping[str, Any]) -> "ReportingClaim":
+    def from_dict(cls, payload: Mapping[str, Any]) -> "ClaimSpec":
         """Build a claim from a JSON-compatible mapping."""
 
         return cls(**dict(payload))
@@ -513,22 +513,17 @@ class ReportingClaim:
 
         return self.as_dict()
 
-    def verify(self, data: Any, **kwargs: Any) -> "ClaimVerificationReport":
-        """Verify this claim against tabular data."""
+    def audit(self, data: Any, **kwargs: Any) -> "ClaimAudit":
+        """Audit this claim against tabular data."""
 
-        return verify_claim(data, self, **kwargs)
-
-    def audit(self, data: Any, **kwargs: Any) -> "ClaimVerificationReport":
-        """Alias for verify(), matching the claim-first product language."""
-
-        return self.verify(data, **kwargs)
+        return audit_claim(data, self, **kwargs)
 
 
 @dataclass(frozen=True)
-class ClaimVerificationReport:
+class ClaimAudit:
     """Review artifact that certifies, breaks, or repairs a reporting claim."""
 
-    claim: ReportingClaim
+    claim: ClaimSpec
     primary: PublicDescentReport
     certificate: RepresentationStabilityCertificate | None = None
     witness: WitnessReport | None = None
@@ -539,7 +534,7 @@ class ClaimVerificationReport:
     status: str = "inconclusive"
     reasons: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
-    title: str = "Reporting Claim Verification"
+    title: str = "Claim Audit"
 
     def __post_init__(self) -> None:
         if self.status not in {"pass", "fail", "inconclusive"}:
@@ -731,7 +726,7 @@ class ClaimVerificationReport:
         lines.extend(
             [
                 "The reported estimate is treated as the target functional "
-                "supplied to `updatesupport`. The verifier does not refit the "
+                "supplied to `updatesupport`. The auditor does not refit the "
                 "causal or statistical model; it audits whether the public "
                 "representation supports the reported aggregate under hidden "
                 "composition shifts.",
@@ -807,19 +802,19 @@ class ClaimVerificationReport:
         return "\n".join(lines)
 
 
-def verify_claim(
+def audit_claim(
     data: Any,
-    claim: ReportingClaim | Mapping[str, Any],
+    claim: ClaimSpec | Mapping[str, Any],
     *,
     joint_model: NonparametricJointDistribution | None = None,
     joint_draws: int = 0,
     joint_seed: int | None = None,
     **overrides: Any,
-) -> ClaimVerificationReport:
-    """Verify a declared reporting claim against tabular data."""
+) -> ClaimAudit:
+    """Audit a declared reporting claim against tabular data."""
 
-    if not isinstance(claim, ReportingClaim):
-        claim = ReportingClaim.from_dict(claim)
+    if not isinstance(claim, ClaimSpec):
+        claim = ClaimSpec.from_dict(claim)
     if overrides:
         claim = replace(claim, **overrides)
     if joint_draws < 0:
@@ -915,7 +910,7 @@ def verify_claim(
             seed=joint_seed,
         )
 
-    return ClaimVerificationReport(
+    return ClaimAudit(
         claim=claim,
         primary=primary,
         certificate=certificate,
@@ -927,7 +922,7 @@ def verify_claim(
         status=status,
         reasons=reasons,
         limitations=_claim_limitations(claim, primary, certificate),
-        title=claim.title or "Reporting Claim Verification",
+        title=claim.title or "Claim Audit",
     )
 
 
@@ -938,10 +933,10 @@ def claim(
     hidden: Sequence[str],
     target: TabularTarget,
     **kwargs: Any,
-) -> ReportingClaim:
+) -> ClaimSpec:
     """Create a claim spec using the simplified claim-first API."""
 
-    return ReportingClaim(
+    return ClaimSpec(
         estimate_name=estimate_name,
         public=public,
         hidden=hidden,
@@ -951,7 +946,7 @@ def claim(
 
 
 def _claim_status(
-    claim: ReportingClaim,
+    claim: ClaimSpec,
     *,
     primary: PublicDescentReport,
     certificate: RepresentationStabilityCertificate | None,
@@ -1029,7 +1024,7 @@ def _claim_status(
         if decision is None:
             reasons.append(
                 "No ambiguity limit or decision rule was supplied, so the "
-                "verifier reports evidence but cannot issue a pass/fail "
+                "auditor reports evidence but cannot issue a pass/fail "
                 "stability verdict."
             )
             return "inconclusive", tuple(reasons)
@@ -1063,7 +1058,7 @@ def _claim_status(
 
 
 def _claim_limitations(
-    claim: ReportingClaim,
+    claim: ClaimSpec,
     primary: PublicDescentReport,
     certificate: RepresentationStabilityCertificate | None,
 ) -> tuple[str, ...]:
@@ -1105,7 +1100,7 @@ def _claim_limitations(
 def _decision_repair_candidate(
     data: Any,
     *,
-    claim: ReportingClaim,
+    claim: ClaimSpec,
     expected_decision: str,
 ) -> tuple[PublicRepresentationCandidate | None, bool | None]:
     search = claim.search
@@ -1179,7 +1174,7 @@ def _candidate_decision_invariant(
 def _model_assisted_summary(
     data: Any,
     *,
-    claim: ReportingClaim,
+    claim: ClaimSpec,
     joint_model: NonparametricJointDistribution | None,
     draw_count: int,
     seed: int | None,
@@ -1213,7 +1208,7 @@ def _model_assisted_summary(
 def _model_assisted_draw_result(
     row,
     *,
-    claim: ReportingClaim,
+    claim: ClaimSpec,
 ) -> ModelAssistedDrawResult:
     status = row.status
     if (
@@ -1267,7 +1262,7 @@ def _normalize_optional_q(value: Any) -> Any:
         return value
 
 
-def _decision_markdown(report: ClaimVerificationReport) -> list[str]:
+def _decision_markdown(report: ClaimAudit) -> list[str]:
     if report.decision is None:
         return []
     decision = report.decision
@@ -1293,7 +1288,7 @@ def _decision_markdown(report: ClaimVerificationReport) -> list[str]:
     return lines
 
 
-def _decision_repair_markdown(report: ClaimVerificationReport) -> list[str]:
+def _decision_repair_markdown(report: ClaimAudit) -> list[str]:
     candidate = report.decision_repair_candidate
     if candidate is None:
         return []
@@ -1316,7 +1311,7 @@ def _decision_repair_markdown(report: ClaimVerificationReport) -> list[str]:
 
 
 def _claim_refinement_recommendations(
-    report: ClaimVerificationReport,
+    report: ClaimAudit,
 ) -> tuple[ClaimRefinementRecommendation, ...]:
     rows: list[ClaimRefinementRecommendation] = []
     seen: set[tuple[str, ...]] = set()
@@ -1369,7 +1364,7 @@ def _claim_refinement_recommendations(
 def _one_column_claim_recommendation(
     row: RefinementCandidate,
     *,
-    report: ClaimVerificationReport,
+    report: ClaimAudit,
 ) -> ClaimRefinementRecommendation:
     columns = (row.column,)
     repair = report.repair_candidate
@@ -1403,7 +1398,7 @@ def _one_column_claim_recommendation(
 
 
 def _repair_reason(
-    report: ClaimVerificationReport,
+    report: ClaimAudit,
     repair: PublicRepresentationCandidate,
 ) -> str:
     if repair is report.decision_repair_candidate:
@@ -1469,7 +1464,7 @@ def _certificate_summary_markdown(
     return lines
 
 
-def _refinement_markdown(report: ClaimVerificationReport) -> list[str]:
+def _refinement_markdown(report: ClaimAudit) -> list[str]:
     recommendations = report.refinement_recommendations
     if recommendations:
         lines = [
@@ -1498,7 +1493,7 @@ def _refinement_markdown(report: ClaimVerificationReport) -> list[str]:
             )
         return lines
     return [
-        "No candidate refinements were supplied, so the verifier cannot propose "
+        "No candidate refinements were supplied, so the auditor cannot propose "
         "a public-representation repair."
     ]
 
@@ -1697,21 +1692,15 @@ def _float_tuple(values: Sequence[float], name: str) -> tuple[float, ...]:
     return result
 
 
-ClaimSpec = ReportingClaim
-ClaimAudit = ClaimVerificationReport
-
-
 __all__ = [
     "ClaimAudit",
     "ClaimRefinementRecommendation",
     "ClaimSpec",
-    "ClaimVerificationReport",
     "DecisionResult",
     "DecisionRule",
     "ModelAssistedDrawResult",
     "ModelAssistedStabilitySummary",
-    "ReportingClaim",
+    "audit_claim",
     "claim",
     "threshold_decision",
-    "verify_claim",
 ]

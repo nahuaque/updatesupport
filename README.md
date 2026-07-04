@@ -194,8 +194,9 @@ coarsened subgroup reporting.
 
 Use `us.claim(...)` when you want one review artifact that certifies the claim,
 breaks it with a hidden-composition witness, or proposes a stable repair.
-`ReportingClaim` remains available as the underlying dataclass; `ClaimSpec` and
-`ClaimAudit` are clearer aliases for the main workflow.
+`ClaimSpec` is the underlying dataclass when you want to instantiate or
+serialize the spec directly, and `ClaimAudit` is the report object returned by
+`.audit(...)`.
 
 ```python
 claim = us.claim(
@@ -215,7 +216,7 @@ verdict = claim.audit(rows_or_frame)
 print(verdict.to_markdown())
 ```
 
-The verifier separates the reported estimate, statistical uncertainty,
+The auditor separates the reported estimate, statistical uncertainty,
 hidden-composition ambiguity, public-refinement repair, counterexample witness,
 and limitations. `verdict.recommend_refinements()` returns claim-centered
 refinement rows: whether a candidate actually repairs the claim, whether it
@@ -234,7 +235,7 @@ joint = us.fit_joint_distribution(
     weight=claim.weight,
 )
 
-verdict = us.verify_claim(
+verdict = us.audit_claim(
     rows_or_frame,
     claim,
     joint_model=joint,
@@ -484,6 +485,7 @@ uv run pytest
 
 - [Sphinx documentation entry point](docs/index.rst)
 - [Local documentation build notes](docs/README.md)
+- [API surface guide](docs/api-surface.md)
 - [Representation adequacy guide](docs/representation-adequacy.md)
 - [Positioning and lineage](docs/positioning-and-lineage.md)
 - [Audit specs](docs/audit-specs.md)
