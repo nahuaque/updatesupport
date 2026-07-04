@@ -1,7 +1,6 @@
 # API Surface
 
-`updatesupport` is now organized around claim audits. The preferred user path is
-small:
+`updatesupport` is organized around claim audits. The main user path is small:
 
 ```python
 claim = us.claim(
@@ -16,9 +15,9 @@ claim = us.claim(
 audit = claim.audit(rows_or_frame)
 ```
 
-## Preferred Names
+## Core API
 
-Use these for new code:
+The public user-facing surface is:
 
 - `us.claim(...)`: build a `ClaimSpec`.
 - `ClaimSpec.audit(...)`: run the audit.
@@ -34,8 +33,8 @@ counterexample witnesses, representation certificates, decision-invariant
 repairs, model-assisted joint draws, structured exports, and limitations.
 
 The package `__all__` is curated around this surface. Some backend classes and
-diagnostic dataclasses remain importable as direct attributes for now, but they
-are intentionally not part of the star-import surface.
+diagnostic dataclasses are importable as direct attributes, but they are not
+part of the star-import surface.
 
 ## Advanced Evidence Tools
 
@@ -57,14 +56,3 @@ Use these directly only when you intentionally want a lower-level artifact:
 These are implementation depth behind the claim workflow. They remain useful for
 method development, diagnostics, and specialized notebooks, but they should not
 be the first thing a new analyst has to learn.
-
-## Breaking Claim Rename
-
-The old claim names are intentionally no longer top-level API:
-
-- use `ClaimSpec` instead of `ReportingClaim`;
-- use `ClaimAudit` instead of `ClaimVerificationReport`;
-- use `audit_claim(...)` or `claim.audit(...)` instead of `verify_claim(...)`.
-
-This reduces the product vocabulary to one action: declare a claim, then audit
-it.
