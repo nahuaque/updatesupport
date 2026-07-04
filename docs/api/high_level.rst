@@ -7,6 +7,8 @@ Common entry points imported from ``updatesupport``:
 
    updatesupport.claim
    updatesupport.audit_claim
+   updatesupport.claim_tree
+   updatesupport.audit_claim_tree
    updatesupport.from_dataframe
    updatesupport.run_audit
 
@@ -29,6 +31,10 @@ Core result objects:
 
    updatesupport.ClaimSpec
    updatesupport.ClaimAudit
+   updatesupport.ClaimNode
+   updatesupport.ClaimNodeAudit
+   updatesupport.ClaimTree
+   updatesupport.ClaimTreeAudit
    updatesupport.ClaimRefinementRecommendation
    updatesupport.GroupedProblem
    updatesupport.PublicDescentReport

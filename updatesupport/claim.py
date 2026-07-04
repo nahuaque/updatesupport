@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Mapping, Sequence
 
 from .certificate import (
@@ -802,6 +802,397 @@ class ClaimAudit:
         return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class ClaimNode:
+    """One node in a nested claim tree.
+
+    A node wraps an ordinary :class:`ClaimSpec` and optional child nodes. This
+    keeps hierarchical audits as an orchestration/reporting concern: each node
+    is still audited by the same single-claim machinery.
+    """
+
+    claim: ClaimSpec | Mapping[str, Any]
+    children: Sequence["ClaimNode | ClaimSpec | Mapping[str, Any]"] = ()
+    name: str | None = None
+    role: str | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        claim = self.claim
+        if not isinstance(claim, ClaimSpec):
+            claim = ClaimSpec.from_dict(claim)
+        children = tuple(_coerce_claim_node(child) for child in self.children)
+        metadata = dict(self.metadata)
+        if self.name is not None and not str(self.name):
+            raise ValueError("name cannot be empty")
+        if self.role is not None and not str(self.role):
+            raise ValueError("role cannot be empty")
+        object.__setattr__(self, "claim", claim)
+        object.__setattr__(self, "children", children)
+        object.__setattr__(self, "metadata", metadata)
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "ClaimNode":
+        """Build a claim node from a JSON-compatible mapping."""
+
+        if "claim" not in payload:
+            return cls(claim=ClaimSpec.from_dict(payload))
+        return cls(
+            claim=payload["claim"],
+            children=payload.get("children", ()),
+            name=payload.get("name"),
+            role=payload.get("role"),
+            metadata=payload.get("metadata", {}),
+        )
+
+    @property
+    def label(self) -> str:
+        return self.name or self.claim.estimate_name
+
+    def audit(self, data: Any, **kwargs: Any) -> "ClaimNodeAudit":
+        """Audit this node and its descendants against tabular data."""
+
+        return _audit_claim_node(data, self, path=(self.label,), depth=0, **kwargs)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "label": self.label,
+            "name": self.name,
+            "role": self.role,
+            "metadata": dict(self.metadata),
+            "claim": self.claim.as_dict(),
+            "children": [child.as_dict() for child in self.children],
+        }
+
+
+@dataclass(frozen=True)
+class ClaimNodeAudit:
+    """Audit result for one claim-tree node and its descendants."""
+
+    node: ClaimNode
+    audit: ClaimAudit
+    children: Sequence["ClaimNodeAudit"] = ()
+    path: Sequence[str] = ()
+    depth: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "children", tuple(self.children))
+        object.__setattr__(self, "path", tuple(str(part) for part in self.path))
+        if self.depth < 0:
+            raise ValueError("depth must be non-negative")
+
+    @property
+    def label(self) -> str:
+        return self.node.label
+
+    @property
+    def branch(self) -> str:
+        return " / ".join(self.path)
+
+    @property
+    def status(self) -> str:
+        return self.audit.status
+
+    @property
+    def ambiguity(self) -> float:
+        return self.audit.ambiguity
+
+    @property
+    def passed(self) -> bool:
+        return self.audit.passed
+
+    @property
+    def failed(self) -> bool:
+        return self.audit.failed
+
+    @property
+    def inconclusive(self) -> bool:
+        return self.audit.inconclusive
+
+    def walk(self) -> tuple["ClaimNodeAudit", ...]:
+        rows: list[ClaimNodeAudit] = [self]
+        for child in self.children:
+            rows.extend(child.walk())
+        return tuple(rows)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "label": self.label,
+            "path": list(self.path),
+            "branch": self.branch,
+            "depth": self.depth,
+            "role": self.node.role,
+            "metadata": dict(self.node.metadata),
+            "status": self.status,
+            "observed_value": self.audit.observed_value,
+            "interval": {
+                "lower": self.audit.interval.lower,
+                "upper": self.audit.interval.upper,
+                "diameter": self.audit.interval.diameter,
+            },
+            "ambiguity": self.ambiguity,
+            "public_adequate": self.audit.primary.public_adequate,
+            "decision_invariant": None
+            if self.audit.decision is None
+            else self.audit.decision.invariant,
+            "claim": self.node.claim.as_dict(),
+            "audit": self.audit.as_dict(),
+            "children": [child.as_dict() for child in self.children],
+        }
+
+
+@dataclass(frozen=True)
+class ClaimTree:
+    """Nested collection of claims audited as one hierarchy."""
+
+    root: ClaimNode | ClaimSpec | Mapping[str, Any]
+    name: str = "Nested Claim Audit"
+    description: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("name must be a non-empty string")
+        object.__setattr__(self, "root", _coerce_claim_node(self.root))
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "ClaimTree":
+        """Build a claim tree from a JSON-compatible mapping."""
+
+        root = payload.get("root")
+        if root is None:
+            root = payload.get("claim")
+        if root is None:
+            raise ValueError("claim tree payload must contain 'root' or 'claim'")
+        return cls(
+            root=root,
+            name=payload.get("name", "Nested Claim Audit"),
+            description=payload.get("description"),
+        )
+
+    def audit(self, data: Any, **kwargs: Any) -> "ClaimTreeAudit":
+        """Audit every node in the claim tree against tabular data."""
+
+        return audit_claim_tree(data, self, **kwargs)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "description": self.description,
+            "root": self.root.as_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class ClaimTreeAudit:
+    """Nested claim report for hierarchical or multi-level review workflows."""
+
+    tree: ClaimTree
+    root: ClaimNodeAudit
+    title: str = "Nested Claim Audit"
+
+    @property
+    def nodes(self) -> tuple[ClaimNodeAudit, ...]:
+        return self.root.walk()
+
+    @property
+    def node_count(self) -> int:
+        return len(self.nodes)
+
+    @property
+    def leaf_count(self) -> int:
+        return sum(1 for node in self.nodes if not node.children)
+
+    @property
+    def pass_count(self) -> int:
+        return sum(1 for node in self.nodes if node.passed)
+
+    @property
+    def fail_count(self) -> int:
+        return sum(1 for node in self.nodes if node.failed)
+
+    @property
+    def inconclusive_count(self) -> int:
+        return sum(1 for node in self.nodes if node.inconclusive)
+
+    @property
+    def status(self) -> str:
+        if self.fail_count:
+            return "fail"
+        if self.inconclusive_count:
+            return "inconclusive"
+        return "pass"
+
+    @property
+    def passed(self) -> bool:
+        return self.status == "pass"
+
+    @property
+    def failed(self) -> bool:
+        return self.status == "fail"
+
+    @property
+    def inconclusive(self) -> bool:
+        return self.status == "inconclusive"
+
+    @property
+    def max_ambiguity(self) -> float:
+        if not self.nodes:
+            return 0.0
+        return max(node.ambiguity for node in self.nodes)
+
+    def worst_nodes(
+        self,
+        *,
+        top: int = 5,
+        statuses: Sequence[str] = ("fail", "inconclusive"),
+    ) -> tuple[ClaimNodeAudit, ...]:
+        """Return the highest-risk claim nodes by status and ambiguity."""
+
+        if top < 0:
+            raise ValueError("top must be non-negative")
+        allowed = set(statuses)
+        selected = [node for node in self.nodes if node.status in allowed]
+        if not selected:
+            selected = list(self.nodes)
+        selected.sort(
+            key=lambda node: (
+                _claim_tree_status_rank(node.status),
+                -node.ambiguity,
+                node.branch,
+            )
+        )
+        return tuple(selected[:top])
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "status": self.status,
+            "passed": self.passed,
+            "failed": self.failed,
+            "inconclusive": self.inconclusive,
+            "node_count": self.node_count,
+            "leaf_count": self.leaf_count,
+            "pass_count": self.pass_count,
+            "fail_count": self.fail_count,
+            "inconclusive_count": self.inconclusive_count,
+            "max_ambiguity": self.max_ambiguity,
+            "tree": self.tree.as_dict(),
+            "root": self.root.as_dict(),
+            "worst_nodes": [node.as_dict() for node in self.worst_nodes()],
+        }
+
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        summary = (
+            {
+                "title": self.title,
+                "status": self.status,
+                "node_count": self.node_count,
+                "leaf_count": self.leaf_count,
+                "pass_count": self.pass_count,
+                "fail_count": self.fail_count,
+                "inconclusive_count": self.inconclusive_count,
+                "root_status": self.root.status,
+                "max_ambiguity": self.max_ambiguity,
+            },
+        )
+        node_rows = tuple(_claim_tree_node_row(node) for node in self.nodes)
+        edge_rows = tuple(
+            {
+                "parent_path": node.branch,
+                "child_path": child.branch,
+                "parent_label": node.label,
+                "child_label": child.label,
+            }
+            for node in self.nodes
+            for child in node.children
+        )
+        reason_rows = tuple(
+            {"path": node.branch, "label": node.label, "reason": reason}
+            for node in self.nodes
+            for reason in node.audit.reasons
+        )
+        limitation_rows = tuple(
+            {"path": node.branch, "label": node.label, "limitation": limitation}
+            for node in self.nodes
+            for limitation in node.audit.limitations
+        )
+        worst_rows = tuple(
+            {
+                "path": node.branch,
+                "label": node.label,
+                "status": node.status,
+                "ambiguity": node.ambiguity,
+                "reason_count": len(node.audit.reasons),
+            }
+            for node in self.worst_nodes()
+        )
+        return {
+            "summary": summary,
+            "nodes": node_rows,
+            "edges": edge_rows,
+            "reasons": reason_rows,
+            "limitations": limitation_rows,
+            "worst_nodes": worst_rows,
+        }
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import tables_to_dataframes
+
+        return tables_to_dataframes(self.to_tables())
+
+    def to_markdown(self) -> str:
+        lines = [
+            f"# {self.title}",
+            "",
+            "## Hierarchy Verdict",
+            "",
+            f"- Status: **{self.status.upper()}**",
+            f"- Root claim: {self.root.label} ({self.root.status})",
+            f"- Claim nodes: {self.node_count}",
+            f"- Leaf claims: {self.leaf_count}",
+            (
+                f"- Node outcomes: {self.pass_count} pass, {self.fail_count} fail, "
+                f"{self.inconclusive_count} inconclusive"
+            ),
+            f"- Maximum hidden-composition ambiguity: {self.max_ambiguity:.4f}",
+        ]
+        if self.tree.description:
+            lines.extend(["", self.tree.description])
+
+        lines.extend(["", "## Claim Tree", ""])
+        lines.extend(_claim_tree_markdown_table(self.nodes))
+
+        worst = self.worst_nodes(top=5)
+        if worst:
+            lines.extend(["", "## Highest-Risk Branches", ""])
+            lines.extend(_claim_tree_worst_markdown(worst))
+
+        lines.extend(
+            [
+                "",
+                "## Interpretation",
+                "",
+                "Each row is an ordinary `ClaimAudit`; the tree only organizes "
+                "those audits into a hierarchy. For Bayesian hierarchical "
+                "workflows, pass posterior summaries, posterior-draw summaries, "
+                "or draw-specific cell targets into the claim data before "
+                "auditing. `updatesupport` does not fit or validate the "
+                "Bayesian model; it separates supplied posterior/statistical "
+                "uncertainty from hidden-composition ambiguity.",
+                "",
+                "A failed child means that level of the hierarchy is not stable "
+                "under its declared public representation and Q stress test, "
+                "even if the root aggregate is stable.",
+            ]
+        )
+        return "\n".join(lines)
+
+
 def audit_claim(
     data: Any,
     claim: ClaimSpec | Mapping[str, Any],
@@ -943,6 +1334,172 @@ def claim(
         target=target,
         **kwargs,
     )
+
+
+def claim_tree(
+    root: ClaimNode | ClaimSpec | Mapping[str, Any],
+    *,
+    children: Sequence[ClaimNode | ClaimSpec | Mapping[str, Any]] = (),
+    name: str = "Nested Claim Audit",
+    description: str | None = None,
+) -> ClaimTree:
+    """Create a nested claim tree from a root claim and optional children."""
+
+    root_node = _coerce_claim_node(root)
+    if children:
+        root_node = ClaimNode(
+            claim=root_node.claim,
+            children=(*root_node.children, *children),
+            name=root_node.name,
+            role=root_node.role,
+            metadata=root_node.metadata,
+        )
+    return ClaimTree(root=root_node, name=name, description=description)
+
+
+def audit_claim_tree(
+    data: Any,
+    tree: ClaimTree | ClaimNode | ClaimSpec | Mapping[str, Any],
+    **kwargs: Any,
+) -> ClaimTreeAudit:
+    """Audit a nested claim tree against tabular data."""
+
+    if not isinstance(tree, ClaimTree):
+        if isinstance(tree, Mapping) and ("root" in tree or "claim" in tree):
+            tree = ClaimTree.from_dict(tree)
+        else:
+            tree = ClaimTree(root=tree)
+    root_audit = _audit_claim_node(
+        data,
+        tree.root,
+        path=(tree.root.label,),
+        depth=0,
+        **kwargs,
+    )
+    return ClaimTreeAudit(tree=tree, root=root_audit, title=tree.name)
+
+
+def _coerce_claim_node(value: ClaimNode | ClaimSpec | Mapping[str, Any]) -> ClaimNode:
+    if isinstance(value, ClaimNode):
+        return value
+    if isinstance(value, ClaimSpec):
+        return ClaimNode(claim=value)
+    if isinstance(value, Mapping):
+        return ClaimNode.from_dict(value)
+    raise TypeError("claim tree nodes must be ClaimNode, ClaimSpec, or mapping")
+
+
+def _audit_claim_node(
+    data: Any,
+    node: ClaimNode,
+    *,
+    path: tuple[str, ...],
+    depth: int,
+    **kwargs: Any,
+) -> ClaimNodeAudit:
+    audit = audit_claim(data, node.claim, **kwargs)
+    child_audits = tuple(
+        _audit_claim_node(
+            data,
+            child,
+            path=path + (child.label,),
+            depth=depth + 1,
+            **kwargs,
+        )
+        for child in node.children
+    )
+    return ClaimNodeAudit(
+        node=node,
+        audit=audit,
+        children=child_audits,
+        path=path,
+        depth=depth,
+    )
+
+
+def _claim_tree_node_row(node: ClaimNodeAudit) -> dict[str, Any]:
+    decision = node.audit.decision
+    return {
+        "path": node.branch,
+        "parent_path": " / ".join(node.path[:-1]),
+        "depth": node.depth,
+        "label": node.label,
+        "role": node.node.role,
+        "estimate_name": node.node.claim.estimate_name,
+        "status": node.status,
+        "observed_value": node.audit.observed_value,
+        "lower": node.audit.interval.lower,
+        "upper": node.audit.interval.upper,
+        "ambiguity": node.ambiguity,
+        "ambiguity_limit": node.node.claim.ambiguity_limit,
+        "public_adequate": node.audit.primary.public_adequate,
+        "decision_invariant": None if decision is None else decision.invariant,
+        "certified_decision": None if decision is None else decision.certified_decision,
+        "public_columns": node.node.claim.public,
+        "hidden_columns": node.node.claim.hidden,
+        "child_count": len(node.children),
+        "reason_count": len(node.audit.reasons),
+        "limitation_count": len(node.audit.limitations),
+    }
+
+
+def _claim_tree_status_rank(status: str) -> int:
+    if status == "fail":
+        return 0
+    if status == "inconclusive":
+        return 1
+    if status == "pass":
+        return 2
+    return 99
+
+
+def _claim_tree_markdown_table(nodes: Sequence[ClaimNodeAudit]) -> list[str]:
+    lines = [
+        "| Branch | Status | Ambiguity | Public adequate | Decision invariant |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ]
+    for node in nodes:
+        decision_invariant = (
+            ""
+            if node.audit.decision is None
+            else ("yes" if node.audit.decision.invariant else "no")
+        )
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _escape_table(node.branch),
+                    node.status,
+                    f"{node.ambiguity:.4f}",
+                    "yes" if node.audit.primary.public_adequate else "no",
+                    decision_invariant,
+                ]
+            )
+            + " |"
+        )
+    return lines
+
+
+def _claim_tree_worst_markdown(nodes: Sequence[ClaimNodeAudit]) -> list[str]:
+    lines = [
+        "| Branch | Status | Ambiguity | First reason |",
+        "| --- | ---: | ---: | --- |",
+    ]
+    for node in nodes:
+        reason = node.audit.reasons[0] if node.audit.reasons else ""
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _escape_table(node.branch),
+                    node.status,
+                    f"{node.ambiguity:.4f}",
+                    _escape_table(reason),
+                ]
+            )
+            + " |"
+        )
+    return lines
 
 
 def _claim_status(
@@ -1694,13 +2251,19 @@ def _float_tuple(values: Sequence[float], name: str) -> tuple[float, ...]:
 
 __all__ = [
     "ClaimAudit",
+    "ClaimNode",
+    "ClaimNodeAudit",
     "ClaimRefinementRecommendation",
     "ClaimSpec",
+    "ClaimTree",
+    "ClaimTreeAudit",
     "DecisionResult",
     "DecisionRule",
     "ModelAssistedDrawResult",
     "ModelAssistedStabilitySummary",
     "audit_claim",
+    "audit_claim_tree",
     "claim",
+    "claim_tree",
     "threshold_decision",
 ]

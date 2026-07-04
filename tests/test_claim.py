@@ -23,8 +23,12 @@ class ClaimSpecTests(unittest.TestCase):
     def test_curated_star_import_surface_uses_claim_names(self):
         self.assertIn("claim", us.__all__)
         self.assertIn("audit_claim", us.__all__)
+        self.assertIn("claim_tree", us.__all__)
+        self.assertIn("audit_claim_tree", us.__all__)
         self.assertIn("ClaimSpec", us.__all__)
         self.assertIn("ClaimAudit", us.__all__)
+        self.assertIn("ClaimTree", us.__all__)
+        self.assertIn("ClaimTreeAudit", us.__all__)
         self.assertNotIn("verify_claim", us.__all__)
         self.assertNotIn("ReportingClaim", us.__all__)
         self.assertNotIn("ClaimVerificationReport", us.__all__)
@@ -170,6 +174,97 @@ class ClaimSpecTests(unittest.TestCase):
         self.assertEqual(tables["claim"][0]["estimate_name"], "Exported claim")
         self.assertIn("reasons", tables)
         self.assertIn("primary_refinements", tables)
+
+    def test_claim_tree_audits_nested_claims_and_exports(self):
+        root_claim = us.claim(
+            "Overall posterior mean stable",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            q_presets=[us.q_bounded_shift(0.5)],
+            ambiguity_limit=0.31,
+        )
+        child_claim = us.claim(
+            "Group-level posterior mean stable",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            q_presets=["saturated"],
+            candidate_refinements=["driver"],
+            ambiguity_limit=0.05,
+        )
+
+        tree = us.claim_tree(
+            us.ClaimNode(root_claim, role="overall"),
+            children=[
+                us.ClaimNode(
+                    child_claim,
+                    role="group",
+                    metadata={"hierarchy_level": "region"},
+                )
+            ],
+            name="Bayesian Hierarchy Claim Audit",
+            description="Posterior summaries are supplied upstream.",
+        )
+        report = tree.audit(_rows())
+        tables = report.to_tables()
+        exported_tables = us.report_tables(report)
+        payload = json.loads(report.to_json())
+        markdown = report.to_markdown()
+
+        self.assertIsInstance(tree, us.ClaimTree)
+        self.assertIsInstance(report, us.ClaimTreeAudit)
+        self.assertTrue(report.failed)
+        self.assertEqual(report.root.status, "pass")
+        self.assertEqual(report.node_count, 2)
+        self.assertEqual(report.pass_count, 1)
+        self.assertEqual(report.fail_count, 1)
+        self.assertEqual(report.leaf_count, 1)
+        self.assertEqual(
+            report.worst_nodes()[0].label, "Group-level posterior mean stable"
+        )
+        self.assertEqual(payload["status"], "fail")
+        self.assertEqual(tables["summary"][0]["status"], "fail")
+        self.assertEqual(len(tables["nodes"]), 2)
+        self.assertEqual(len(tables["edges"]), 1)
+        self.assertEqual(len(exported_tables["nodes"]), 2)
+        self.assertIn("Bayesian hierarchical", markdown)
+        self.assertIn("Group-level posterior mean stable", markdown)
+
+    def test_audit_claim_tree_accepts_mapping_payload(self):
+        payload = {
+            "name": "Mapping Tree",
+            "root": {
+                "claim": {
+                    "estimate_name": "Root mapping claim",
+                    "public": ["segment"],
+                    "hidden": ["segment", "driver"],
+                    "target": "target",
+                    "ambiguity_limit": 1.0,
+                },
+                "children": [
+                    {
+                        "claim": {
+                            "estimate_name": "Child mapping claim",
+                            "public": ["segment"],
+                            "hidden": ["segment", "driver"],
+                            "target": "target",
+                            "ambiguity_limit": 0.05,
+                        },
+                        "role": "subgroup",
+                    }
+                ],
+            },
+        }
+
+        report = us.audit_claim_tree(_rows(), payload)
+
+        self.assertIsInstance(report, us.ClaimTreeAudit)
+        self.assertEqual(report.title, "Mapping Tree")
+        self.assertEqual(report.node_count, 2)
+        self.assertEqual(report.nodes[1].node.role, "subgroup")
 
     def test_audit_claim_passes_when_decision_is_invariant(self):
         claim = us.ClaimSpec(

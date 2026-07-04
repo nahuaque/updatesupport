@@ -22,14 +22,20 @@ from .certificate import (
 )
 from .claim import (
     ClaimAudit,
+    ClaimNode,
+    ClaimNodeAudit,
     ClaimRefinementRecommendation,
     ClaimSpec,
+    ClaimTree,
+    ClaimTreeAudit,
     DecisionResult,
     DecisionRule,
     ModelAssistedDrawResult,
     ModelAssistedStabilitySummary,
     audit_claim,
+    audit_claim_tree,
     claim,
+    claim_tree,
     threshold_decision,
 )
 from .comparison import (
@@ -198,8 +204,14 @@ __all__ = [
     # Claim-first surface.
     "claim",
     "audit_claim",
+    "claim_tree",
+    "audit_claim_tree",
     "ClaimSpec",
     "ClaimAudit",
+    "ClaimNode",
+    "ClaimNodeAudit",
+    "ClaimTree",
+    "ClaimTreeAudit",
     "ClaimRefinementRecommendation",
     "DecisionRule",
     "DecisionResult",

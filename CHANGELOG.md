@@ -4,6 +4,9 @@ All notable changes to `updatesupport` are documented here.
 
 ## Unreleased
 
+- Added nested/hierarchical claim trees for auditing multi-level reporting
+  claims, including recursive markdown reports and flat summary/node/edge
+  exports for hierarchical Bayesian model-review workflows.
 - Added multi-target support-function reports with per-target intervals,
   markdown output, structured tables, dataframe export hooks, and dual
   diagnostics for each endpoint solve.

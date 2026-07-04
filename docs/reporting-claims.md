@@ -166,6 +166,63 @@ The tables include a top-level `summary`, the serialized `claim`, decision
 `reasons`, `limitations`, prefixed primary public-descent evidence, and prefixed
 certificate or witness evidence when those components are present.
 
+## Nested / Hierarchical Claims
+
+Use `claim_tree(...)` when the review object has a natural hierarchy: overall
+claim, region claims, site claims, subgroup claims, or posterior-summary claims
+from a Bayesian hierarchical model.
+
+```python
+overall = us.claim(
+    "Overall posterior mean treatment effect is launch-positive",
+    public=["region"],
+    hidden=["region", "site", "device"],
+    target="posterior_mean_tau",
+    weight="users",
+    q_presets=[us.q_tv_budget(0.10)],
+    decision=us.threshold_decision(">=", 0.0, label="effect is nonnegative"),
+)
+
+regional = us.claim(
+    "Regional posterior means are stable",
+    public=["region"],
+    hidden=["region", "site", "device"],
+    target="posterior_mean_tau",
+    weight="users",
+    q_presets=[us.q_tv_budget(0.10)],
+    ambiguity_limit=0.01,
+    candidate_refinements=["site", "device"],
+)
+
+tree = us.claim_tree(
+    us.ClaimNode(overall, role="overall"),
+    children=[us.ClaimNode(regional, role="region")],
+    name="Hierarchical Treatment-Effect Claim Audit",
+)
+
+report = tree.audit(rows_or_frame)
+print(report.to_markdown())
+```
+
+Each node is an ordinary `ClaimAudit`; the tree only coordinates and summarizes
+the node-level audits. `ClaimTreeAudit` reports root status, node outcome
+counts, highest-risk branches, and flat `summary`, `nodes`, `edges`, `reasons`,
+and `limitations` tables.
+
+For hierarchical Bayesian workflows, the posterior model stays upstream. Pass
+posterior means, posterior-draw summaries, credible intervals, or draw-specific
+cell targets into the data you audit. The report separates:
+
+- the supplied posterior or statistical uncertainty,
+- the hierarchy or pooling structure implicit in those supplied targets,
+- hidden-composition ambiguity under the chosen public representation and Q
+  stress test.
+
+This means a root aggregate can pass while a child level fails. That is useful
+for model review: the overall claim may be stable, but a regional, site-level,
+or subgroup claim may need a finer public representation before it can be
+reported defensibly.
+
 ## Model-Assisted Joint Draws
 
 For plausibility analysis, fit a nonparametric joint distribution and pass it to

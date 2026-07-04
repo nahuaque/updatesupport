@@ -72,6 +72,11 @@ and calling ``claim.audit(rows_or_frame)``. It wraps interval evidence,
 counterexample witnesses, repairs or certificates, refinement recommendations,
 and limitations into one verdict.
 
+:class:`updatesupport.ClaimTreeAudit` is the corresponding nested artifact for
+hierarchical reviews. It audits each node with the same single-claim machinery
+and then summarizes root status, child status counts, highest-risk branches,
+and flat node/edge export tables.
+
 :class:`updatesupport.PublicDescentReport` remains the lower-level evidence
 object for the primary partial-ID interval. Use it directly when you do not
 want a pass/fail/inconclusive claim verdict.
