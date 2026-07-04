@@ -7,15 +7,16 @@ partial-identification question:
 > retained finer composition inside those public buckets changed within a
 > declared admissible class?
 
-The project should not be pitched as new mathematics. The useful contribution is
-the framing and tooling around an old and defensible object: fixed public
-marginals, retained finer cells, supplied cell-level target values, and lower
-and upper aggregate values over a declared stress set.
+The project is not presented as new mathematics. Its contribution is the
+framing and tooling around an old and defensible object: fixed public marginals,
+retained finer cells, supplied cell-level target values, and lower and upper
+aggregate values over a declared stress set.
 
-For discovery, the project should bridge its own terminology to the words users
-already search for: aggregation bias, ecological fallacy, Simpson's paradox,
-subgroup composition sensitivity, coarsened protected attributes, and partial
-identification for published aggregates.
+In more familiar statistical language, the package is about aggregation bias:
+the risk that a coarse public table hides enough within-bucket variation to
+change a reported aggregate. That places it near ecological-fallacy and
+Simpson's-paradox concerns, coarsened protected-attribute audits, subgroup
+composition sensitivity, and partial identification for published aggregates.
 
 ## The Actual Mathematical Object
 
@@ -79,7 +80,7 @@ because they are unique to this package.
 
 ## What Is Packaged Here
 
-The package is trying to make the following audit easy enough to be routine:
+The package makes the following audit routine:
 
 > I am publishing or reviewing a table at this granularity. I have a retained
 > finer table or reference data. Is the reported aggregate stable under the
@@ -102,10 +103,9 @@ a defensible review artifact usually needs more than the endpoint values:
 - Markdown, JSON, table, and dataframe outputs that can be attached to a review
   pack.
 
-The bar is not "can an analyst write the twelve-line LP?" The bar is whether
-the library saves enough work around interpretation, guardrails, refinement
-selection, repeatability, and reporting to be worth adopting for a specific
-workflow.
+The library value is in the surrounding audit workflow: interpretation,
+guardrails, refinement selection, repeatability, and reporting, not merely in
+solving a small LP.
 
 ## Adjacent Software
 
@@ -139,14 +139,12 @@ For organic Python users, the most natural front door is the ACS/Folktables and
 fairness-auditing direction. That audience is already used to notebooks,
 auditing libraries, coarsened subgroup metrics, and partial-identification
 language. The finance plugin is valuable as a domain showcase and proof of the
-plugin architecture, but it should not be treated as the main organic adoption
-channel.
+plugin architecture, but it is not the main organic adoption channel.
 
 Good fits include:
 
 - official statistics and disclosure-avoidance workflows, where an agency has
-  richer microdata but must decide what table granularity is stable enough to
-  publish;
+  richer microdata and chooses a table granularity stable enough to publish;
 - fairness or disparity auditing where protected-class labels, proxies, or
   richer subgroup attributes exist in a validation dataset but the public report
   is coarser;
@@ -162,31 +160,16 @@ unavailable and there is no defensible reference dataset, model-assisted
 refinement, or scenario definition. The library cannot manufacture information
 that is not in the retained support or in the declared stress test.
 
-## Recommended Framing
+## Positioning Statement
 
-Use this language:
+`updatesupport` is an audit layer for representation adequacy. It bounds how
+much a supplied aggregate can move under declared recomposition of retained
+finer cells while the public report distribution is held fixed.
 
-> `updatesupport` is an audit layer for representation adequacy. It bounds how
-> much a supplied aggregate could move under declared recomposition of retained
-> finer cells while the public report distribution is held fixed.
+It does not discover hidden truth, prove that a public table is correct, or give
+an absolute uncertainty interval for all omitted structure.
 
-Avoid this language:
-
-> `updatesupport` discovers hidden truth, proves a public table is correct, or
-> gives an absolute uncertainty interval for all omitted structure.
-
-The honest claim is narrower and stronger: conditional on a retained refinement,
-target contract, sparse-cell rule, and admissible class `Q`, the package solves
-the declared partial-identification problem and reports what public refinements
-would make the answer more stable.
-
-For a showcase README, make the idea legible before the machinery:
-
-1. State the plain problem: a coarse public aggregate may not be stable to
-   retained subgroup recomposition.
-2. Show one striking output, such as the ACSIncome `12.37%` observed rate with a
-   `11.79%` to `13.44%` compatible interval.
-3. Link to the deep mathematical and plugin docs for readers who want the
-   backend details.
-4. Resist adding surface area that makes the project look broader than the
-   central audit question.
+The claim is conditional: given a retained refinement, target contract,
+sparse-cell rule, and admissible class `Q`, the package solves the declared
+partial-identification problem and reports which public refinements make the
+answer more stable.
