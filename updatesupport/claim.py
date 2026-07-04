@@ -19,6 +19,7 @@ from .joint import (
 from .presets import QPreset
 from .report import (
     PublicDescentReport,
+    RefinementCandidate,
     StatisticalUncertainty,
     WitnessReport,
     public_descent_report,
@@ -297,6 +298,50 @@ class ModelAssistedStabilitySummary:
 
 
 @dataclass(frozen=True)
+class ClaimRefinementRecommendation:
+    """Claim-centered public-refinement recommendation."""
+
+    columns: tuple[str, ...]
+    source: str
+    before_ambiguity: float | None
+    after_ambiguity: float
+    reduction: float | None
+    reduction_percent: float | None
+    public_cells: int
+    meets_ambiguity_limit: bool | None = None
+    selected_repair: bool = False
+    decision_repair: bool = False
+    reason: str = ""
+
+    @property
+    def label(self) -> str:
+        return _column_label(self.columns)
+
+    @property
+    def column(self) -> str:
+        """Compatibility label for one-column recommendation tables."""
+
+        return self.label
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "columns": self.columns,
+            "column": self.column,
+            "label": self.label,
+            "source": self.source,
+            "before_ambiguity": self.before_ambiguity,
+            "after_ambiguity": self.after_ambiguity,
+            "reduction": self.reduction,
+            "reduction_percent": self.reduction_percent,
+            "public_cells": self.public_cells,
+            "meets_ambiguity_limit": self.meets_ambiguity_limit,
+            "selected_repair": self.selected_repair,
+            "decision_repair": self.decision_repair,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
 class ReportingClaim:
     """Declarative claim that a reported aggregate is stable enough to defend."""
 
@@ -473,6 +518,11 @@ class ReportingClaim:
 
         return verify_claim(data, self, **kwargs)
 
+    def audit(self, data: Any, **kwargs: Any) -> "ClaimVerificationReport":
+        """Alias for verify(), matching the claim-first product language."""
+
+        return self.verify(data, **kwargs)
+
 
 @dataclass(frozen=True)
 class ClaimVerificationReport:
@@ -517,6 +567,50 @@ class ClaimVerificationReport:
             return None
         return self.certificate.selected_candidate
 
+    @property
+    def observed_value(self) -> float:
+        """Reported value audited by this claim."""
+
+        return self.primary.observed_value
+
+    @property
+    def interval(self):
+        """Primary hidden-composition interval."""
+
+        return self.primary.interval
+
+    @property
+    def ambiguity(self) -> float:
+        """Primary hidden-composition ambiguity width."""
+
+        return self.primary.interval.diameter
+
+    @property
+    def refinement_recommendations(
+        self,
+    ) -> tuple[ClaimRefinementRecommendation, ...]:
+        """Rank refinements by their role in stabilizing this claim."""
+
+        return _claim_refinement_recommendations(self)
+
+    def recommend_refinements(
+        self,
+        *,
+        top: int | None = None,
+    ) -> tuple[ClaimRefinementRecommendation, ...]:
+        """Return claim-centered public-refinement recommendations.
+
+        This is intentionally different from the lower-level
+        :func:`updatesupport.recommend_refinements`: it annotates each candidate
+        with claim-specific repair signals such as whether it satisfies the
+        ambiguity limit or is the selected decision-invariant repair.
+        """
+
+        if top is not None and top < 0:
+            raise ValueError("top must be non-negative")
+        rows = self.refinement_recommendations
+        return rows if top is None else rows[:top]
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "title": self.title,
@@ -541,6 +635,9 @@ class ClaimVerificationReport:
             "repair_candidate": None
             if self.repair_candidate is None
             else self.repair_candidate.as_dict(),
+            "refinement_recommendations": [
+                row.as_dict() for row in self.refinement_recommendations
+            ],
             "reasons": self.reasons,
             "limitations": self.limitations,
         }
@@ -831,6 +928,25 @@ def verify_claim(
         reasons=reasons,
         limitations=_claim_limitations(claim, primary, certificate),
         title=claim.title or "Reporting Claim Verification",
+    )
+
+
+def claim(
+    estimate_name: str,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    **kwargs: Any,
+) -> ReportingClaim:
+    """Create a claim spec using the simplified claim-first API."""
+
+    return ReportingClaim(
+        estimate_name=estimate_name,
+        public=public,
+        hidden=hidden,
+        target=target,
+        **kwargs,
     )
 
 
@@ -1199,6 +1315,139 @@ def _decision_repair_markdown(report: ClaimVerificationReport) -> list[str]:
     return lines
 
 
+def _claim_refinement_recommendations(
+    report: ClaimVerificationReport,
+) -> tuple[ClaimRefinementRecommendation, ...]:
+    rows: list[ClaimRefinementRecommendation] = []
+    seen: set[tuple[str, ...]] = set()
+    repair = report.repair_candidate
+    baseline = report.primary.interval.diameter
+
+    if repair is not None and repair.added_columns:
+        rows.append(
+            ClaimRefinementRecommendation(
+                columns=repair.added_columns,
+                source=(
+                    "decision_repair"
+                    if repair is report.decision_repair_candidate
+                    else "certificate_repair"
+                ),
+                before_ambiguity=baseline,
+                after_ambiguity=repair.max_ambiguity,
+                reduction=baseline - repair.max_ambiguity,
+                reduction_percent=_percent_reduction(
+                    before=baseline,
+                    after=repair.max_ambiguity,
+                ),
+                public_cells=repair.public_cells,
+                meets_ambiguity_limit=_meets_ambiguity_limit(
+                    repair.max_ambiguity,
+                    report.claim.ambiguity_limit,
+                ),
+                selected_repair=True,
+                decision_repair=repair is report.decision_repair_candidate,
+                reason=_repair_reason(report, repair),
+            )
+        )
+        seen.add(repair.added_columns)
+
+    for row in report.primary.refinements:
+        columns = (row.column,)
+        if columns in seen:
+            continue
+        rows.append(
+            _one_column_claim_recommendation(
+                row,
+                report=report,
+            )
+        )
+        seen.add(columns)
+
+    return tuple(rows)
+
+
+def _one_column_claim_recommendation(
+    row: RefinementCandidate,
+    *,
+    report: ClaimVerificationReport,
+) -> ClaimRefinementRecommendation:
+    columns = (row.column,)
+    repair = report.repair_candidate
+    decision_repair = (
+        report.decision_repair_candidate is not None
+        and report.decision_repair_candidate.added_columns == columns
+    )
+    selected_repair = repair is not None and repair.added_columns == columns
+    meets_limit = _meets_ambiguity_limit(
+        row.after_ambiguity,
+        report.claim.ambiguity_limit,
+    )
+    return ClaimRefinementRecommendation(
+        columns=columns,
+        source="one_column_screen",
+        before_ambiguity=row.before_ambiguity,
+        after_ambiguity=row.after_ambiguity,
+        reduction=row.reduction,
+        reduction_percent=row.reduction_percent,
+        public_cells=row.public_cells,
+        meets_ambiguity_limit=meets_limit,
+        selected_repair=selected_repair,
+        decision_repair=decision_repair,
+        reason=_refinement_reason(
+            selected_repair=selected_repair,
+            decision_repair=decision_repair,
+            meets_ambiguity_limit=meets_limit,
+            reduction=row.reduction,
+        ),
+    )
+
+
+def _repair_reason(
+    report: ClaimVerificationReport,
+    repair: PublicRepresentationCandidate,
+) -> str:
+    if repair is report.decision_repair_candidate:
+        return "selected repair; makes the observed decision invariant"
+    if report.claim.ambiguity_limit is not None:
+        return "selected repair; satisfies the declared ambiguity limit"
+    return "selected repair from the representation certificate"
+
+
+def _refinement_reason(
+    *,
+    selected_repair: bool,
+    decision_repair: bool,
+    meets_ambiguity_limit: bool | None,
+    reduction: float,
+) -> str:
+    if decision_repair:
+        return "makes the observed decision invariant"
+    if selected_repair:
+        return "selected repair for this claim"
+    if meets_ambiguity_limit is True:
+        return "satisfies the declared ambiguity limit"
+    if meets_ambiguity_limit is False:
+        return "reduces ambiguity but does not satisfy the declared limit"
+    if reduction > 0:
+        return "reduces hidden-composition ambiguity"
+    return "does not reduce hidden-composition ambiguity"
+
+
+def _meets_ambiguity_limit(
+    ambiguity: float,
+    limit: float | None,
+) -> bool | None:
+    if limit is None:
+        return None
+    return ambiguity <= limit
+
+
+def _percent_reduction(*, before: float, after: float) -> float:
+    if before <= 0:
+        return 0.0
+    return 100.0 * (before - after) / before
+
+
 def _certificate_summary_markdown(
     certificate: RepresentationStabilityCertificate,
 ) -> list[str]:
@@ -1221,38 +1470,28 @@ def _certificate_summary_markdown(
 
 
 def _refinement_markdown(report: ClaimVerificationReport) -> list[str]:
-    if report.decision_repair_candidate is not None or (
-        report.certificate is not None
-        and report.certificate.selected_candidate is not None
-    ):
-        candidate = report.repair_candidate
-        if candidate.added_columns:
-            return [
-                "The selected repair promotes these hidden variables "
-                "into the public representation:",
-                "",
-                f"- `{_column_label(candidate.added_columns)}`",
-            ]
-    if report.primary.refinements:
+    recommendations = report.refinement_recommendations
+    if recommendations:
         lines = [
-            "One-column refinement screening ranks hidden variables by ambiguity "
-            "reduction under the primary Q preset:",
+            "Claim-centered refinement recommendations rank public "
+            "representation changes by whether they repair the declared claim "
+            "and how much hidden-composition ambiguity they remove.",
             "",
-            "| rank | column | before | after | reduction |",
-            "| ---: | --- | ---: | ---: | ---: |",
+            "| rank | refinement | role | after | reduction | public cells | claim signal |",
+            "| ---: | --- | --- | ---: | ---: | ---: | --- |",
         ]
-        for index, row in enumerate(
-            report.primary.refinements[: report.claim.top], start=1
-        ):
+        for index, row in enumerate(recommendations[: report.claim.top], start=1):
             lines.append(
                 "| "
                 + " | ".join(
                     [
                         str(index),
-                        f"`{row.column}`",
-                        f"{row.before_ambiguity:.4f}",
+                        f"`{row.label}`",
+                        row.source,
                         f"{row.after_ambiguity:.4f}",
-                        f"{row.reduction:.4f}",
+                        _format_optional_float(row.reduction),
+                        str(row.public_cells),
+                        _escape_table(row.reason),
                     ]
                 )
                 + " |"
@@ -1373,6 +1612,10 @@ def _format_optional_rate(value: float | None) -> str:
     return "" if value is None else f"{100.0 * value:.1f}%"
 
 
+def _escape_table(value: str) -> str:
+    return value.replace("|", "\\|")
+
+
 def _normalize_decision_operator(value: str) -> str:
     key = str(value).strip().lower().replace("-", "_")
     aliases = {
@@ -1454,13 +1697,21 @@ def _float_tuple(values: Sequence[float], name: str) -> tuple[float, ...]:
     return result
 
 
+ClaimSpec = ReportingClaim
+ClaimAudit = ClaimVerificationReport
+
+
 __all__ = [
+    "ClaimAudit",
+    "ClaimRefinementRecommendation",
+    "ClaimSpec",
     "ClaimVerificationReport",
     "DecisionResult",
     "DecisionRule",
     "ModelAssistedDrawResult",
     "ModelAssistedStabilitySummary",
     "ReportingClaim",
+    "claim",
     "threshold_decision",
     "verify_claim",
 ]

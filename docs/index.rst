@@ -1,10 +1,10 @@
 updatesupport Documentation
 ===========================
 
-``updatesupport`` audits whether the public categories in a report are stable
-enough for the estimate being reported. It quantifies hidden-composition
-ambiguity: how far an aggregate rate, effect, or risk metric can move when the
-public distribution is fixed but the hidden mix inside public buckets changes.
+``updatesupport`` audits whether a reported claim survives hidden subgroup
+recomposition. It quantifies hidden-composition ambiguity: how far an aggregate
+rate, effect, or risk metric can move when the public distribution is fixed but
+the retained, not-publicly-reported mix inside public buckets changes.
 
 This documentation has three layers:
 

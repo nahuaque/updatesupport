@@ -19,14 +19,15 @@ The most common workflow starts with tabular rows or a dataframe. Choose:
 * hidden columns: the more detailed retained state space,
 * target: the supplied metric, rate, or effect,
 * optional weights,
-* candidate refinements that could be added to the public representation.
+* candidate refinements that could be added to the public representation,
+* an optional ambiguity limit or decision rule for the claim.
 
 .. code-block:: python
 
    import updatesupport as us
 
-   report = us.public_descent_report(
-       rows_or_frame,
+   audit = us.claim(
+       "Income-threshold rate is stable enough to report",
        public=["AGE_BAND", "EDU_BAND", "SEX"],
        hidden=[
            "AGE_BAND",
@@ -39,26 +40,34 @@ The most common workflow starts with tabular rows or a dataframe. Choose:
        target="income_over_threshold",
        weight="sample_weight",
        candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P"],
+       ambiguity_limit=0.015,
        min_cell_weight=25,
-       q="saturated",
-       title="Income-Threshold Representation Audit",
-   )
+       q_presets=["saturated"],
+   ).audit(rows_or_frame)
 
-   print(report.to_markdown())
+   print(audit.to_markdown())
 
-The report separates:
+The claim audit separates:
 
+* the pass/fail/inconclusive claim verdict,
 * the observed aggregate target value,
 * the hidden-composition interval under the selected stress test,
 * transport ambiguity, the interval width,
 * public adequacy,
 * public fibers driving the ambiguity,
-* refinement recommendations.
+* a counterexample witness when the public representation is unstable,
+* claim-centered refinement recommendations.
 
 The hidden-composition interval is not a confidence interval. It is a
 partial-identification or sensitivity interval conditional on the retained
 support, supplied target values, public distribution, and selected admissible
 hidden-mix class.
+
+Lower-level evidence reports are still available when you need them directly:
+``public_descent_report(...)`` for the primary interval, ``sensitivity_report(...)``
+for stress grids, and ``public_representation_frontier(...)`` for public-bucket
+design search. They are implementation depth behind the claim workflow rather
+than separate starting points for most users.
 
 Optional Extras
 ---------------

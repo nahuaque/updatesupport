@@ -156,6 +156,7 @@ Claim verification reports expose:
 
 - `summary`
 - `claim`
+- `claim_refinement_recommendations`
 - `reasons`
 - `limitations`
 - prefixed primary evidence such as `primary_summary` and `primary_refinements`

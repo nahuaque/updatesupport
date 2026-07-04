@@ -15,6 +15,55 @@ def _rows() -> list[dict[str, object]]:
 
 
 class ReportingClaimTests(unittest.TestCase):
+    def test_claim_factory_and_audit_alias_return_claim_audit(self):
+        claim = us.claim(
+            "Factory claim",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            candidate_refinements=["driver"],
+            ambiguity_limit=0.05,
+        )
+
+        report = claim.audit(_rows())
+        recommendations = report.recommend_refinements()
+        tables = report.to_tables()
+
+        self.assertIsInstance(claim, us.ClaimSpec)
+        self.assertIsInstance(report, us.ClaimAudit)
+        self.assertTrue(report.failed)
+        self.assertEqual(report.observed_value, report.primary.observed_value)
+        self.assertAlmostEqual(report.ambiguity, report.primary.interval.diameter)
+        self.assertEqual(recommendations[0].columns, ("driver",))
+        self.assertTrue(recommendations[0].selected_repair)
+        self.assertTrue(recommendations[0].meets_ambiguity_limit)
+        self.assertIsInstance(
+            recommendations[0],
+            us.ClaimRefinementRecommendation,
+        )
+        self.assertIn("claim_refinement_recommendations", tables)
+        self.assertIn("claim-centered", report.to_markdown().lower())
+
+    def test_grouped_problem_helpers_keep_low_level_workflow_available(self):
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            q=us.q_bounded_shift(0.5),
+        )
+
+        report = grouped.to_report(title="Grouped Evidence")
+        claim = grouped.claim("Grouped claim")
+        verdict = claim.verify(grouped)
+
+        self.assertIsInstance(report, us.PublicDescentReport)
+        self.assertEqual(report.title, "Grouped Evidence")
+        self.assertIsInstance(claim, us.ReportingClaim)
+        self.assertTrue(verdict.inconclusive)
+        self.assertEqual(verdict.claim.public, ("segment",))
+
     def test_verify_claim_passes_when_current_public_representation_is_stable(self):
         claim = us.ReportingClaim(
             estimate_name="Demo target rate",

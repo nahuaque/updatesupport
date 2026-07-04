@@ -133,29 +133,31 @@ uv add updatesupport
 ```python
 import updatesupport as us
 
-report = us.public_descent_report(
-    rows_or_frame,
+audit = us.claim(
+    "Income-threshold rate is stable enough to report",
     public=["AGE_BAND", "EDU_BAND", "SEX"],
     hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND", "RAC1P"],
     target="income_over_threshold",
     weight="sample_weight",
     candidate_refinements=["OCC_MAJOR", "WKHP_BAND", "RAC1P"],
+    ambiguity_limit=0.015,
     min_cell_weight=25,
-    q="saturated",
-    title="Income-Threshold Representation Audit",
-)
+    q_presets=["saturated"],
+).audit(rows_or_frame)
 
-print(report.to_markdown())
+print(audit.to_markdown())
 ```
 
-The report asks:
+The claim audit asks:
 
 > If we only report by `AGE_BAND x EDU_BAND x SEX`, how much could the aggregate
 > income-threshold rate move if occupation, work hours, and race composition
 > changed inside those public cells?
 
 The stress interval is not a confidence interval. It is a
-partial-identification / sensitivity interval for hidden composition.
+partial-identification / sensitivity interval for hidden composition. The audit
+returns one review artifact with the verdict, interval, witness, limitations,
+and claim-centered refinement recommendations.
 
 ## Front-Door Demo
 
@@ -188,13 +190,15 @@ coarsened subgroup reporting.
 
 ## Main Workflows
 
-### 1. Verify a Reporting Claim
+### 1. Validate a Claim
 
-Use `ReportingClaim` when you want one review artifact that certifies the
-claim, breaks it with a hidden-composition witness, or proposes a stable repair.
+Use `us.claim(...)` when you want one review artifact that certifies the claim,
+breaks it with a hidden-composition witness, or proposes a stable repair.
+`ReportingClaim` remains available as the underlying dataclass; `ClaimSpec` and
+`ClaimAudit` are clearer aliases for the main workflow.
 
 ```python
-claim = us.ReportingClaim(
+claim = us.claim(
     estimate_name="Income-threshold target rate",
     public=["AGE_BAND", "EDU_BAND", "SEX"],
     hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND", "RAC1P"],
@@ -207,13 +211,16 @@ claim = us.ReportingClaim(
     statistical_interval=(0.119, 0.128),
 )
 
-verdict = us.verify_claim(rows_or_frame, claim)
+verdict = claim.audit(rows_or_frame)
 print(verdict.to_markdown())
 ```
 
 The verifier separates the reported estimate, statistical uncertainty,
 hidden-composition ambiguity, public-refinement repair, counterexample witness,
-and limitations. See [docs/reporting-claims.md](docs/reporting-claims.md).
+and limitations. `verdict.recommend_refinements()` returns claim-centered
+refinement rows: whether a candidate actually repairs the claim, whether it
+satisfies the ambiguity limit, and how much ambiguity it removes. See
+[docs/reporting-claims.md](docs/reporting-claims.md).
 
 For model-assisted plausibility checks, fit a nonparametric public/hidden joint
 distribution and run the claim across sampled hidden compositions:
@@ -242,10 +249,12 @@ bucket mix and resamples hidden composition inside each public bucket.
 
 See [docs/model-assisted-joint-analysis.md](docs/model-assisted-joint-analysis.md).
 
-### 2. Audit a Public Report
+### 2. Inspect The Evidence Behind A Claim
 
-Use `public_descent_report(...)` when you already know the public buckets,
-hidden refinements, and target metric.
+Most users should start with `us.claim(...)`. Use `public_descent_report(...)`
+when you explicitly want only the lower-level partial-ID evidence without a
+claim verdict, decision rule, repair search, or claim-centered recommendation
+language.
 
 ```python
 report = us.public_descent_report(
@@ -258,8 +267,8 @@ report = us.public_descent_report(
 )
 ```
 
-Use `AuditSpec` when the audit configuration should be serialized, reviewed, or
-rerun:
+Use `AuditSpec` for serializable lower-level audit configurations that need to
+be reviewed or rerun:
 
 ```python
 spec = us.AuditSpec(
@@ -294,10 +303,20 @@ When you need to inspect the actual lower-vs-upper endpoint worlds behind an
 ambiguity result, use `report.witness_report()` or `us.witness_report(...)` to
 see which hidden cells move while the public distribution stays fixed.
 
-### 3. Run Robustness Checks
+### 3. Add Robustness And Repair Intelligence
 
-Use `sensitivity_report(...)` when the conclusion should be checked across Q
-presets, sparse-cell thresholds, or alternate hidden-state definitions.
+Claim audits already embed the primary report, optional certificate search, and
+claim-centered refinement recommendations. Use the lower-level robustness tools
+when you need to inspect those pieces separately:
+
+- `sensitivity_report(...)` checks Q presets, sparse-cell thresholds, or
+  alternate hidden-state definitions.
+- `certify_public_representation(...)` finds the smallest evaluated public
+  representation satisfying an ambiguity limit.
+- `public_representation_frontier(...)` exposes the Pareto frontier behind that
+  certificate.
+- `breakdown_point(...)` finds the stress radius where a decision or ambiguity
+  claim stops passing.
 
 ```python
 sensitivity = us.sensitivity_report(
@@ -314,35 +333,7 @@ See [docs/transport-presets.md](docs/transport-presets.md) for guidance on Q
 presets and [docs/representation-adequacy.md](docs/representation-adequacy.md)
 for interpretation rules.
 
-### 4. Certify a Stable Public Segmentation
-
-Use `certify_public_representation(...)` when you want a review-ready decision:
-the smallest evaluated public bucket design that keeps ambiguity below a
-declared threshold, with search assumptions and limitations attached.
-
-```python
-certificate = us.certify_public_representation(
-    rows_or_frame,
-    base_public=["AGE_BAND", "EDU_BAND"],
-    hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND"],
-    target="income_over_threshold",
-    candidate_refinements=["SEX", "OCC_MAJOR", "WKHP_BAND"],
-    q_presets=["saturated", us.q_bounded_shift(0.5), "observed"],
-    min_cell_weights=[1, 10, 25],
-    ambiguity_limit=0.01,
-    bucket_budget=40,
-    search="exhaustive",
-)
-
-print(certificate.to_markdown())
-```
-
-Use `public_representation_frontier(...)` when you want the exploratory Pareto
-frontier behind the certificate. The frontier compares public-cell count, added
-public columns, and ambiguity across the stress grid. See
-[docs/public-representation-frontier.md](docs/public-representation-frontier.md).
-
-### 5. Audit Causal or Uplift Reports
+### 4. Audit Causal or Uplift Reports
 
 Use a causal inference library such as [EconML](https://www.pywhy.org/EconML/),
 [DoWhy](https://www.pywhy.org/dowhy/),
@@ -379,7 +370,7 @@ For causal/model-review stress tests based on hidden balance drift, use
 
 See [docs/causal-library-integration.md](docs/causal-library-integration.md).
 
-### 6. Financial Model-Risk Plugin
+### 5. Financial Model-Risk Plugin
 
 Financial model-risk use cases live in the separate plugin package:
 

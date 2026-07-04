@@ -514,6 +514,9 @@ def _claim_verification_tables(report: ClaimVerificationReport) -> ReportTables:
             },
         ),
         "claim": (report.claim.as_dict(),),
+        "claim_refinement_recommendations": tuple(
+            row.as_dict() for row in report.refinement_recommendations
+        ),
         "reasons": tuple({"reason": reason} for reason in report.reasons),
         "limitations": tuple(
             {"limitation": limitation} for limitation in report.limitations

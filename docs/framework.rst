@@ -73,10 +73,16 @@ linear presets can run without CVXPY.
 Reports
 -------
 
-The primary artifact is :class:`updatesupport.PublicDescentReport`. It can
-render Markdown, JSON, structured tables, and pandas dataframes. Reports are
-designed to be attached to model reviews, causal analysis appendices, dashboard
-validation notes, and governance evidence packs.
+The primary user-facing artifact is :class:`updatesupport.ClaimAudit`, produced
+by declaring a :class:`updatesupport.ClaimSpec` with :func:`updatesupport.claim`
+and calling ``claim.audit(rows_or_frame)``. The claim audit wraps the
+lower-level evidence into one verdict: reported estimate, statistical
+uncertainty when supplied, hidden-composition interval, counterexample witness,
+repair/certification evidence, refinement recommendations, and limitations.
+
+:class:`updatesupport.PublicDescentReport` remains the lower-level evidence
+object for the primary partial-ID interval. Use it directly when you do not
+want a pass/fail/inconclusive claim verdict.
 
 Refinement And Frontier Search
 ------------------------------

@@ -122,6 +122,39 @@ class GroupedProblem:
     target_procedure_context: ProcedureTargetContext | None = None
     target_standard_error_column: TabularStandardError | None = None
 
+    def to_report(self, **kwargs: Any):
+        """Build a public-descent evidence report from this compiled problem."""
+
+        from .report import public_descent_report
+
+        return public_descent_report(self, **kwargs)
+
+    def claim(self, estimate_name: str, **kwargs: Any):
+        """Create a claim spec using this compiled problem's metadata.
+
+        The returned spec can be verified against the original rows or, for a
+        primary-interval-only audit, against this ``GroupedProblem``. Refinement
+        and repair searches still need the original rows because they recompile
+        alternate public representations.
+        """
+
+        from .claim import claim as make_claim
+
+        if "q" not in kwargs and self.q is not None:
+            kwargs["q"] = self.q
+        target: TabularTarget = (
+            self.target_procedure
+            if self.target_procedure is not None
+            else self.target_column
+        )
+        return make_claim(
+            estimate_name,
+            public=self.public_columns,
+            hidden=self.hidden_columns,
+            target=target,
+            **kwargs,
+        )
+
 
 def from_dataframe(
     data: Any,

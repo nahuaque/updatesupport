@@ -5,7 +5,15 @@ Common entry points imported from ``updatesupport``:
 
 .. autosummary::
 
+   updatesupport.claim
+   updatesupport.verify_claim
    updatesupport.from_dataframe
+   updatesupport.run_audit
+
+Lower-level evidence and search entry points:
+
+.. autosummary::
+
    updatesupport.public_descent_report
    updatesupport.audit_effects
    updatesupport.causal_reporting_stability
@@ -14,13 +22,14 @@ Common entry points imported from ``updatesupport``:
    updatesupport.recommend_refinements_sensitivity
    updatesupport.public_representation_frontier
    updatesupport.certify_public_representation
-   updatesupport.verify_claim
-   updatesupport.run_audit
 
 Core result objects:
 
 .. autosummary::
 
+   updatesupport.ClaimSpec
+   updatesupport.ClaimAudit
+   updatesupport.ClaimRefinementRecommendation
    updatesupport.GroupedProblem
    updatesupport.PublicDescentReport
    updatesupport.PublicRepresentationFrontier
@@ -28,4 +37,3 @@ Core result objects:
    updatesupport.ClaimVerificationReport
    updatesupport.AuditSpec
    updatesupport.AuditRun
-

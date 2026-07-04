@@ -1,13 +1,17 @@
 # Reporting Claims
 
-`ReportingClaim` is the highest-level review artifact in `updatesupport`.
-Instead of choosing individual diagnostics up front, declare the aggregate claim
-you want to defend and call `verify_claim(...)`.
+Claims are the highest-level review artifact in `updatesupport`. Instead of
+choosing individual diagnostics up front, declare the aggregate claim you want
+to defend and call `.audit(...)`.
+
+`us.claim(...)` is the preferred constructor. `ReportingClaim` remains the
+underlying dataclass, and `ClaimSpec` / `ClaimAudit` are clearer aliases for
+the main public workflow.
 
 ```python
 import updatesupport as us
 
-claim = us.ReportingClaim(
+claim = us.claim(
     estimate_name="Income-threshold target rate",
     public=["AGE_BAND", "EDU_BAND", "SEX"],
     hidden=["AGE_BAND", "EDU_BAND", "SEX", "OCC_MAJOR", "WKHP_BAND", "RAC1P"],
@@ -25,8 +29,14 @@ claim = us.ReportingClaim(
     statistical_interval=(0.119, 0.128),
 )
 
-verdict = us.verify_claim(rows_or_frame, claim)
+verdict = claim.audit(rows_or_frame)
 print(verdict.to_markdown())
+```
+
+The function form is still available when it is more convenient:
+
+```python
+verdict = us.verify_claim(rows_or_frame, claim)
 ```
 
 The verifier produces one report that separates:
@@ -38,7 +48,7 @@ The verifier produces one report that separates:
 - a pass/fail/inconclusive verdict,
 - a counterexample witness when the public representation is unstable,
 - a repair representation when candidate refinements can stabilize the claim,
-- refinement recommendations and limitations.
+- claim-centered refinement recommendations and limitations.
 
 ## Verdict Semantics
 
@@ -95,6 +105,27 @@ The verifier reports:
 This is intentionally different from `ambiguity_limit`. A wide interval can
 still support a decision if it stays on one side of the threshold, and a narrow
 interval can fail decision invariance if it straddles the threshold.
+
+## Claim-Centered Refinements
+
+Use `verdict.recommend_refinements()` when you want the recommendation table in
+Python:
+
+```python
+for row in verdict.recommend_refinements(top=5):
+    print(row.label, row.after_ambiguity, row.reason)
+```
+
+These rows are not just the lower-level one-column ambiguity rankings. They
+annotate whether a refinement:
+
+- is the selected repair for the claim,
+- makes a supplied decision rule invariant,
+- satisfies the declared ambiguity limit,
+- merely reduces ambiguity without repairing the claim.
+
+This is the main consolidation step: refinement search is interpreted relative
+to the claim being reviewed, not as a detached optimizer output.
 
 ## Exact Minimum Repairs
 

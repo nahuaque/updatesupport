@@ -19,12 +19,16 @@ from .certificate import (
     certify_public_representation,
 )
 from .claim import (
+    ClaimAudit,
+    ClaimRefinementRecommendation,
+    ClaimSpec,
     ClaimVerificationReport,
     DecisionResult,
     DecisionRule,
     ModelAssistedDrawResult,
     ModelAssistedStabilitySummary,
     ReportingClaim,
+    claim,
     threshold_decision,
     verify_claim,
 )
@@ -197,6 +201,10 @@ __all__ = [
     "CardinalGapResult",
     "CausalReportingStabilitySuite",
     "certify_public_representation",
+    "claim",
+    "ClaimAudit",
+    "ClaimRefinementRecommendation",
+    "ClaimSpec",
     "ClaimVerificationReport",
     "ComparisonItemResult",
     "ConstraintDual",
