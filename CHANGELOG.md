@@ -4,133 +4,70 @@ All notable changes to `updatesupport` are documented here.
 
 ## Unreleased
 
+- No unreleased changes.
+
+## 0.1.3 - 2026-07-04
+
 ### Added
 
-- Added `AuditSpec`, `QSpec`, `AuditRun`, and `run_audit(...)` for
-  JSON-serializable public-descent, sensitivity, and public-representation
-  frontier/certificate audit configurations.
-- Added `RepresentationStabilityCertificate` and
-  `certify_public_representation(...)` to turn frontier search into a
-  pass/fail/inconclusive review artifact with selected representation,
-  assumptions, limitations, Markdown output, and structured exports.
-- Added `BatchedCvxpyEnvironments` plus `backend="batched_cvxpy"` for
-  CVXPY-backed Q presets, enabling compatible sensitivity-grid rows to solve
-  local intervals with scenario-by-state CVXPY variables.
-- Added `as_dict()` methods for public-descent and sensitivity reports so
-  executed audit specs can emit structured report payloads.
-- Added structured export helpers and report methods: `to_json()`,
-  `to_tables()`, `to_dataframes()`, `report_to_json(...)`,
-  `report_tables(...)`, and `report_dataframes(...)`.
-- Added pre-solve data diagnostics for retained/dropped support, sparse-cell
-  filtering, missing category encoding, singleton public fibers, constant-target
-  fibers, and skipped refinement candidates.
-- Added plugin SDK polish with `PluginMetadata`, plugin validation reports,
-  duplicate-name protection, `validate_plugin(...)`, `assert_valid_plugin(...)`,
-  and plugin descriptor serialization.
-- Added a mathematical/statistical soundness note documenting the fixed linear
-  target contract, nonlinear target boundary, finite optimization model, Q
-  preset semantics, backend guarantees, statistical assumptions, and
-  limitations.
-- Added `LinearTarget` and `TargetContract` as the first internal target
-  functional layer, with target-contract metadata in public-descent structured
-  exports and Markdown reports.
-- Added `UnsupportedTarget` and `UnsupportedTargetError` guardrails so nonlinear
-  or representation-dependent target objects fail explicitly instead of being
-  silently interpreted as fixed linear targets.
-- Added `RatioTarget` for fixed linear-fractional targets, with exact saturated
-  public-fiber intervals, finite-environment evaluation, CVXPY DQCP support for
-  local/fixed-public-law ratio intervals, and explicit guardrails for ratio
-  cases that still need dedicated constrained solvers.
-- Added `TargetCapabilities` and `MomentTransformTarget` for fixed transforms
-  of linear moments, with affine transforms reduced to linear targets,
-  convex/concave transforms exposing exact CVXPY-compatible one-sided
-  endpoints, monotone transforms exposing conservative interval bounds, and
-  non-additive decomposition APIs gated by capability flags.
-- Added `ProcedureTarget` and `ProcedureTargetContext` for
-  representation-dependent reporting procedures that compile to a column or
-  row metric per public representation before solving.
-- Added optional SCIP solver support for CVXPY-backed presets via
-  `updatesupport[scip]`, `solver="SCIP"` on CVXPY environments, solver
-  metadata on `QPreset`/`QSpec`, and clearer missing-solver diagnostics.
-- Added `q_fiber_support_floor(...)`, the first SCIP-backed mixed-integer Q
-  preset, to require each public fiber to keep a minimum number of hidden cells
-  active above a minimum share; `QSpec` now carries preset-specific `settings`.
-- Added `q_covariate_balance(...)`, a CVXPY/SOCP-compatible stress preset for
-  causal and model-review workflows that bounds standardized hidden
-  covariate-moment drift while preserving the observed public law, including
-  parameterized sensitivity and support-function frontier support.
-- Added finance-plugin portfolio concentration helpers:
-  `q_factor_exposure_shift(...)` and `q_regional_concentration_shift(...)`,
-  backed by exposure-weighted hidden-cell moments and the core
-  covariate-balance preset.
-- Added finance-plugin `finance_sensitivity_grid(...)` and
-  `certify_portfolio_segmentation(...)` to produce model-risk Q profiles and
-  pass/fail/inconclusive segmentation certificates backed by core frontier
-  certification.
-- Added `WitnessReport` and `witness_report(...)` for analyst-facing
-  lower-vs-upper adversarial witness reports that show which hidden cells move
-  between interval endpoints while the public distribution stays fixed.
-- Added `ConvexAdmissibleSet`, `SupportFunctionResult`, and
-  `SupportFunctionBackend`, a CVXPY `SuppFunc`-based backend for evaluating
-  fixed-linear transport intervals as support functions of the admissible
-  hidden-distribution set.
-- Added `CvxpyAdmissibleSetSpec` and `cvxpy_admissible_set_spec(...)` so
-  compatible CVXPY Q presets expose reusable admissible-set constraint builders
-  for standard, parameterized, batched, and support-function backends.
-- Added `SupportFunctionIntervalResult` and `support_interval(...)` methods for
-  direct support-function interval evaluation from a convex admissible set,
-  support-function backend, or CVXPY admissible-set spec.
-- Added scalarized public-representation frontier scoring and
-  `search="scalarized"` so reviewers can rank or greedily search candidates by
-  explicit weighted ambiguity/complexity tradeoffs.
-- Added `search="mip"` for SCIP-powered public-representation column selection
-  under saturated Q presets, including ambiguity limits, scalarized objectives,
-  public-cell counting, hard bucket-budget constraints, and solver metadata in
-  the frontier trace.
-- Added `search="mip_oracle"` for budgeted stable reporting design: SCIP acts
-  as a discrete public-representation master, compatible convex Q presets are
-  evaluated through support-function oracles, and failed proposals receive
-  no-good cuts.
-- Added `search="mip_minimum"` / `search="mip_exact"` for exact minimum public
-  representation under convex Q presets, with support-function oracle
-  verification, `minimum_objective` selection, hard bucket constraints, and
-  certificate/report trace metadata.
-- Added claim-level verification with `ReportingClaim`,
-  `ClaimVerificationReport`, and `verify_claim(...)`, composing primary
-  public-descent evidence, statistical uncertainty, counterexample witnesses,
-  repair/certification search, Markdown output, and structured exports.
-- Added model-assisted joint analysis with `fit_joint_distribution(...)`,
-  `NonparametricJointDistribution`, Bayesian-bootstrap joint-cell draws, and
-  `verify_claim(..., joint_model=..., joint_draws=...)` summaries.
-- Added `hidden_composition_uncertainty(...)` and
-  `HiddenCompositionUncertaintyReport` for posterior/bootstrap uncertainty over
-  hidden composition, including Bayesian-bootstrap and multinomial bootstrap
-  draw methods, public-law-preserving within-fiber draws, quantile summaries,
-  Markdown output, and structured exports.
-- Added SOCP-compatible `q_l2_budget(...)` and
-  `q_mahalanobis_budget(...)` presets for Euclidean and covariance-aware
-  ellipsoidal hidden-composition stress tests through the CVXPY backends.
-- Added `UncertainLinearTarget`, `target_standard_error=...`, and
-  `effect_standard_error=...` so public-descent and causal-effect reports can
-  widen hidden-composition ambiguity with supplied hidden-cell estimator
-  standard errors while keeping the base point-estimate interval separate.
-- Added an SOCP confidence-core diagnostic for `UncertainLinearTarget` under
-  CVXPY-compatible Q sets, solving the common-overlap interval of admissible
-  composition-specific estimator confidence bands and exporting it in reports.
-- Hardened the finance plugin `ModelRiskReport` with explicit Markdown and
-  structured export sections for the reported portfolio risk estimate, supplied
-  statistical/model uncertainty, hidden-composition ambiguity,
-  concentration-stress ambiguity, refinement recommendations, dual diagnostics,
-  data diagnostics, limitations, and reviewer notes.
-- Added finance-plugin model-assisted portfolio uncertainty via
-  `model_assisted_portfolio_uncertainty(...)`, optional
-  `composition_uncertainty_draws=...` on `model_risk_report(...)`, and
-  `expected_loss_standard_error(...)` for PD/LGD delta-method hidden-cell
-  estimator uncertainty.
-- Added decision-invariance claim verification with `DecisionRule`,
-  `DecisionResult`, and `threshold_decision(...)`, allowing
-  `ReportingClaim` to certify whether a threshold decision remains invariant
-  over hidden-composition intervals and to report decision-specific repairs.
+- Added interaction-aware refinement reports for finding refinement sets whose
+  combined ambiguity reduction is stronger than one-column rankings alone.
+- Added robust comparison and ranking report exports for leaderboards,
+  benchmark comparisons, and other pairwise-margin review workflows.
+- Added breakdown-point report exports for threshold claims, including
+  radius-level decision stability tables.
+- Added AI/ML evaluation and product experimentation examples showing how to
+  audit benchmark and A/B testing claims for hidden segment recomposition.
+- Added a Sphinx documentation site with a Furo theme, custom landing-page
+  styling, API reference pages, and a GitHub Pages deployment workflow.
+
+### Changed
+
+- Consolidated the high-level claim workflow around audit language:
+  `us.claim(...)`, `ClaimSpec.audit(...)`, `us.audit_claim(...)`, and
+  `ClaimAudit`.
+- Reworked README and Sphinx documentation organization around the current API,
+  positioning, mathematical boundaries, transport presets, refinement
+  intelligence, and case-study links.
+- Tightened documentation language around "hidden" meaning retained but not
+  publicly reported, and around ambiguity being conditional on the chosen
+  refinement and Q preset.
+- Compressed repeated Sphinx framing so conceptual explanation lives in the
+  dedicated representation, positioning, and mathematical-soundness pages.
+- Hardened Colab notebooks and tutorial prose, including replacing the fragile
+  EconML notebook path with a DoWhy downstream reporting audit.
+
+### Packaging and QA
+
+- Added docs build coverage to CI and included notebook examples in the source
+  distribution manifest.
+- Fixed Bandit false positives around claim label names and removed a raw
+  `assert` from the interaction-refinement tests.
+
+### Finance Plugin
+
+- Bumped `updatesupport-finance` to `0.1.2`.
+- Improved finance Colab notebooks with clearer exposition, safer plotting, and
+  CVXPY stress-analysis walkthroughs.
+- Refined finance documentation around the plugin value proposition and
+  model-risk portfolio examples.
+
+## 0.1.2 - 2026-07-03
+
+### Added
+
+- Added serializable audit specs and structured report exports for JSON, table,
+  and dataframe workflows.
+- Added data diagnostics, representation-stability certificates, model-assisted
+  joint analysis, hidden-composition bootstrap/posterior summaries, and
+  decision-invariance claim checks.
+- Added target-contract guardrails and supported target families including
+  linear, ratio, moment-transform, procedure, and uncertain linear targets.
+- Added CVXPY, support-function, SOCP, and SCIP/MIP-backed solver paths,
+  including covariate-balance, L2, Mahalanobis, fiber-support-floor, scalarized
+  frontier, MIP frontier, and exact minimum-representation search modes.
+- Added analyst-facing witness reports, finance concentration-stress helpers,
+  and model-assisted portfolio uncertainty.
 
 ### Fixed
 
