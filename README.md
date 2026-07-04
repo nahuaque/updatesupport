@@ -483,22 +483,46 @@ uv run pytest
 
 ## Documentation
 
+### Start Here
+
 - [Sphinx documentation entry point](docs/index.rst)
-- [Local documentation build notes](docs/README.md)
+- [Quickstart](docs/quickstart.rst)
 - [API surface guide](docs/api-surface.md)
+- [Framework overview](docs/framework.rst)
+
+### Positioning And Foundations
+
 - [Representation adequacy guide](docs/representation-adequacy.md)
 - [Positioning and lineage](docs/positioning-and-lineage.md)
-- [Audit specs](docs/audit-specs.md)
-- [Structured exports](docs/structured-exports.md)
-- [Data diagnostics](docs/data-diagnostics.md)
 - [Mathematical and statistical soundness](docs/mathematical-statistical-soundness.md)
-- [Public representation frontier](docs/public-representation-frontier.md)
-- [Representation stability certificates](docs/representation-stability-certificates.md)
+- [Theory and backend reference](docs/theory-and-backends.md)
 - [Transport preset guide](docs/transport-presets.md)
+- [Update-Relevant Support: Hume's Missing Descent](https://philpapers.org/go.pl?id=BRUUSH&proxyId=&u=https%3A%2F%2Fphilpapers.org%2Farchive%2FBRUUSH.pdf)
+
+### Claim Audits And Reports
+
+- [Reporting claims](docs/reporting-claims.md)
+- [Audit specs](docs/audit-specs.md)
+- [Data diagnostics](docs/data-diagnostics.md)
+- [Structured exports](docs/structured-exports.md)
+- [Representation stability certificates](docs/representation-stability-certificates.md)
+
+### Refinement And Robustness
+
+- [Public representation frontier](docs/public-representation-frontier.md)
+- [Model-assisted joint analysis](docs/model-assisted-joint-analysis.md)
+- [Breakdown point analysis](docs/breakdown-point-analysis.md)
+- [Robust comparison and ranking](docs/robust-comparison-ranking.md)
+- [Interaction-aware refinements](docs/interaction-aware-refinements.md)
+
+### Integrations And Case Studies
+
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)
 - [Benchmark gallery](docs/benchmark-gallery.md)
-- [Theory and backend reference](docs/theory-and-backends.md)
-- [Extension and plugin architecture](docs/extensions.md)
-- [Release guide](docs/releasing.md)
 - [Folktables ACSIncome result interpretation](docs/folktables-acs-income-interpretation.md)
-- [Update-Relevant Support: Hume's Missing Descent](https://philpapers.org/go.pl?id=BRUUSH&proxyId=&u=https%3A%2F%2Fphilpapers.org%2Farchive%2FBRUUSH.pdf)
+
+### Project
+
+- [Extension and plugin architecture](docs/extensions.md)
+- [Local documentation build notes](docs/README.md)
+- [Release guide](docs/releasing.md)
