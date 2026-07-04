@@ -485,7 +485,7 @@ uv run pytest
 
 ### Start Here
 
-- [Sphinx documentation entry point](docs/index.rst)
+- [Sphinx documentation entry point](https://nahuaque.github.io/updatesupport/)
 - [Quickstart](docs/quickstart.rst)
 - [API surface guide](docs/api-surface.md)
 - [Framework overview](docs/framework.rst)
