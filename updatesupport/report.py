@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import combinations
 from math import sqrt
 from typing import Any, Hashable, Mapping, Sequence
 
@@ -297,6 +298,272 @@ class RefinementCandidate:
             "percent_reduction": self.reduction_percent,
             "public_cells": self.public_cells,
         }
+
+
+@dataclass(frozen=True)
+class InteractionRefinementCandidate:
+    """Multi-column public refinement ranked by ambiguity reduction and gain."""
+
+    columns: tuple[str, ...]
+    before_ambiguity: float
+    after_ambiguity: float
+    reduction: float
+    reduction_percent: float
+    public_cells: int
+    best_single_column: str | None = None
+    best_single_reduction: float = 0.0
+    single_reduction_sum: float = 0.0
+
+    @property
+    def order(self) -> int:
+        return len(self.columns)
+
+    @property
+    def column(self) -> str:
+        """Human-readable label compatible with one-column refinement tables."""
+
+        return " + ".join(self.columns)
+
+    @property
+    def diameter(self) -> float:
+        """Backward-compatible alias for the after-refinement ambiguity."""
+
+        return self.after_ambiguity
+
+    @property
+    def reduction_fraction(self) -> float:
+        return self.reduction_percent / 100.0
+
+    @property
+    def percent_reduction(self) -> float:
+        """Alias for callers who prefer noun-first naming."""
+
+        return self.reduction_percent
+
+    @property
+    def interaction_gain(self) -> float:
+        """Additional reduction beyond the best single column in the set."""
+
+        if self.order <= 1:
+            return 0.0
+        return self.reduction - self.best_single_reduction
+
+    @property
+    def interaction_gain_percent(self) -> float:
+        if self.before_ambiguity <= 0:
+            return 0.0
+        return 100.0 * self.interaction_gain / self.before_ambiguity
+
+    @property
+    def additive_synergy(self) -> float:
+        """Reduction beyond the sum of one-column reductions in the set."""
+
+        if self.order <= 1:
+            return 0.0
+        return self.reduction - self.single_reduction_sum
+
+    @property
+    def additive_synergy_percent(self) -> float:
+        if self.before_ambiguity <= 0:
+            return 0.0
+        return 100.0 * self.additive_synergy / self.before_ambiguity
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "column": self.column,
+            "columns": self.columns,
+            "order": self.order,
+            "before_ambiguity": self.before_ambiguity,
+            "after_ambiguity": self.after_ambiguity,
+            "diameter": self.after_ambiguity,
+            "reduction": self.reduction,
+            "reduction_fraction": self.reduction_fraction,
+            "reduction_percent": self.reduction_percent,
+            "percent_reduction": self.reduction_percent,
+            "public_cells": self.public_cells,
+            "best_single_column": self.best_single_column,
+            "best_single_reduction": self.best_single_reduction,
+            "single_reduction_sum": self.single_reduction_sum,
+            "interaction_gain": self.interaction_gain,
+            "interaction_gain_percent": self.interaction_gain_percent,
+            "additive_synergy": self.additive_synergy,
+            "additive_synergy_percent": self.additive_synergy_percent,
+        }
+
+
+@dataclass(frozen=True)
+class InteractionRefinementReport:
+    """Interaction-aware refinement search over small column sets."""
+
+    candidates: tuple[InteractionRefinementCandidate, ...]
+    singletons: tuple[InteractionRefinementCandidate, ...]
+    title: str
+    public_columns: tuple[str, ...]
+    hidden_columns: tuple[str, ...]
+    candidate_refinements: tuple[str, ...]
+    target: str
+    q_name: str
+    q_description: str
+    baseline_ambiguity: float
+    max_order: int
+    evaluated_sets: int
+    truncated: bool = False
+    max_evaluations: int | None = None
+    row_count: int | None = None
+
+    @property
+    def best(self) -> InteractionRefinementCandidate | None:
+        return self.candidates[0] if self.candidates else None
+
+    @property
+    def best_interaction(self) -> InteractionRefinementCandidate | None:
+        interactions = [
+            row for row in self.candidates if row.order > 1 and row.interaction_gain > 0
+        ]
+        return interactions[0] if interactions else None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "public_columns": self.public_columns,
+            "hidden_columns": self.hidden_columns,
+            "candidate_refinements": self.candidate_refinements,
+            "target": self.target,
+            "q_name": self.q_name,
+            "q_description": self.q_description,
+            "baseline_ambiguity": self.baseline_ambiguity,
+            "max_order": self.max_order,
+            "evaluated_sets": self.evaluated_sets,
+            "truncated": self.truncated,
+            "max_evaluations": self.max_evaluations,
+            "row_count": self.row_count,
+            "best": None if self.best is None else self.best.as_dict(),
+            "best_interaction": None
+            if self.best_interaction is None
+            else self.best_interaction.as_dict(),
+            "candidates": [row.as_dict() for row in self.candidates],
+            "singletons": [row.as_dict() for row in self.singletons],
+        }
+
+    def to_json(self, **kwargs: Any) -> str:
+        """Serialize the report to JSON."""
+
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        """Return named tables for structured export."""
+
+        return {
+            "summary": (
+                {
+                    "title": self.title,
+                    "public_columns": self.public_columns,
+                    "hidden_columns": self.hidden_columns,
+                    "candidate_refinements": self.candidate_refinements,
+                    "target": self.target,
+                    "q_name": self.q_name,
+                    "q_description": self.q_description,
+                    "baseline_ambiguity": self.baseline_ambiguity,
+                    "max_order": self.max_order,
+                    "evaluated_sets": self.evaluated_sets,
+                    "truncated": self.truncated,
+                    "max_evaluations": self.max_evaluations,
+                    "row_count": self.row_count,
+                    "best": None if self.best is None else self.best.column,
+                    "best_interaction": None
+                    if self.best_interaction is None
+                    else self.best_interaction.column,
+                },
+            ),
+            "interaction_candidates": tuple(row.as_dict() for row in self.candidates),
+            "singletons": tuple(row.as_dict() for row in self.singletons),
+        }
+
+    def to_dataframes(self) -> dict[str, Any]:
+        """Return named pandas DataFrames for the report tables."""
+
+        from .exports import tables_to_dataframes
+
+        return tables_to_dataframes(self.to_tables())
+
+    def to_markdown(self) -> str:
+        lines = [
+            f"# {self.title}",
+            "",
+            "## Summary",
+            "",
+            f"- Baseline ambiguity: {self.baseline_ambiguity:.4f}",
+            f"- Q preset: {self.q_name}",
+            f"- Candidate refinements: {', '.join(self.candidate_refinements)}",
+            f"- Max interaction order: {self.max_order}",
+            f"- Evaluated refinement sets: {self.evaluated_sets}",
+            f"- Search truncated: {'yes' if self.truncated else 'no'}",
+        ]
+        if self.best is not None:
+            lines.append(
+                f"- Best refinement set: `{self.best.column}` "
+                f"(reduction={self.best.reduction:.4f}, "
+                f"after={self.best.after_ambiguity:.4f})"
+            )
+        if self.best_interaction is not None:
+            lines.append(
+                f"- Best positive interaction: `{self.best_interaction.column}` "
+                f"(interaction_gain={self.best_interaction.interaction_gain:.4f})"
+            )
+
+        lines.extend(
+            [
+                "",
+                "## Interpretation",
+                "",
+                "Interaction-aware refinement search evaluates small sets of hidden "
+                "columns as candidate additions to the public representation. "
+                "`interaction_gain` measures how much more ambiguity reduction a "
+                "set achieves than its best one-column member. Positive values "
+                "flag refinements that are easy to miss with a one-column table.",
+                "",
+                "`additive_synergy` compares the set's reduction with the sum of "
+                "its one-column reductions. Negative values indicate overlap or "
+                "redundancy between columns; positive values indicate a stronger "
+                "joint effect than the one-column table suggests.",
+                "",
+                "## Interaction Candidates",
+                "",
+                "| columns | order | before | after | reduction | reduction pct | "
+                "interaction gain | additive synergy | public cells |",
+                "|:---|---:|---:|---:|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for row in self.candidates:
+            lines.append(
+                "| "
+                f"{row.column} | "
+                f"{row.order} | "
+                f"{row.before_ambiguity:.4f} | "
+                f"{row.after_ambiguity:.4f} | "
+                f"{row.reduction:.4f} | "
+                f"{row.reduction_percent:.1f}% | "
+                f"{row.interaction_gain:.4f} | "
+                f"{row.additive_synergy:.4f} | "
+                f"{row.public_cells} |"
+            )
+
+        lines.extend(
+            [
+                "",
+                "## Limitations",
+                "",
+                "- This is a bounded search over the supplied candidate columns and "
+                "the requested maximum interaction order.",
+                "- A missing interaction may still exist outside the searched "
+                "candidate set or at a higher order.",
+                "- As elsewhere, the result is relative to the chosen refinement "
+                "space and Q preset.",
+            ]
+        )
+        return "\n".join(lines)
 
 
 @dataclass
@@ -1929,6 +2196,204 @@ def recommend_refinements(
 
     scores.sort(key=lambda row: row.reduction, reverse=True)
     return tuple(scores if top is None else scores[:top])
+
+
+def recommend_refinement_interactions(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    candidate_refinements: Sequence[str] | None = None,
+    candidate_columns: Sequence[str] | None = None,
+    weight: str | None = None,
+    min_cell_weight: float = 1.0,
+    q: Any = "saturated",
+    q_radius: float | None = None,
+    max_order: int = 2,
+    top: int | None = 8,
+    max_evaluations: int | None = 128,
+    title: str = "Interaction-Aware Refinement Search",
+) -> InteractionRefinementReport:
+    """Rank small refinement sets and expose interaction gains.
+
+    The ordinary refinement table tests one hidden column at a time. This search
+    evaluates combinations up to ``max_order`` so analysts can detect cases where
+    two or more individually weak refinements become strong together.
+    """
+
+    if max_order < 1:
+        raise ValueError("max_order must be at least 1")
+    if top is not None and top < 0:
+        raise ValueError("top must be non-negative")
+    if max_evaluations is not None and max_evaluations < 1:
+        raise ValueError("max_evaluations must be positive or None")
+    candidate_refinements = _resolve_sequence_arg(
+        candidate_refinements,
+        candidate_columns,
+        primary_name="candidate_refinements",
+        alias_name="candidate_columns",
+    )
+    if candidate_refinements is None:
+        candidate_refinements = ()
+    valid_candidates = _valid_interaction_refinement_columns(
+        candidate_refinements,
+        public=public,
+        hidden=hidden,
+    )
+
+    repeatable_data, row_count = _repeatable_data(data)
+    baseline = from_dataframe(
+        repeatable_data,
+        public=public,
+        hidden=hidden,
+        target=target,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
+    )
+    baseline_diameter = baseline.problem.global_transport_modulus().diameter
+
+    evaluated: list[InteractionRefinementCandidate] = []
+    singleton_by_column: dict[str, InteractionRefinementCandidate] = {}
+    evaluated_sets = 0
+    truncated = False
+    for order in range(1, min(max_order, len(valid_candidates)) + 1):
+        for columns in combinations(valid_candidates, order):
+            if max_evaluations is not None and evaluated_sets >= max_evaluations:
+                truncated = True
+                break
+            candidate = _interaction_refinement_candidate(
+                repeatable_data,
+                public=public,
+                hidden=hidden,
+                target=target,
+                weight=weight,
+                min_cell_weight=min_cell_weight,
+                q=q,
+                q_radius=q_radius,
+                columns=columns,
+                baseline_ambiguity=baseline_diameter,
+                singleton_by_column=singleton_by_column,
+            )
+            evaluated_sets += 1
+            evaluated.append(candidate)
+            if candidate.order == 1:
+                singleton_by_column[candidate.columns[0]] = candidate
+        if truncated:
+            break
+
+    evaluated.sort(
+        key=lambda row: (
+            row.reduction,
+            row.interaction_gain,
+            -row.order,
+            -row.after_ambiguity,
+            row.column,
+        ),
+        reverse=True,
+    )
+    singletons = tuple(
+        sorted(
+            singleton_by_column.values(),
+            key=lambda row: (row.reduction, -row.after_ambiguity, row.column),
+            reverse=True,
+        )
+    )
+
+    if isinstance(target, str):
+        target_label = target
+    else:
+        target_label = getattr(target, "name", type(target).__name__)
+
+    return InteractionRefinementReport(
+        candidates=tuple(evaluated if top is None else evaluated[:top]),
+        singletons=singletons,
+        title=title,
+        public_columns=tuple(public),
+        hidden_columns=tuple(hidden),
+        candidate_refinements=valid_candidates,
+        target=target_label,
+        q_name=baseline.q_name,
+        q_description=baseline.q_description,
+        baseline_ambiguity=baseline_diameter,
+        max_order=int(max_order),
+        evaluated_sets=evaluated_sets,
+        truncated=truncated,
+        max_evaluations=max_evaluations,
+        row_count=row_count,
+    )
+
+
+def _interaction_refinement_candidate(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    weight: str | None,
+    min_cell_weight: float,
+    q: Any,
+    q_radius: float | None,
+    columns: tuple[str, ...],
+    baseline_ambiguity: float,
+    singleton_by_column: Mapping[str, InteractionRefinementCandidate],
+) -> InteractionRefinementCandidate:
+    refined = from_dataframe(
+        data,
+        public=tuple(public) + columns,
+        hidden=hidden,
+        target=target,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
+    )
+    diameter = refined.problem.global_transport_modulus().diameter
+    reduction = baseline_ambiguity - diameter
+    reduction_percent = (
+        100.0 * reduction / baseline_ambiguity if baseline_ambiguity > 0 else 0.0
+    )
+    singletons = [
+        singleton_by_column[column]
+        for column in columns
+        if column in singleton_by_column
+    ]
+    best_single = max(singletons, key=lambda row: row.reduction, default=None)
+    return InteractionRefinementCandidate(
+        columns=tuple(columns),
+        before_ambiguity=baseline_ambiguity,
+        after_ambiguity=diameter,
+        reduction=reduction,
+        reduction_percent=reduction_percent,
+        public_cells=len(refined.problem.public_values),
+        best_single_column=None if best_single is None else best_single.columns[0],
+        best_single_reduction=0.0 if best_single is None else best_single.reduction,
+        single_reduction_sum=sum(row.reduction for row in singletons),
+    )
+
+
+def _valid_interaction_refinement_columns(
+    candidate_refinements: Sequence[str],
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+) -> tuple[str, ...]:
+    public_set = set(public)
+    hidden_set = set(hidden)
+    valid: list[str] = []
+    seen: set[str] = set()
+    for column in candidate_refinements:
+        if column in seen:
+            continue
+        seen.add(column)
+        if column in public_set:
+            continue
+        if column not in hidden_set:
+            continue
+        valid.append(column)
+    return tuple(valid)
 
 
 def _parameterized_sensitivity_q(q: Any) -> QPreset | None:

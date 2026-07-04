@@ -18,6 +18,7 @@ from .frontier import (
 from .joint import HiddenCompositionUncertaintyReport
 from .report import (
     CausalReportingStabilitySuite,
+    InteractionRefinementReport,
     PublicDescentReport,
     RefinementSensitivityReport,
     SensitivityReport,
@@ -55,6 +56,9 @@ def report_tables(report: Any) -> ReportTables:
 
     if isinstance(report, RefinementSensitivityReport):
         return _refinement_sensitivity_tables(report)
+
+    if isinstance(report, InteractionRefinementReport):
+        return report.to_tables()
 
     if isinstance(report, CausalReportingStabilitySuite):
         return _causal_suite_tables(report)

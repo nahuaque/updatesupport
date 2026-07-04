@@ -39,6 +39,7 @@ This documentation has three layers:
    model-assisted-joint-analysis
    breakdown-point-analysis
    robust-comparison-ranking
+   interaction-aware-refinements
 
 .. toctree::
    :maxdepth: 1

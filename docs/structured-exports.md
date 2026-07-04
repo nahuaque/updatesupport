@@ -116,6 +116,12 @@ Refinement-sensitivity reports expose:
 - `refinement_scenarios`
 - `refinement_rows`
 
+Interaction-aware refinement reports expose:
+
+- `summary`
+- `interaction_candidates`
+- `singletons`
+
 Public-representation frontier reports expose:
 
 - `summary`
