@@ -133,6 +133,64 @@ class QPresetTests(unittest.TestCase):
         self.assertEqual(env.solver, "SCIP")
         self.assertEqual(env.solver_options, {"limits/time": 5})
 
+    def test_q_intersection_combines_convex_presets(self):
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            q=us.q_intersection(
+                us.q_tv_budget(0.15),
+                us.q_l2_budget(0.2),
+                backend="support_function",
+            ),
+        )
+
+        interval = grouped.problem.global_transport_modulus()
+
+        self.assertEqual(
+            grouped.q_name,
+            "intersection(tv_budget(radius=0.15), l2_budget(radius=0.2))",
+        )
+        self.assertIn("intersection of admissible Q presets", grouped.q_description)
+        self.assertIsInstance(grouped.problem.environments, us.SupportFunctionBackend)
+        self.assertAlmostEqual(interval.lower, 0.35857864, places=5)
+        self.assertAlmostEqual(interval.upper, 0.64142136, places=5)
+        self.assertAlmostEqual(interval.diameter, 0.28284271, places=5)
+
+    def test_q_intersection_supports_operator_and_serialization(self):
+        q = us.q_tv_budget(0.15) & us.q_bounded_shift(0.5)
+        spec = us.QSpec.from_value(q)
+        payload = spec.as_dict()
+
+        self.assertEqual(q.name, "intersection")
+        self.assertEqual(payload["name"], "intersection")
+        self.assertEqual(
+            [component["name"] for component in payload["settings"]["components"]],
+            ["tv_budget", "bounded_shift"],
+        )
+        roundtrip = us.QSpec.from_value(payload).to_preset()
+        self.assertEqual(roundtrip.name, "intersection")
+        self.assertEqual(
+            [component.name for component in roundtrip.settings["components"]],
+            ["tv_budget", "bounded_shift"],
+        )
+
+    def test_q_intersection_rejects_mixed_integer_component(self):
+        with self.assertRaisesRegex(ValueError, "mixed-integer"):
+            us.from_dataframe(
+                _rows(),
+                public=["public"],
+                hidden=["public", "hidden"],
+                target="target",
+                weight="weight",
+                q=us.q_intersection(
+                    us.q_tv_budget(0.15),
+                    us.q_fiber_support_floor(2, min_share=0.25),
+                ),
+            )
+
     def test_soc_q_presets_name_and_describe_their_budget(self):
         l2 = us.q_l2_budget(0.2)
         covariate_balance = us.q_covariate_balance(

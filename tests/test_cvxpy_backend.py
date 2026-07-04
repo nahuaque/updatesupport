@@ -407,6 +407,46 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(support_interval.upper, 0.65, places=5)
         self.assertAlmostEqual(support_interval.diameter, 0.30, places=5)
 
+    def test_cvxpy_admissible_set_specs_can_be_intersected(self):
+        _require_cvxpy()
+
+        grouped = us.from_dataframe(
+            _rows(),
+            public=["PUBLIC"],
+            hidden=["PUBLIC", "HIDDEN"],
+            target="Y",
+            weight="W",
+            q="saturated",
+        )
+        tv_spec = us.cvxpy_admissible_set_spec(
+            us.q_tv_budget(0.15),
+            public_law=grouped.public_law,
+            public_map=grouped.problem.public_map,
+            cell_weights=grouped.cell_weights,
+        )
+        l2_spec = us.cvxpy_admissible_set_spec(
+            us.q_l2_budget(0.2),
+            public_law=grouped.public_law,
+            public_map=grouped.problem.public_map,
+            cell_weights=grouped.cell_weights,
+        )
+
+        combined = tv_spec.intersect(l2_spec, name="tv and l2")
+        interval = combined.support_interval(grouped.problem)
+
+        self.assertEqual(combined.name, "tv and l2")
+        self.assertEqual(combined.as_dict()["constraint_builder_count"], 2)
+        self.assertEqual(
+            combined.as_dict()["parameterized_constraint_builder_count"],
+            0,
+        )
+        self.assertIsInstance(
+            combined.environment("support_function"),
+            us.SupportFunctionBackend,
+        )
+        self.assertAlmostEqual(interval.lower, 0.35857864, places=5)
+        self.assertAlmostEqual(interval.upper, 0.64142136, places=5)
+
     def test_non_cvxpy_q_preset_does_not_expose_admissible_set_spec(self):
         with self.assertRaisesRegex(ValueError, "does not expose"):
             us.cvxpy_admissible_set_spec(

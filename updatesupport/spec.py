@@ -150,13 +150,25 @@ class QSpec:
         if self.solver_options is not None:
             payload["solver_options"] = dict(self.solver_options)
         if self.settings is not None:
-            payload["settings"] = dict(self.settings)
+            payload["settings"] = _q_settings_payload(self.name, self.settings)
         return payload
 
     def to_dict(self) -> dict[str, Any]:
         """Alias for as_dict(), matching AuditSpec."""
 
         return self.as_dict()
+
+
+def _q_settings_payload(
+    name: str,
+    settings: Mapping[str, Any],
+) -> dict[str, Any]:
+    payload = dict(settings)
+    if name == "intersection" and "components" in payload:
+        payload["components"] = [
+            QSpec.from_value(component).as_dict() for component in payload["components"]
+        ]
+    return payload
 
 
 @dataclass(frozen=True)

@@ -36,6 +36,11 @@ class QPreset:
     solver_options: Mapping[str, Any] | None = None
     settings: Mapping[str, Any] | None = None
 
+    def __and__(self, other: Any) -> "QPreset":
+        """Return the intersection of two Q presets."""
+
+        return q_intersection(self, other)
+
 
 @dataclass(frozen=True)
 class QEnvironment:
@@ -90,6 +95,48 @@ class CvxpyAdmissibleSetSpec:
             self,
             "description",
             self.description or q_description(self.preset),
+        )
+
+    def __and__(self, other: "CvxpyAdmissibleSetSpec") -> "CvxpyAdmissibleSetSpec":
+        """Return the intersection of two CVXPY admissible-set specs."""
+
+        return self.intersect(other)
+
+    def intersect(
+        self,
+        *others: "CvxpyAdmissibleSetSpec",
+        name: str | None = None,
+        description: str | None = None,
+        solver: str | None = None,
+        solver_options: Mapping[str, Any] | None = None,
+    ) -> "CvxpyAdmissibleSetSpec":
+        """Conjoin this admissible set's constraints with other specs."""
+
+        specs = (self,) + tuple(others)
+        _validate_same_fixed_public_law(specs)
+        merged_solver = solver if solver is not None else _merged_solver(specs)
+        merged_solver_options = (
+            dict(solver_options)
+            if solver_options is not None
+            else _merged_solver_options(specs)
+        )
+        preset = q_intersection(
+            *(spec.preset for spec in specs),
+            solver=merged_solver,
+            solver_options=merged_solver_options,
+        )
+        return CvxpyAdmissibleSetSpec(
+            preset=preset,
+            fixed_public_law=self.fixed_public_law,
+            constraint_builders=tuple(
+                builder for spec in specs for builder in spec.constraint_builders
+            ),
+            parameterized_constraint_builders=(),
+            parameter_values={},
+            solver=merged_solver,
+            solver_options=merged_solver_options,
+            name=name or q_name(preset),
+            description=description or q_description(preset),
         )
 
     def environment(self, backend: str = "cvxpy") -> Environment:
@@ -192,6 +239,45 @@ def q_observed() -> QPreset:
     """Use only the observed hidden distribution."""
 
     return QPreset("observed")
+
+
+def q_intersection(
+    *components: Any,
+    backend: str | None = None,
+    solver: str | None = None,
+    solver_options: Mapping[str, Any] | None = None,
+) -> QPreset:
+    """Intersect several admissible Q presets.
+
+    The first implementation slice supports convex CVXPY-compatible component
+    presets plus ``saturated`` and ``observed``. Mixed-integer components are
+    deliberately rejected by the CVXPY admissible-set compiler.
+    """
+
+    if not components:
+        raise ValueError("q_intersection requires at least one component preset")
+    normalized = _flatten_intersection_components(
+        tuple(_normalize_intersection_component(component) for component in components)
+    )
+    component_backends = {
+        component.backend for component in normalized if component.backend
+    }
+    component_solvers = {
+        component.solver for component in normalized if component.solver
+    }
+    final_backend = backend
+    if final_backend is None and len(component_backends) == 1:
+        final_backend = next(iter(component_backends))
+    final_solver = solver
+    if final_solver is None and len(component_solvers) == 1:
+        final_solver = next(iter(component_solvers))
+    return QPreset(
+        "intersection",
+        backend=final_backend,
+        solver=final_solver,
+        solver_options=None if solver_options is None else dict(solver_options),
+        settings={"components": normalized},
+    )
 
 
 def q_bounded_shift(radius: float = 0.5) -> QPreset:
@@ -463,6 +549,16 @@ def resolve_q_environment(
             ),
         )
 
+    if preset.name == "intersection":
+        backend = _backend_name(preset, default="cvxpy")
+        spec = _cvxpy_admissible_set_spec_from_preset(
+            preset,
+            public_law=public_law,
+            public_map=public_map,
+            cell_weights=cell_weights,
+        )
+        return _q_environment_from_cvxpy_spec(spec, backend=backend)
+
     if preset.name == "fiber_support_floor":
         min_active, min_share, max_active = _fiber_support_floor_settings(preset)
         _validate_fiber_support_floor(
@@ -651,6 +747,63 @@ def _cvxpy_admissible_set_spec_from_preset(
         public_map=public_map,
         cell_weights=cell_weights,
     )
+    if preset.name == "intersection":
+        components = _intersection_components(preset)
+        component_specs = []
+        observed_builders = []
+        saturated_count = 0
+        for component in components:
+            if component.name == "saturated":
+                saturated_count += 1
+                continue
+            if component.name == "observed":
+                observed_builders.append(_observed_constraint_builder(cell_weights))
+                continue
+            component_specs.append(
+                _cvxpy_admissible_set_spec_from_preset(
+                    component,
+                    public_law=public_law,
+                    public_map=public_map,
+                    cell_weights=cell_weights,
+                )
+            )
+        if not component_specs and not observed_builders and saturated_count == 0:
+            raise ValueError("q_intersection requires at least one component preset")
+        all_specs = tuple(component_specs)
+        return CvxpyAdmissibleSetSpec(
+            preset=preset,
+            fixed_public_law=public_law,
+            constraint_builders=tuple(observed_builders)
+            + tuple(
+                builder for spec in all_specs for builder in spec.constraint_builders
+            ),
+            parameterized_constraint_builders=(),
+            parameter_values={},
+            solver=preset.solver
+            if preset.solver is not None
+            else _merged_solver(all_specs),
+            solver_options=preset.solver_options
+            if preset.solver_options is not None
+            else _merged_solver_options(all_specs),
+            name=q_name(preset),
+            description=q_description(preset),
+        )
+
+    if preset.name == "bounded_shift":
+        radius = _bounded_radius(preset)
+        return CvxpyAdmissibleSetSpec(
+            preset=preset,
+            fixed_public_law=public_law,
+            constraint_builders=(
+                _bounded_shift_constraint_builder(cell_weights, radius),
+            ),
+            parameter_values={"radius": radius},
+            solver=preset.solver,
+            solver_options=preset.solver_options,
+            name=q_name(preset),
+            description=q_description(preset),
+        )
+
     if preset.name == "tv_budget":
         radius = _tv_radius(preset)
         return CvxpyAdmissibleSetSpec(
@@ -822,6 +975,46 @@ def _validate_cvxpy_spec_inputs(
         raise ValueError(f"public_law is missing public values: {missing_public!r}")
 
 
+def _validate_same_fixed_public_law(
+    specs: Sequence[CvxpyAdmissibleSetSpec],
+) -> None:
+    if not specs:
+        return
+    first = specs[0].fixed_public_law
+    for spec in specs[1:]:
+        if set(first) != set(spec.fixed_public_law):
+            raise ValueError("intersected specs must use the same fixed public law")
+        for public_value, mass in first.items():
+            if abs(float(mass) - float(spec.fixed_public_law[public_value])) > 1e-9:
+                raise ValueError("intersected specs must use the same fixed public law")
+
+
+def _merged_solver(specs: Sequence[CvxpyAdmissibleSetSpec]) -> str | None:
+    solvers = {spec.solver for spec in specs if spec.solver is not None}
+    if len(solvers) > 1:
+        raise ValueError(
+            "intersected specs have conflicting solvers; pass solver=... explicitly"
+        )
+    return next(iter(solvers)) if solvers else None
+
+
+def _merged_solver_options(
+    specs: Sequence[CvxpyAdmissibleSetSpec],
+) -> Mapping[str, Any] | None:
+    options = [
+        dict(spec.solver_options) for spec in specs if spec.solver_options is not None
+    ]
+    if not options:
+        return None
+    first = options[0]
+    if any(option != first for option in options[1:]):
+        raise ValueError(
+            "intersected specs have conflicting solver_options; pass "
+            "solver_options=... explicitly"
+        )
+    return first
+
+
 def _q_environment_from_cvxpy_spec(
     spec: CvxpyAdmissibleSetSpec,
     *,
@@ -883,6 +1076,13 @@ def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | No
         preset = replace(preset, radius=radius)
     elif preset.name == "fiber_support_floor":
         _fiber_support_floor_settings(preset)
+    elif preset.name == "intersection":
+        if q_radius is not None:
+            raise ValueError("q_radius cannot be used with q_intersection")
+        preset = replace(
+            preset,
+            settings={"components": _intersection_components(preset)},
+        )
     elif preset.name == "tv_budget":
         radius = _tv_radius(preset)
         preset = replace(preset, radius=radius)
@@ -920,6 +1120,11 @@ def q_name(q: Any, *, q_radius: float | None = None) -> str:
         if max_active is not None:
             name += f", max_active={max_active}"
         return name + ")"
+    if preset.name == "intersection":
+        components = ", ".join(
+            q_name(component) for component in _intersection_components(preset)
+        )
+        return f"intersection({components})"
     if preset.name == "tv_budget":
         return f"tv_budget(radius={_tv_radius(preset):g})"
     if preset.name == "chi_square_budget":
@@ -964,6 +1169,11 @@ def q_description(q: Any, *, q_radius: float | None = None) -> str:
         if max_active is not None:
             description += f", and at most {max_active} active hidden cells"
         return description
+    if preset.name == "intersection":
+        components = "; ".join(
+            q_description(component) for component in _intersection_components(preset)
+        )
+        return f"intersection of admissible Q presets: {components}"
     if preset.name == "tv_budget":
         radius = _tv_radius(preset)
         return (
@@ -1017,6 +1227,11 @@ def _canonical_preset(preset: QPreset) -> QPreset:
         "observed": "observed",
         "point": "observed",
         "observed_only": "observed",
+        "and": "intersection",
+        "intersect": "intersection",
+        "intersection": "intersection",
+        "meet": "intersection",
+        "q_intersection": "intersection",
         "bounded": "bounded_shift",
         "bounded-shift": "bounded_shift",
         "bounded_shift": "bounded_shift",
@@ -1069,6 +1284,57 @@ def _canonical_preset(preset: QPreset) -> QPreset:
     except KeyError as exc:
         raise ValueError(f"unsupported Q preset: {preset.name!r}") from exc
     return replace(preset, name=name)
+
+
+def _intersection_components(preset: QPreset) -> tuple[QPreset, ...]:
+    settings = dict(preset.settings or {})
+    raw_components = settings.get("components")
+    if raw_components is None:
+        raise ValueError("q_intersection requires settings with 'components'")
+    if isinstance(raw_components, str) or not isinstance(raw_components, Sequence):
+        raise TypeError("q_intersection components must be a sequence of Q presets")
+    components = tuple(
+        _normalize_intersection_component(component) for component in raw_components
+    )
+    flattened = _flatten_intersection_components(components)
+    if not flattened:
+        raise ValueError("q_intersection requires at least one component preset")
+    return flattened
+
+
+def _flatten_intersection_components(
+    components: Sequence[QPreset],
+) -> tuple[QPreset, ...]:
+    flattened: list[QPreset] = []
+    for component in components:
+        if component.name == "intersection":
+            flattened.extend(_intersection_components(component))
+        else:
+            flattened.append(component)
+    return tuple(flattened)
+
+
+def _normalize_intersection_component(component: Any) -> QPreset:
+    if isinstance(component, Mapping):
+        component = _q_preset_from_mapping(component)
+    preset = normalize_q_preset(component)
+    if preset is None:
+        raise TypeError("q_intersection components must be named built-in Q presets")
+    return preset
+
+
+def _q_preset_from_mapping(value: Mapping[str, Any]) -> QPreset:
+    if "name" not in value:
+        raise ValueError("Q preset mapping must contain 'name'")
+    return QPreset(
+        name=str(value["name"]),
+        radius=None if value.get("radius") is None else float(value["radius"]),
+        cost=value.get("cost"),
+        backend=None if value.get("backend") is None else str(value["backend"]),
+        solver=None if value.get("solver") is None else str(value["solver"]),
+        solver_options=value.get("solver_options"),
+        settings=value.get("settings"),
+    )
 
 
 def _bounded_radius(preset: QPreset) -> float:
@@ -1277,6 +1543,62 @@ def _fiber_support_floor_constraint_builder(
                         public_value=public_value,
                     )
                 )
+        return tuple(records)
+
+    return build
+
+
+def _observed_constraint_builder(cell_weights: Mapping[Hashable, float]):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, _state_index):
+        import numpy as np
+
+        observed = np.array([observed_by_state[state] for state in states], dtype=float)
+        return (
+            cvxpy_constraint(
+                q == observed,
+                name="observed hidden distribution",
+                kind="observed",
+                sense="==",
+                states=states,
+            ),
+        )
+
+    return build
+
+
+def _bounded_shift_constraint_builder(
+    cell_weights: Mapping[Hashable, float],
+    radius: float,
+):
+    observed_by_state = {state: float(mass) for state, mass in cell_weights.items()}
+
+    def build(cp, q, states, state_index):
+        records = []
+        for state in states:
+            observed = observed_by_state[state]
+            lower = max(0.0, observed * (1.0 - radius))
+            upper = min(1.0, observed * (1.0 + radius))
+            index = state_index[state]
+            records.append(
+                cvxpy_constraint(
+                    q[index] >= lower,
+                    name=f"bounded-shift lower {state!r}",
+                    kind="bounded_shift",
+                    sense=">=",
+                    state=state,
+                )
+            )
+            records.append(
+                cvxpy_constraint(
+                    q[index] <= upper,
+                    name=f"bounded-shift upper {state!r}",
+                    kind="bounded_shift",
+                    sense="<=",
+                    state=state,
+                )
+            )
         return tuple(records)
 
     return build

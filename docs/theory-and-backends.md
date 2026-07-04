@@ -456,6 +456,17 @@ CVXPY environment, parameterized CVXPY environment, batched CVXPY environment,
 or support-function backend. This keeps the mathematical admissible set shared
 across solver modes.
 
+Specs can also be intersected when the intended Q set is a conjunction of
+several convex admissibility requirements:
+
+```python
+combined = tv_spec.intersect(balance_spec)
+interval = combined.support_interval(grouped.problem)
+```
+
+The higher-level equivalent is `us.q_intersection(...)`, which routes through
+the same constraint-concatenation path.
+
 `support_interval(...)` returns a `SupportFunctionIntervalResult` with the
 lower value, upper value, diameter, and the lower/upper optimizer vectors. For a
 linear target direction `h`, it evaluates `sigma_Q(h)` and `sigma_Q(-h)`.

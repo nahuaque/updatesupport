@@ -7,6 +7,8 @@ All notable changes to `updatesupport` are documented here.
 - Added multi-target support-function reports with per-target intervals,
   markdown output, structured tables, dataframe export hooks, and dual
   diagnostics for each endpoint solve.
+- Added admissible-set intersection algebra via `q_intersection(...)`,
+  `QPreset.__and__`, and `CvxpyAdmissibleSetSpec.intersect(...)`.
 
 ## 0.1.3 - 2026-07-04
 

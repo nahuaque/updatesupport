@@ -69,6 +69,36 @@ All built-in presets produced by `from_dataframe(...)`,
 which hidden cells are stable enough to include in the state space. `Q` decides
 how the retained cells may be reweighted.
 
+## Intersecting Presets
+
+Use `q_intersection(...)` when a stress test needs several admissibility
+requirements at once:
+
+```python
+q = us.q_intersection(
+    us.q_tv_budget(0.10),
+    us.q_covariate_balance(0.25, hidden_moments),
+    backend="support_function",
+)
+```
+
+This means "allow only hidden distributions that satisfy every listed preset."
+It is an AND operation on admissible sets, not a sensitivity grid. The resulting
+ambiguity interval is no wider than any component interval because the feasible
+set is smaller.
+
+The first algebra slice supports convex CVXPY-compatible components, plus
+`observed`, `saturated`, and `bounded_shift`. Mixed-integer components such as
+`q_fiber_support_floor(...)` are intentionally rejected by this convex
+admissible-set compiler.
+
+For lower-level workflows, `CvxpyAdmissibleSetSpec` also supports intersection:
+
+```python
+combined = tv_spec.intersect(balance_spec)
+interval = combined.support_interval(grouped.problem)
+```
+
 ## CVXPY Solver Choice
 
 CVXPY-backed presets use CVXPY's default solver unless a solver is named
@@ -715,6 +745,7 @@ The compiler accepts both helper functions and string aliases:
 | --- | --- |
 | `saturated` | `"saturated"`, `"public_fiber_saturated"`, `"public-fiber-saturated"` |
 | `observed` | `"observed"`, `"point"`, `"observed_only"` |
+| `intersection` | `"intersection"`, `"intersect"`, `"and"`, `"meet"`, `"q_intersection"` |
 | `bounded_shift` | `"bounded"`, `"bounded-shift"`, `"bounded_shift"` |
 | `tv_budget` | `"tv"`, `"total-variation"`, `"total_variation"`, `"tv_budget"` |
 | `chi_square_budget` | `"chi-square"`, `"chi_square"`, `"chi-square-budget"`, `"chi_square_budget"`, `"chi2"`, `"chisquare"` |
