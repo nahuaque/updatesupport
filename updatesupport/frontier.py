@@ -48,8 +48,10 @@ _MINIMUM_OBJECTIVE_ALIASES = {
 }
 
 _SUPPORT_FUNCTION_ORACLE_Q_PRESETS = {
+    "bounded_shift",
     "chi_square_budget",
     "covariate_balance",
+    "intersection",
     "kl_budget",
     "l2_budget",
     "mahalanobis_budget",

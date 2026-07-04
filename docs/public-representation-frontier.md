@@ -242,7 +242,12 @@ frontier = us.public_representation_frontier(
     target="expected_loss",
     weight="ead",
     candidate_refinements=["score_band", "ltv_band", "channel"],
-    q_presets=[us.q_tv_budget(0.10), us.q_chi_square_budget(0.25)],
+    q_presets=[
+        us.q_intersection(
+            us.q_tv_budget(0.10),
+            us.q_covariate_balance(0.25, hidden_moments),
+        )
+    ],
     ambiguity_limit=0.005,
     bucket_budget=40,
     search="mip_oracle",
@@ -258,10 +263,10 @@ ambiguity limit, the master receives a no-good cut and proposes the next
 candidate.
 
 `search="mip_oracle"` currently requires `ambiguity_limit`. It supports
-`saturated`, `observed`, `tv_budget`, `chi_square_budget`, `kl_budget`,
-`l2_budget`, `covariate_balance`, `mahalanobis_budget`, and `wasserstein`
-presets. The public-cell `bucket_budget`, when supplied, is a hard master
-constraint in this mode.
+`saturated`, `observed`, `bounded_shift`, convex divergence/norm presets,
+`covariate_balance`, `mahalanobis_budget`, `wasserstein`, and convex
+`q_intersection(...)` composites. The public-cell `bucket_budget`, when
+supplied, is a hard master constraint in this mode.
 
 Use `search="mip_minimum"` when the review question is:
 

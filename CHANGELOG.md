@@ -9,6 +9,8 @@ All notable changes to `updatesupport` are documented here.
   diagnostics for each endpoint solve.
 - Added admissible-set intersection algebra via `q_intersection(...)`,
   `QPreset.__and__`, and `CvxpyAdmissibleSetSpec.intersect(...)`.
+- Extended support-function frontier oracle search to accept convex
+  `q_intersection(...)` composites and `bounded_shift` presets.
 
 ## 0.1.3 - 2026-07-04
 

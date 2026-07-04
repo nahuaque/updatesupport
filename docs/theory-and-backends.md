@@ -577,7 +577,12 @@ frontier = us.public_representation_frontier(
     hidden=["region", "occupation", "channel"],
     target="outcome",
     candidate_refinements=["occupation", "channel"],
-    q_presets=[us.q_tv_budget(0.10)],
+    q_presets=[
+        us.q_intersection(
+            us.q_tv_budget(0.10),
+            us.q_bounded_shift(0.5),
+        )
+    ],
     ambiguity_limit=0.02,
     bucket_budget=20,
     search="mip_oracle",

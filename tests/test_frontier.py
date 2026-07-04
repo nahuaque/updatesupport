@@ -761,10 +761,63 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
                 hidden=["segment", "driver"],
                 target="target",
                 candidate_refinements=["driver"],
-                q_presets=[us.q_bounded_shift(0.5)],
+                q_presets=[us.q_fiber_support_floor(2, min_share=0.25)],
                 ambiguity_limit=0.05,
                 search="mip_oracle",
             )
+
+    def test_public_representation_frontier_mip_oracle_supports_intersection_q(self):
+        rows = [
+            {
+                "segment": "A",
+                "driver": "low",
+                "noise": "n",
+                "target": 0.0,
+                "weight": 30,
+            },
+            {
+                "segment": "A",
+                "driver": "high",
+                "noise": "n",
+                "target": 1.0,
+                "weight": 30,
+            },
+            {
+                "segment": "B",
+                "driver": "flat",
+                "noise": "n",
+                "target": 0.5,
+                "weight": 40,
+            },
+        ]
+
+        report = us.public_representation_frontier(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver", "noise"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["noise", "driver"],
+            q_presets=[
+                us.q_intersection(
+                    us.q_tv_budget(0.15),
+                    us.q_bounded_shift(0.5),
+                )
+            ],
+            ambiguity_limit=0.05,
+            bucket_budget=3,
+            search="mip_oracle",
+            max_added_columns=1,
+        )
+
+        self.assertTrue(report.search_trace.exact)
+        self.assertEqual(report.minimal_stable.added_columns, ("driver",))
+        self.assertGreaterEqual(report.search_trace.oracle_iterations, 2)
+        self.assertIn("intersection(", report.candidates[0].scenarios[0].q_name)
+        self.assertIsInstance(
+            report.candidates[0].scenarios[0].q_description,
+            str,
+        )
 
     def test_public_representation_frontier_rejects_bad_scalarized_weights(self):
         rows = [
