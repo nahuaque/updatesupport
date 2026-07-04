@@ -36,9 +36,30 @@ source_suffix = {
 root_doc = "index"
 exclude_patterns = ["_build", "README.md", "Thumbs.db", ".DS_Store"]
 
-html_theme = "alabaster"
-html_static_path: list[str] = []
-html_title = f"{project} {release}"
+html_theme = "furo"
+html_static_path = ["_static"]
+html_css_files = ["custom.css"]
+html_title = "updatesupport"
+html_theme_options = {
+    "sidebar_hide_name": False,
+    "light_css_variables": {
+        "color-brand-primary": "#0f766e",
+        "color-brand-content": "#0f766e",
+        "color-api-name": "#0f766e",
+        "font-stack": (
+            "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "
+            "Segoe UI, sans-serif"
+        ),
+        "font-stack--monospace": (
+            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+        ),
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#2dd4bf",
+        "color-brand-content": "#5eead4",
+        "color-api-name": "#5eead4",
+    },
+}
 
 autodoc_typehints = "description"
 autodoc_member_order = "bysource"

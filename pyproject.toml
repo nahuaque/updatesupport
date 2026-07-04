@@ -75,6 +75,7 @@ dev = [
     "twine>=6.1",
 ]
 docs = [
+    "furo>=2024.8.6",
     "myst-parser>=4.0",
     "sphinx>=7.4",
 ]
