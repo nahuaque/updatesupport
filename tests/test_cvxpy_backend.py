@@ -149,6 +149,61 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.q_upper["b"], 0.75, places=6)
         self.assertIn("cell_cap", {row.kind for row in interval.duals})
 
+    def test_support_function_report_evaluates_multiple_target_directions(self):
+        _require_cvxpy()
+
+        def cap_b(_cp, q, _states, state_index):
+            return (
+                us.cvxpy_constraint(
+                    q[state_index["b"]] <= 0.75,
+                    name="cap hidden cell b",
+                    kind="cell_cap",
+                    sense="<=",
+                    state="b",
+                ),
+            )
+
+        problem = us.FiniteProblem(
+            states=["a", "b"],
+            public={"a": "o", "b": "o"},
+            estimand={"a": 0.0, "b": 1.0},
+            environments=us.SupportFunctionBackend(
+                fixed_public_law={"o": 1.0},
+                constraint_builders=(cap_b,),
+            ),
+        )
+
+        report = us.support_function_report(
+            problem,
+            {
+                "target_b": {"b": 1.0},
+                "target_a": {"a": 1.0},
+            },
+            public_law={"o": 1.0},
+            title="Two Target Support Report",
+        )
+
+        self.assertIsInstance(report, us.SupportFunctionReport)
+        self.assertEqual(report.target_count, 2)
+        intervals = {target.name: target for target in report.targets}
+        self.assertAlmostEqual(intervals["target_b"].lower, 0.0, places=6)
+        self.assertAlmostEqual(intervals["target_b"].upper, 0.75, places=6)
+        self.assertAlmostEqual(intervals["target_b"].diameter, 0.75, places=6)
+        self.assertAlmostEqual(intervals["target_a"].lower, 0.25, places=6)
+        self.assertAlmostEqual(intervals["target_a"].upper, 1.0, places=6)
+        self.assertAlmostEqual(intervals["target_a"].diameter, 0.75, places=6)
+
+        dual_rows = report.dual_summary(top=None)
+        self.assertIn("cell_cap", {row["kind"] for row in dual_rows})
+        self.assertIn("target_b", {row["target"] for row in dual_rows})
+        self.assertIn("target_a", {row["target"] for row in dual_rows})
+
+        tables = us.report_tables(report)
+        self.assertEqual(len(tables["targets"]), 2)
+        self.assertTrue(tables["dual_diagnostics"])
+        self.assertIn("target_b", report.to_markdown())
+        self.assertIn('"target_count": 2', report.to_json())
+
     def test_convex_admissible_set_exposes_support_function(self):
         _require_cvxpy()
 
@@ -174,7 +229,7 @@ class CvxpyBackendTests(unittest.TestCase):
         interval = admissible_set.support_interval([0.0, 1.0])
         backend_result = env.support_value(
             problem,
-            [0.0, 1.0],
+            {"b": 1.0},
             public_law={"o": 1.0},
         )
         backend_interval = env.support_interval(problem, public_law={"o": 1.0})
@@ -192,6 +247,7 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertEqual(interval.as_dict()["upper"], interval.upper)
         self.assertAlmostEqual(backend_result.value, 0.75, places=5)
         self.assertAlmostEqual(backend_interval.upper, 0.75, places=5)
+        self.assertIn("lower_duals", backend_interval.as_dict())
 
     def test_support_function_backend_can_be_selected_from_q_preset(self):
         _require_cvxpy()
@@ -212,6 +268,17 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.lower, 0.35, places=5)
         self.assertAlmostEqual(interval.upper, 0.65, places=5)
         self.assertAlmostEqual(interval.diameter, 0.30, places=5)
+
+        support_report = grouped.support_function_report(
+            {
+                "Y": {
+                    state: grouped.problem.estimand_map[state]
+                    for state in grouped.problem.states
+                }
+            }
+        )
+        self.assertAlmostEqual(support_report.targets[0].lower, 0.35, places=5)
+        self.assertAlmostEqual(support_report.targets[0].upper, 0.65, places=5)
 
     def test_support_function_backend_handles_l2_budget_preset(self):
         _require_cvxpy()

@@ -158,6 +158,19 @@ class SupportFunctionIntervalResult:
     upper_support_value: float
     lower_support_result: SupportFunctionResult
     upper_support_result: SupportFunctionResult
+    lower_duals: tuple[ConstraintDual, ...] = ()
+    upper_duals: tuple[ConstraintDual, ...] = ()
+
+    @property
+    def duals(self) -> tuple[ConstraintDual, ...]:
+        return self.lower_duals + self.upper_duals
+
+    def dual_summary(
+        self, *, top: int | None = 10, min_magnitude: float = 0.0
+    ) -> tuple[ConstraintDual, ...]:
+        rows = [row for row in self.duals if row.magnitude >= min_magnitude]
+        rows.sort(key=lambda row: row.magnitude, reverse=True)
+        return tuple(rows if top is None else rows[:top])
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -171,7 +184,216 @@ class SupportFunctionIntervalResult:
             "upper_support_value": self.upper_support_value,
             "lower_support_result": self.lower_support_result.as_dict(),
             "upper_support_result": self.upper_support_result.as_dict(),
+            "lower_duals": [row.as_dict() for row in self.lower_duals],
+            "upper_duals": [row.as_dict() for row in self.upper_duals],
+            "duals": [row.as_dict() for row in self.duals],
         }
+
+
+@dataclass(frozen=True)
+class SupportFunctionTargetInterval:
+    """Support-function interval for one named linear target direction."""
+
+    name: str
+    direction: tuple[float, ...]
+    lower: float
+    upper: float
+    diameter: float
+    lower_distribution: Mapping[Hashable, float]
+    upper_distribution: Mapping[Hashable, float]
+    lower_support_value: float
+    upper_support_value: float
+    lower_duals: tuple[ConstraintDual, ...] = ()
+    upper_duals: tuple[ConstraintDual, ...] = ()
+
+    @property
+    def duals(self) -> tuple[ConstraintDual, ...]:
+        return self.lower_duals + self.upper_duals
+
+    def dual_summary(
+        self, *, top: int | None = 10, min_magnitude: float = 0.0
+    ) -> tuple[ConstraintDual, ...]:
+        rows = [row for row in self.duals if row.magnitude >= min_magnitude]
+        rows.sort(key=lambda row: row.magnitude, reverse=True)
+        return tuple(rows if top is None else rows[:top])
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "direction": self.direction,
+            "lower": self.lower,
+            "upper": self.upper,
+            "diameter": self.diameter,
+            "lower_distribution": dict(self.lower_distribution),
+            "upper_distribution": dict(self.upper_distribution),
+            "lower_support_value": self.lower_support_value,
+            "upper_support_value": self.upper_support_value,
+            "lower_duals": [row.as_dict() for row in self.lower_duals],
+            "upper_duals": [row.as_dict() for row in self.upper_duals],
+            "duals": [row.as_dict() for row in self.duals],
+        }
+
+
+@dataclass(frozen=True)
+class SupportFunctionReport:
+    """Multi-target support-function interval and dual diagnostic report."""
+
+    title: str
+    targets: tuple[SupportFunctionTargetInterval, ...]
+    states: tuple[Hashable, ...]
+    public_values: tuple[Hashable, ...]
+    public_law: Mapping[Hashable, float] | None = None
+    backend: str = "support-function-cvxpy"
+
+    @property
+    def target_count(self) -> int:
+        return len(self.targets)
+
+    @property
+    def state_count(self) -> int:
+        return len(self.states)
+
+    @property
+    def public_cell_count(self) -> int:
+        return len(self.public_values)
+
+    @property
+    def max_diameter(self) -> float:
+        if not self.targets:
+            return 0.0
+        return max(target.diameter for target in self.targets)
+
+    def dual_summary(
+        self, *, top: int | None = 10, min_magnitude: float = 0.0
+    ) -> tuple[dict[str, Any], ...]:
+        rows: list[dict[str, Any]] = []
+        for target in self.targets:
+            for endpoint, duals in (
+                ("lower", target.lower_duals),
+                ("upper", target.upper_duals),
+            ):
+                for dual in duals:
+                    if dual.magnitude < min_magnitude:
+                        continue
+                    payload = dual.as_dict()
+                    payload["target"] = target.name
+                    payload["endpoint"] = endpoint
+                    rows.append(payload)
+        rows.sort(key=lambda row: float(row["magnitude"]), reverse=True)
+        return tuple(rows if top is None else rows[:top])
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "backend": self.backend,
+            "target_count": self.target_count,
+            "state_count": self.state_count,
+            "public_cell_count": self.public_cell_count,
+            "public_law": dict(self.public_law)
+            if self.public_law is not None
+            else None,
+            "max_diameter": self.max_diameter,
+            "targets": [target.as_dict() for target in self.targets],
+        }
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        target_rows = tuple(
+            {
+                "target": target.name,
+                "lower": target.lower,
+                "upper": target.upper,
+                "diameter": target.diameter,
+                "lower_support_value": target.lower_support_value,
+                "upper_support_value": target.upper_support_value,
+                "lower_dual_count": len(target.lower_duals),
+                "upper_dual_count": len(target.upper_duals),
+            }
+            for target in self.targets
+        )
+        dual_rows = self.dual_summary(top=None)
+        return {
+            "summary": (
+                {
+                    "title": self.title,
+                    "backend": self.backend,
+                    "target_count": self.target_count,
+                    "state_count": self.state_count,
+                    "public_cell_count": self.public_cell_count,
+                    "max_diameter": self.max_diameter,
+                },
+            ),
+            "targets": target_rows,
+            "dual_diagnostics": dual_rows,
+        }
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import tables_to_dataframes
+
+        return tables_to_dataframes(self.to_tables())
+
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_markdown(
+        self, *, top_duals: int = 10, min_dual_magnitude: float = 0.0
+    ) -> str:
+        lines = [
+            f"# {_markdown_escape(self.title)}",
+            "",
+            (
+                f"Backend: `{self.backend}`. Evaluated {self.target_count} "
+                f"linear target direction(s) over {self.state_count} hidden state(s)."
+            ),
+            "",
+            "| Target | Lower | Upper | Ambiguity width |",
+            "| --- | ---: | ---: | ---: |",
+        ]
+        for target in self.targets:
+            lines.append(
+                "| "
+                f"{_markdown_escape(target.name)} | "
+                f"{_format_float(target.lower)} | "
+                f"{_format_float(target.upper)} | "
+                f"{_format_float(target.diameter)} |"
+            )
+        rows = self.dual_summary(top=top_duals, min_magnitude=min_dual_magnitude)
+        if rows:
+            lines.extend(
+                [
+                    "",
+                    "## Dual Diagnostics",
+                    "",
+                    "| Target | Endpoint | Constraint | Kind | Magnitude | Residual |",
+                    "| --- | --- | --- | --- | ---: | ---: |",
+                ]
+            )
+            for row in rows:
+                lines.append(
+                    "| "
+                    f"{_markdown_escape(str(row['target']))} | "
+                    f"{_markdown_escape(str(row['endpoint']))} | "
+                    f"{_markdown_escape(str(row['name']))} | "
+                    f"{_markdown_escape(str(row['kind']))} | "
+                    f"{_format_float(float(row['magnitude']))} | "
+                    f"{_format_optional_float(row.get('residual'))} |"
+                )
+        return "\n".join(lines)
+
+
+def _format_float(value: float) -> str:
+    return f"{float(value):.6g}"
+
+
+def _format_optional_float(value: Any) -> str:
+    if value is None:
+        return ""
+    return _format_float(float(value))
+
+
+def _markdown_escape(value: str) -> str:
+    return value.replace("|", "\\|")
 
 
 @dataclass(frozen=True)
@@ -2219,20 +2441,21 @@ class SupportFunctionBackend(CvxpyEnvironments):
     def support_value(
         self,
         problem,
-        direction: Sequence[float],
+        direction: Mapping[Hashable, float] | Sequence[float],
         *,
         public_law: Mapping[Hashable, float] | None = None,
     ) -> SupportFunctionResult:
         """Evaluate the support function of this backend's admissible set."""
 
+        direction_vector = problem._coerce_vector(direction)
         result = self._support_function_result(
             problem,
-            direction,
+            direction_vector,
             public_law=public_law,
             solve="support",
         )
         return SupportFunctionResult(
-            direction=tuple(float(value) for value in direction),
+            direction=direction_vector,
             value=result.value,
             vector=result.vector,
         )
@@ -2249,15 +2472,123 @@ class SupportFunctionBackend(CvxpyEnvironments):
         if direction is None:
             problem._require_linear_target("SupportFunctionBackend.support_interval")
             direction = self._estimand_vector(problem)
-        direction_vector = tuple(float(value) for value in direction)
-        if len(direction_vector) != len(problem.states):
-            raise ValueError("support direction must have one value per state")
-        admissible_set = self.convex_admissible_set(problem, public_law=public_law)
-        return admissible_set.support_interval(
+        return self._support_interval_result(
+            problem,
+            direction,
+            public_law=public_law,
+        )
+
+    def multi_target_intervals(
+        self,
+        problem,
+        targets: Mapping[str, Mapping[Hashable, float] | Sequence[float]],
+        *,
+        public_law: Mapping[Hashable, float] | None = None,
+        title: str = "Support-Function Multi-Target Report",
+    ) -> SupportFunctionReport:
+        """Evaluate support-function intervals for several linear directions."""
+
+        if not targets:
+            raise ValueError("targets must contain at least one named direction")
+        report_public_law = (
+            problem._coerce_public_law(public_law)
+            if public_law is not None
+            else self._fixed_public_law(problem)
+        )
+        intervals = []
+        for raw_name, direction in targets.items():
+            name = str(raw_name)
+            if not name:
+                raise ValueError("target names must be non-empty")
+            direction_vector = problem._coerce_vector(direction)
+            interval = self._target_interval(
+                problem,
+                name=name,
+                direction=direction_vector,
+                public_law=report_public_law,
+            )
+            intervals.append(interval)
+        return SupportFunctionReport(
+            title=title,
+            targets=tuple(intervals),
+            states=tuple(problem.states),
+            public_values=tuple(problem.public_values),
+            public_law=report_public_law,
+            backend=self.name,
+        )
+
+    def _support_interval_result(
+        self,
+        problem,
+        direction: Mapping[Hashable, float] | Sequence[float],
+        *,
+        public_law: Mapping[Hashable, float] | None,
+    ) -> SupportFunctionIntervalResult:
+        direction_vector = problem._coerce_vector(direction)
+        lower_result = self._support_function_result(
+            problem,
+            tuple(-value for value in direction_vector),
+            public_law=public_law,
+            solve="lower",
+        )
+        upper_result = self._support_function_result(
+            problem,
             direction_vector,
-            solver=self._normalized_solver_name(),
-            solver_options=self.solver_options,
-            tol=problem.tol,
+            public_law=public_law,
+            solve="upper",
+        )
+        lower = -lower_result.value
+        upper = upper_result.value
+        if lower > upper and abs(lower - upper) <= problem.tol:
+            lower = upper = 0.5 * (lower + upper)
+        return SupportFunctionIntervalResult(
+            direction=direction_vector,
+            lower=lower,
+            upper=upper,
+            diameter=max(0.0, upper - lower),
+            lower_vector=lower_result.vector,
+            upper_vector=upper_result.vector,
+            lower_support_value=lower_result.value,
+            upper_support_value=upper_result.value,
+            lower_support_result=SupportFunctionResult(
+                direction=tuple(-value for value in direction_vector),
+                value=lower_result.value,
+                vector=lower_result.vector,
+            ),
+            upper_support_result=SupportFunctionResult(
+                direction=direction_vector,
+                value=upper_result.value,
+                vector=upper_result.vector,
+            ),
+            lower_duals=lower_result.duals,
+            upper_duals=upper_result.duals,
+        )
+
+    def _target_interval(
+        self,
+        problem,
+        *,
+        name: str,
+        direction: Mapping[Hashable, float] | Sequence[float],
+        public_law: Mapping[Hashable, float] | None,
+    ) -> SupportFunctionTargetInterval:
+        interval = self._support_interval_result(
+            problem,
+            direction,
+            public_law=public_law,
+        )
+        return SupportFunctionTargetInterval(
+            name=name,
+            direction=interval.direction,
+            lower=interval.lower,
+            upper=interval.upper,
+            diameter=interval.diameter,
+            lower_distribution=problem._distribution_from_vector(interval.lower_vector),
+            upper_distribution=problem._distribution_from_vector(interval.upper_vector),
+            lower_support_value=interval.lower_support_value,
+            upper_support_value=interval.upper_support_value,
+            lower_duals=interval.lower_duals,
+            upper_duals=interval.upper_duals,
         )
 
     def _support_function_result(
@@ -2284,6 +2615,30 @@ class SupportFunctionBackend(CvxpyEnvironments):
             value=result.value,
             duals=duals,
         )
+
+
+def support_function_report(
+    problem,
+    targets: Mapping[str, Mapping[Hashable, float] | Sequence[float]],
+    *,
+    public_law: Mapping[Hashable, float] | None = None,
+    title: str = "Support-Function Multi-Target Report",
+) -> SupportFunctionReport:
+    """Evaluate several linear target directions with a support-function backend."""
+
+    env = problem.environments
+    if not isinstance(env, SupportFunctionBackend):
+        raise TypeError(
+            "support_function_report requires a SupportFunctionBackend. "
+            "Use a CVXPY Q preset with backend='support_function' or set "
+            "problem.environments to SupportFunctionBackend."
+        )
+    return env.multi_target_intervals(
+        problem,
+        targets,
+        public_law=public_law,
+        title=title,
+    )
 
 
 @dataclass(frozen=True)

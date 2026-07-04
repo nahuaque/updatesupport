@@ -102,6 +102,15 @@ def report_tables(report: Any) -> ReportTables:
         )
         return tables
 
+    to_tables = getattr(report, "to_tables", None)
+    if callable(to_tables):
+        tables = to_tables()
+        if isinstance(tables, Mapping):
+            return {
+                str(name): tuple(_json_ready(row) for row in rows)
+                for name, rows in tables.items()
+            }
+
     if hasattr(report, "as_dict"):
         payload = _as_payload(report)
         if isinstance(payload, Mapping):

@@ -4,7 +4,9 @@ All notable changes to `updatesupport` are documented here.
 
 ## Unreleased
 
-- No unreleased changes.
+- Added multi-target support-function reports with per-target intervals,
+  markdown output, structured tables, dataframe export hooks, and dual
+  diagnostics for each endpoint solve.
 
 ## 0.1.3 - 2026-07-04
 

@@ -460,6 +460,28 @@ across solver modes.
 lower value, upper value, diameter, and the lower/upper optimizer vectors. For a
 linear target direction `h`, it evaluates `sigma_Q(h)` and `sigma_Q(-h)`.
 
+When several linear quantities need to be audited against the same convex Q set,
+use a multi-target support-function report:
+
+```python
+report = grouped.support_function_report(
+    {
+        "headline": {
+            state: grouped.problem.estimand_map[state]
+            for state in grouped.problem.states
+        },
+        "approval_benefit": approval_benefit_by_hidden_cell,
+    }
+)
+
+print(report.to_markdown())
+```
+
+The report returns one interval per named direction and a shared dual-diagnostic
+table. This is useful when the review question is not just "how wide is this
+headline estimate?" but "which reported quantities are most sensitive, and
+which Q constraints are binding?"
+
 This first support-function slice is for continuous convex Q sets and fixed
 linear targets. Mixed-integer presets such as `q_fiber_support_floor(...)` and
 variable-denominator `RatioTarget` problems continue to use their existing

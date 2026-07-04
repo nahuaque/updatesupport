@@ -155,6 +155,18 @@ class GroupedProblem:
             **kwargs,
         )
 
+    def support_function_report(
+        self,
+        targets: Mapping[str, Mapping[Hashable, float] | Sequence[float]],
+        **kwargs: Any,
+    ):
+        """Evaluate named linear directions against this problem's public law."""
+
+        from .environments import support_function_report
+
+        kwargs.setdefault("public_law", self.public_law)
+        return support_function_report(self.problem, targets, **kwargs)
+
 
 def from_dataframe(
     data: Any,

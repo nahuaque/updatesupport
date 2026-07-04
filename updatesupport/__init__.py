@@ -60,12 +60,15 @@ from .environments import (
     PublicFiberSaturated,
     SupportFunctionBackend,
     SupportFunctionIntervalResult,
+    SupportFunctionReport,
     SupportFunctionResult,
+    SupportFunctionTargetInterval,
     cvxpy_constraint,
     eq,
     geq,
     leq,
     linear_constraint,
+    support_function_report,
 )
 from .exports import (
     report_dataframes,
@@ -247,6 +250,12 @@ __all__ = [
     "q_mahalanobis_budget",
     "q_wasserstein",
     "q_fiber_support_floor",
+    "SupportFunctionBackend",
+    "SupportFunctionResult",
+    "SupportFunctionIntervalResult",
+    "SupportFunctionTargetInterval",
+    "SupportFunctionReport",
+    "support_function_report",
     # Model-assisted and estimator handoff helpers.
     "fit_joint_distribution",
     "hidden_composition_uncertainty",
