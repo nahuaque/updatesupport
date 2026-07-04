@@ -36,8 +36,8 @@ class InteractionRefinementTests(unittest.TestCase):
         self.assertTrue(all(row.reduction == 0.0 for row in report.singletons))
 
         best = report.best
-        self.assertIsNotNone(best)
-        assert best is not None
+        if best is None:
+            self.fail("expected an interaction refinement candidate")
         self.assertEqual(best.columns, ("a", "b"))
         self.assertEqual(best.order, 2)
         self.assertAlmostEqual(best.after_ambiguity, 0.0)

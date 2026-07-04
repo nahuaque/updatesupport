@@ -383,12 +383,14 @@ def robust_comparison_report(
 
     rank_by_item = {row.item: row.rank for row in ranked_items}
     pairwise: list[PairwiseComparisonResult] = []
+    certified_label = "order_certified"
+    uncertified_label = "order_not_certified"
     decision = threshold_decision(
         ">=",
         float(margin_threshold),
         label=f"pairwise margin >= {float(margin_threshold):g}",
-        pass_label="order_certified",
-        fail_label="order_not_certified",
+        pass_label=certified_label,
+        fail_label=uncertified_label,
     )
     for preferred_index, preferred_item in enumerate(observed_order):
         for compared_item in observed_order[preferred_index + 1 :]:

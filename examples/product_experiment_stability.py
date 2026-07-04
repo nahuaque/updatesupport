@@ -250,6 +250,8 @@ def build_launch_claim(
     """Verify whether the positive-lift launch decision is invariant."""
 
     rows = synthetic_experiment_rows() if rows is None else rows
+    positive_lift_label = "launch_or_continue"
+    nonpositive_lift_label = "hold_or_roll_back"
     claim = us.ReportingClaim(
         estimate_name="Positive product-experiment lift claim",
         public=PUBLIC_COLUMNS,
@@ -263,8 +265,8 @@ def build_launch_claim(
             ">=",
             0.0,
             label="treatment lift is nonnegative",
-            pass_label="launch_or_continue",
-            fail_label="hold_or_roll_back",
+            pass_label=positive_lift_label,
+            fail_label=nonpositive_lift_label,
         ),
         max_added_columns=max_added_columns,
         target_description="treatment minus control conversion lift",

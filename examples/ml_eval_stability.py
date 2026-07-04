@@ -252,6 +252,8 @@ def build_leaderboard_claim(
     """Verify whether the benchmark winner is invariant to recomposition."""
 
     rows = synthetic_eval_rows() if rows is None else rows
+    challenger_label = "challenger_wins_or_ties"
+    baseline_label = "baseline_can_win"
     claim = us.ReportingClaim(
         estimate_name="Challenger beats baseline benchmark claim",
         public=PUBLIC_COLUMNS,
@@ -265,8 +267,8 @@ def build_leaderboard_claim(
             ">=",
             0.0,
             label="challenger margin is nonnegative",
-            pass_label="challenger_wins_or_ties",
-            fail_label="baseline_can_win",
+            pass_label=challenger_label,
+            fail_label=baseline_label,
         ),
         search="beam",
         beam_width=8,
