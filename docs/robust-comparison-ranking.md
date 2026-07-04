@@ -1,13 +1,8 @@
 # Robust Comparison And Ranking
 
-Robust comparison asks:
-
-> If the public mix is fixed but the hidden composition inside public buckets
-> changes, does the observed winner or ranking still hold?
-
-This is the comparison version of public-descent analysis. Instead of auditing a
-single scalar target, `updatesupport` audits several alternatives in long-form
-data and checks pairwise margins under the same admissible hidden recomposition.
+Robust comparison is the public-descent audit for leaderboards and rankings.
+Instead of auditing a single scalar target, it checks pairwise margins among
+alternatives in long-form data under the same admissible recomposition.
 
 ## Why Pairwise Margins Matter
 
@@ -100,6 +95,3 @@ The first API slice assumes a balanced comparison design: every alternative has
 the same retained hidden-cell support and the same hidden-cell weights. That is
 the clean setting for model leaderboards, benchmark slices, A/B variants scored
 on the same segment cells, and other common comparison reports.
-
-As elsewhere in `updatesupport`, `hidden` means not publicly reported in the
-coarse comparison. It does not mean unobserved by the analyst.

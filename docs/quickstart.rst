@@ -47,27 +47,19 @@ The most common workflow starts with tabular rows or a dataframe. Choose:
 
    print(audit.to_markdown())
 
-The claim audit separates:
-
-* the pass/fail/inconclusive claim verdict,
-* the observed aggregate target value,
-* the hidden-composition interval under the selected stress test,
-* transport ambiguity, the interval width,
-* public adequacy,
-* public fibers driving the ambiguity,
-* a counterexample witness when the public representation is unstable,
-* claim-centered refinement recommendations.
+The claim audit returns one Markdown-ready artifact with the verdict, observed
+value, hidden-composition interval, witness evidence, and refinement
+recommendations.
 
 The hidden-composition interval is not a confidence interval. It is a
 partial-identification or sensitivity interval conditional on the retained
 support, supplied target values, public distribution, and selected admissible
 hidden-mix class.
 
-Lower-level evidence reports are still available when you need them directly:
-``public_descent_report(...)`` for the primary interval, ``sensitivity_report(...)``
-for stress grids, and ``public_representation_frontier(...)`` for public-bucket
-design search. They are implementation depth behind the claim workflow rather
-than separate starting points for most users.
+Lower-level evidence tools are available when needed:
+``public_descent_report(...)`` for the primary interval,
+``sensitivity_report(...)`` for stress grids, and
+``public_representation_frontier(...)`` for public-bucket design search.
 
 Optional Extras
 ---------------

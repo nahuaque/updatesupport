@@ -1,16 +1,8 @@
 # Representation Stability Certificates
 
 `certify_public_representation(...)` turns public-representation frontier search
-into a review-ready decision artifact.
-
-It answers:
-
-> Is there a public reporting representation, within the declared search space
-> and bucket budget, whose hidden-composition ambiguity stays below the review
-> threshold across the stress grid?
-
-Use it when the output should be attached to a model review, dashboard release,
-causal report, monitoring control, or governance packet.
+into a review-ready decision artifact for model reviews, dashboard releases,
+causal reports, monitoring controls, or governance packets.
 
 ## Basic Use
 

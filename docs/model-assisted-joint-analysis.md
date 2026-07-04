@@ -1,14 +1,9 @@
 # Model-Assisted Joint Analysis
 
-`updatesupport` can fit a nonparametric joint distribution over retained public
-and hidden cells, then use posterior/bootstrap draws to rerun reporting
-stability checks.
-
-This is a model-assisted layer. It does not replace adversarial Q-based
-ambiguity. It answers a different question:
-
-> Across plausible hidden compositions generated from the fitted cell law, how
-> often would this public representation still support the claim?
+Model-assisted joint analysis fits a nonparametric joint distribution over
+retained public and hidden cells, then uses posterior/bootstrap draws to rerun
+the audit. It complements adversarial Q-based ambiguity by summarizing outcomes
+under sampled cell laws.
 
 ## Fit A Joint Distribution
 

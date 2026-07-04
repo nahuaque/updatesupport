@@ -160,14 +160,10 @@ unavailable and there is no defensible reference dataset, model-assisted
 refinement, or scenario definition. The library cannot manufacture information
 that is not in the retained support or in the declared stress test.
 
-## Positioning Statement
+## Scope Boundary
 
-`updatesupport` is an audit layer for representation adequacy. It bounds how
-much a supplied aggregate can move under declared recomposition of retained
-finer cells while the public report distribution is held fixed.
-
-It does not discover hidden truth, prove that a public table is correct, or give
-an absolute uncertainty interval for all omitted structure.
+The audit does not discover hidden truth, prove that a public table is correct,
+or give an absolute uncertainty interval for all omitted structure.
 
 The claim is conditional: given a retained refinement, target contract,
 sparse-cell rule, and admissible class `Q`, the package solves the declared

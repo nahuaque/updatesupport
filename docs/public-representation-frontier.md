@@ -7,15 +7,6 @@ Use `certify_public_representation(...)` instead when you want a pass/fail
 representation-stability certificate built from the same frontier machinery.
 See [Representation stability certificates](representation-stability-certificates.md).
 
-Use it when the review question is not only:
-
-> Which one hidden variable would reduce ambiguity?
-
-but:
-
-> What is the smallest public representation that keeps hidden-composition
-> ambiguity acceptably low across a set of stress tests?
-
 The search runs over subsets of named candidate refinement columns. It does not
 learn arbitrary partitions. Every candidate is a concrete public representation:
 

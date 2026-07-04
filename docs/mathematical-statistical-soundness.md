@@ -12,9 +12,7 @@ partial-identification or sensitivity interval. It is not a confidence
 interval, not a causal identification result, and not a generic nonlinear
 functional optimizer.
 
-The project should be understood as implementation and reporting discipline
-around this standard object, not as a claim of novel identification theory. For
-the higher-level product positioning and lineage, see
+For product positioning and lineage, see
 [Positioning and lineage](positioning-and-lineage.md).
 
 ## Two Boundaries Up Front
@@ -36,27 +34,7 @@ could differ, all omitted variables, or all possible unmodeled populations.
 Changing the retained refinement columns, sparse-cell rule, target values, public
 projection, or `Q` changes the mathematical problem and can change the bound.
 
-What the core calculation actually does is a partial-identification /
-sensitivity analysis. Given:
-
-- a coarse reported partition, the public buckets;
-- a finer retained partition inside those buckets, the hidden refinement;
-- a target value per retained fine cell;
-- an admissible class `Q` of within-bucket mixes;
-
-`updatesupport` solves the infimum and supremum of an aggregate target while
-holding the public marginal fixed. This is close in spirit to ecological
-inference and Frechet-bound calculations: the public table is fixed, the
-within-public-bucket composition is stressed, and the resulting interval is the
-range of aggregate values compatible with that declared stress test.
-
-The saturated formula below is exactly the expected finite-support result:
-within each public fiber, place all admissible public mass on the lowest-target
-retained cell for the lower endpoint and on the highest-target retained cell
-for the upper endpoint. Since public fibers are disjoint and the public law is
-fixed, the public-fiber contributions add.
-
-The most important boundary is the aggregate target. The primary tabular
+The most important technical boundary is the aggregate target. The primary tabular
 contract compiles to a fixed linear plug-in target:
 
 ```text

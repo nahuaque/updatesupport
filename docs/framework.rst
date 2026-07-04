@@ -4,20 +4,13 @@ Framework Overview
 Core Question
 -------------
 
-``updatesupport`` asks a reporting-stability question:
+``updatesupport`` is downstream of estimation. A causal estimator, survey
+estimator, model, or business metric supplies retained fine-cell target values;
+the framework audits the public representation used to report that target.
 
-   Holding the public report distribution fixed, how far could the reported
-   aggregate target move if hidden composition inside public buckets changed?
-
-The framework is intentionally downstream of estimation. A causal estimator,
-survey estimator, model, or business metric supplies retained fine-cell target
-values. ``updatesupport`` audits whether the public representation is adequate
-for reporting that supplied target.
-
-Here, "hidden" means retained but not publicly reported. It does not mean
-unobserved or unknowable. Every reported ambiguity interval is conditional on
-the retained refinement and admissible shift class ``Q`` declared for the
-audit.
+For the full interpretation of "hidden", retained refinements, and conditional
+ambiguity bounds, see :doc:`representation-adequacy` and
+:doc:`mathematical-statistical-soundness`.
 
 Finite Problem
 --------------
@@ -75,10 +68,9 @@ Reports
 
 The primary user-facing artifact is :class:`updatesupport.ClaimAudit`, produced
 by declaring a :class:`updatesupport.ClaimSpec` with :func:`updatesupport.claim`
-and calling ``claim.audit(rows_or_frame)``. The claim audit wraps the
-lower-level evidence into one verdict: reported estimate, statistical
-uncertainty when supplied, hidden-composition interval, counterexample witness,
-repair/certification evidence, refinement recommendations, and limitations.
+and calling ``claim.audit(rows_or_frame)``. It wraps interval evidence,
+counterexample witnesses, repairs or certificates, refinement recommendations,
+and limitations into one verdict.
 
 :class:`updatesupport.PublicDescentReport` remains the lower-level evidence
 object for the primary partial-ID interval. Use it directly when you do not

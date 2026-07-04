@@ -20,11 +20,7 @@ sampling uncertainty. It is a stability question about a representation, and
 the answer is not an absolute statement about every possible omitted variable or
 population shift.
 
-This puts `updatesupport` in the partial-identification / sensitivity-analysis
-family. The package contribution is not new identification theory; it is the
-workflow around compiling the finite problem, solving the declared stress test,
-explaining the ambiguity, ranking refinements, and producing review artifacts.
-See [Positioning and lineage](positioning-and-lineage.md).
+For lineage and scope, see [Positioning and lineage](positioning-and-lineage.md).
 
 For causal workflows, use causal inference libraries such as
 [EconML](https://www.pywhy.org/EconML/),
@@ -62,7 +58,7 @@ differences are allowed to move within public cells.
 
 ## Report Contract
 
-A useful analyst-facing report should include:
+Analyst-facing reports include:
 
 - **Observed value**: the estimate under the observed hidden mix.
 - **Lower and upper stress values**: the smallest and largest values allowed by
@@ -84,12 +80,9 @@ A useful analyst-facing report should include:
   artifact built from frontier search, recording the selected public
   representation, stress-test assumptions, search guarantee, and limitations.
 
-This report should be readable without requiring the audience to know the
-underlying finite-support theory. In causal or model-based workflows, the report
-should also keep four ideas separate: the supplied causal/model estimate,
-statistical uncertainty from the estimation workflow, hidden-composition
-ambiguity from the update-support stress test, and public refinement
-recommendations for the reporting representation.
+In causal or model-based workflows, the report keeps the supplied causal/model
+estimate, statistical uncertainty, hidden-composition ambiguity, and public
+refinement recommendations separate.
 
 ## What `Q` Means
 
@@ -117,7 +110,7 @@ The named `Q` presets are:
 the finite problem is compiled. `Q` then controls how the retained hidden cells
 may be reweighted.
 
-Every report should state which `Q` was used. Otherwise the ambiguity number is
+Every report states which `Q` was used; without that, the ambiguity number is
 not interpretable.
 
 For practical guidance on when to use each preset, see
@@ -149,12 +142,12 @@ Zero ambiguity can be real, but it can also mean the hidden state space is too
 thin or the target is constant inside each public fiber.
 
 Extremely large ambiguity can be real, but it can also be caused by tiny hidden
-cells with noisy empirical rates. Reports should expose `min_cell_weight` and
+cells with noisy empirical rates. Reports expose `min_cell_weight` and
 sensitivity checks.
 
 Hidden columns may not be available in production. In that case, `updatesupport`
-is still useful during validation on richer data, but the report should state
-that the audit depends on a richer reference dataset. If the relevant finer
+is still useful during validation on richer data, but the report states that
+the audit depends on a richer reference dataset. If the relevant finer
 variables are genuinely unavailable and no defensible reference or
 model-assisted refinement is supplied, the library cannot bound ambiguity with
 respect to those variables.
@@ -162,12 +155,11 @@ respect to those variables.
 A simple groupby table is not enough. The value is in comparing public stability
 against hidden refinements while preserving the public law.
 
-## Near-Term Implementation Slices
+## Lower-Level API Example
 
-The first compiler and report slices are now exposed as
-`updatesupport.from_dataframe(...)` and `updatesupport.public_descent_report(...)`.
-Together, they compile weighted tabular observations into a finite problem,
-compute a public-descent audit, and render the result as Markdown.
+`updatesupport.from_dataframe(...)` and
+`updatesupport.public_descent_report(...)` expose the finite compiler and
+primary evidence report directly:
 
 ```python
 report = us.public_descent_report(
@@ -195,40 +187,4 @@ report = us.public_descent_report(
 print(report.to_markdown())
 ```
 
-The Q preset surface now supports several levels of conservatism:
-
-- `q="saturated"`: arbitrary hidden reweighting inside each observed public
-  cell.
-- `q=us.q_bounded_shift(radius)`: cellwise relative mass bands around the
-  observed hidden distribution.
-- `q=us.q_tv_budget(radius)`: total-variation budget around the observed hidden
-  distribution, using the optional CVXPY backend.
-- `q=us.q_chi_square_budget(radius)`: Pearson chi-square divergence budget
-  around the observed hidden distribution, using the optional CVXPY backend.
-- `q=us.q_kl_budget(radius)`: KL divergence budget around the observed hidden
-  distribution, using the optional CVXPY backend.
-- `q=us.q_wasserstein(cost, radius)`: Wasserstein budget with an explicit
-  hidden-cell cost matrix, using the optional CVXPY backend.
-- `q="observed"`: no hidden-composition shift.
-
-Install the CVXPY extra before using TV, chi-square, KL, or Wasserstein presets:
-
-```bash
-# with pip
-pip install "updatesupport[cvxpy]"
-
-# with uv
-uv add "updatesupport[cvxpy]"
-```
-
-For dense radius sweeps on a fixed compiled state space, pass
-`backend="parameterized_cvxpy"` to those presets and update the environment's
-`radius` parameter between solves.
-
-The next implementation slices should focus on deeper sensitivity reporting and
-experimental relational transport types such as Gromov-Wasserstein only when the
-application supplies two comparable hidden-state geometries. For current preset
-selection guidance, see [Transport presets](transport-presets.md).
-
-The documentation should keep the ACSIncome case study as the primary example
-and put the finite-support theory underneath it.
+For current preset selection guidance, see [Transport presets](transport-presets.md).

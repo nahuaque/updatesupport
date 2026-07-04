@@ -4,14 +4,10 @@
 effects, remove confounding, estimate propensity scores, or validate a causal
 graph.
 
-It sits after those steps as a representation-stability audit:
-
-> Given the effect or rate we are willing to report, are the public categories
-> used in the report stable enough, or could hidden composition inside those
-> categories move the aggregate?
-
-This makes `updatesupport` complementary to libraries such as [DoWhy],
-[EconML], [CausalML], [DoubleML], and uplift-modeling packages.
+It sits after those steps as a representation-stability audit for reported
+rates, effects, and subgroup summaries. This makes `updatesupport`
+complementary to libraries such as [DoWhy], [EconML], [CausalML], [DoubleML],
+and uplift-modeling packages.
 
 ## Where It Fits
 
@@ -24,14 +20,8 @@ A typical causal workflow is:
 5. Run causal refuters, sensitivity checks, and inference.
 6. Report aggregate or subgroup results.
 
-`updatesupport` belongs at step 6. It audits whether the representation used for
-the reported aggregate is adequate.
-
-In plain terms:
-
-[DoWhy], [EconML], and [CausalML] handle causal assumptions, effect estimation,
-and causal validation. `updatesupport` handles public-category adequacy and
-hidden-composition transport ambiguity.
+`updatesupport` belongs at step 6. The causal library handles identification
+and estimation; `updatesupport` handles the reporting representation.
 
 The input to `updatesupport` can be an observed outcome rate, an estimated CATE,
 an uplift score, a subgroup treatment effect, or any other linear target value
@@ -84,14 +74,7 @@ suite = us.causal_reporting_stability(
 print(suite.to_markdown())
 ```
 
-The report asks:
-
-> If we only report the treatment effect by age band and sex, how much could the
-> aggregate move if education, income, region, or prior usage changed inside
-> those public cells?
-
-The Markdown suite separates four quantities that should not be collapsed into
-one uncertainty statement:
+The Markdown suite separates:
 
 - the causal estimate supplied by the causal library
 - statistical uncertainty from the causal/statistical workflow
@@ -99,12 +82,6 @@ one uncertainty statement:
 - estimator-uncertainty-aware hidden ambiguity when effect standard errors are
   supplied
 - public refinement recommendations for improving the reporting representation
-
-The rendered suite is designed to be attachable to a model review. It has
-explicit sections for the causal estimate, supplied statistical uncertainty,
-hidden-composition ambiguity, estimator-uncertainty-aware adjusted intervals
-when available, sensitivity scenarios, refinement recommendations, CVXPY dual
-diagnostics when available, and limitations.
 
 ## Estimator Adapters
 
@@ -487,31 +464,12 @@ across the grid, use `recommend_refinements_sensitivity(...)` with the same
 public columns, hidden columns, candidate refinements, Q presets, and
 `min_cell_weight` thresholds.
 
-## What Not To Claim
+## Interpretation Boundary
 
-Do not say that `updatesupport` proves a causal effect is valid.
-
-Do not interpret the transport interval as a confidence interval.
-
-Do not use small ambiguity as evidence that confounding, overlap, selection, or
-model misspecification are solved.
-
-Do not present refinement candidates as causal adjustment recommendations unless
-the causal identification argument also supports that interpretation.
-
-The right claim is narrower:
-
-> Conditional on the target values supplied to `updatesupport`, this audit
-> quantifies how much the reported aggregate can move under hidden-composition
-> changes that preserve the public distribution.
-
-## Good README Sentence
-
-For causal workflows:
-
-> Use [DoWhy], [EconML], [CausalML], or [DoubleML] to estimate causal effects;
-> then use `updatesupport` to audit whether the public categories used to report
-> those effects are stable to hidden composition changes.
+The audit does not validate a causal effect, turn the transport interval into a
+confidence interval, or solve confounding, overlap, selection, or model
+misspecification. Refinement candidates are reporting refinements unless the
+causal identification argument also supports using them as adjustment variables.
 
 [CausalML]: https://causalml.readthedocs.io/en/latest/
 [DoWhy]: https://www.pywhy.org/dowhy/

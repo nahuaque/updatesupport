@@ -1,13 +1,6 @@
 # Breakdown Point Analysis
 
-Breakdown point analysis asks a decision-oriented version of the usual
-hidden-composition question:
-
-> How large can the admissible within-bucket recomposition become before the
-> reported decision is no longer stable?
-
-The ordinary public-descent report returns an interval at one chosen admissible
-set `Q`. Breakdown analysis scans a nested family `Q(radius)` and finds the
+Breakdown point analysis scans a nested family `Q(radius)` and finds the
 smallest radius where a threshold-style claim stops being certified.
 
 This is useful when the reported number supports a concrete action:
@@ -68,10 +61,8 @@ the breakdown radius is `0.22`, the plain-English interpretation is:
 > the interval across the decision threshold, so the coarse public report no
 > longer certifies the decision.
 
-This is different from a confidence interval. Statistical uncertainty concerns
-sampling or model-estimation error. Breakdown analysis concerns deterministic
-ambiguity induced by publishing or using a coarse public representation while
-allowing the observed finer cells to recombine within `Q(radius)`.
+This is a deterministic composition-stability diagnostic, not a confidence
+interval.
 
 ## Structured Exports
 
@@ -89,8 +80,6 @@ endpoint, ambiguity width, endpoint decisions, and a `decision_stable` flag.
 
 ## Caveats
 
-- `hidden` means not publicly reported or not included in the coarse decision
-  representation. It does not mean unobserved by the analyst.
 - The result depends on the chosen finer refinement. If the relevant
   composition variable is absent from the data, breakdown analysis cannot bound
   its effect.
