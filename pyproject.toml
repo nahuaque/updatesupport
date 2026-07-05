@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "updatesupport"
-version = "0.1.3"
+version = "0.1.4"
 description = "Aggregation-bias and subgroup-composition sensitivity audits in Python"
 readme = "README.md"
 license = "MIT"
@@ -63,7 +63,7 @@ examples = [
     "seaborn>=0.13",
 ]
 finance = [
-    "updatesupport-finance>=0.1.2",
+    "updatesupport-finance>=0.1.3",
 ]
 
 [dependency-groups]

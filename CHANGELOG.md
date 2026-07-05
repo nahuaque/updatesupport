@@ -4,6 +4,10 @@ All notable changes to `updatesupport` are documented here.
 
 ## Unreleased
 
+## 0.1.4 - 2026-07-05
+
+### Added
+
 - Added Shapley-style refinement attribution for allocating joint
   hidden-composition ambiguity reduction across candidate public refinements,
   with exact enumeration for small candidate sets and permutation sampling for
@@ -18,6 +22,14 @@ All notable changes to `updatesupport` are documented here.
   `QPreset.__and__`, and `CvxpyAdmissibleSetSpec.intersect(...)`.
 - Extended support-function frontier oracle search to accept convex
   `q_intersection(...)` composites and `bounded_shift` presets.
+
+### Packaging and QA
+
+- Bumped `updatesupport` to `0.1.4` and `updatesupport-finance` to `0.1.3`.
+- Synchronized finance plugin metadata with the package version and raised its
+  core dependency floor to `updatesupport>=0.1.4`.
+- Updated finance Colab install cells to require the current core and finance
+  package versions.
 
 ## 0.1.3 - 2026-07-04
 
