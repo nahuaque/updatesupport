@@ -767,6 +767,8 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
             )
 
     def test_public_representation_frontier_mip_oracle_supports_intersection_q(self):
+        _require_cvxpy_solver("SCIP")
+
         rows = [
             {
                 "segment": "A",
