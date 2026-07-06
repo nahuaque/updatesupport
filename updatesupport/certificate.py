@@ -50,7 +50,7 @@ class RepresentationStabilityCertificate:
 
     @property
     def search_exact(self) -> bool:
-        """Whether the frontier searched the full declared candidate space."""
+        """Whether the frontier searched exact endpoint values throughout."""
 
         return (
             self.frontier.search_trace is not None and self.frontier.search_trace.exact
@@ -109,6 +109,9 @@ class RepresentationStabilityCertificate:
             "best_evaluated_candidate": best,
             "reasons": self.reasons,
             "limitations": self.limitations,
+            "screening": None
+            if self.frontier.screening is None
+            else self.frontier.screening.as_dict(),
             "frontier": self.frontier.as_dict(),
         }
 
@@ -180,6 +183,8 @@ class RepresentationStabilityCertificate:
                     f"- Search stopping reason: {trace.stopping_reason}",
                 ]
             )
+        if self.frontier.screening is not None:
+            lines.extend(_screening_summary_markdown(self.frontier.screening))
 
         selected = self.selected_candidate or self.best_evaluated_candidate
         if selected is not None:
@@ -219,6 +224,8 @@ def certify_public_representation(
     ambiguity_limit: float,
     exact_required: bool = True,
     require_exact: bool | None = None,
+    screening_backend: str | None = None,
+    screening_exact_fallback: bool = True,
     title: str = "Representation Stability Certificate",
     frontier_title: str = "Public Representation Frontier Evidence",
     **frontier_kwargs: Any,
@@ -241,6 +248,8 @@ def certify_public_representation(
     frontier = public_representation_frontier(
         data,
         ambiguity_limit=ambiguity_limit,
+        screening_backend=screening_backend,
+        screening_exact_fallback=screening_exact_fallback,
         title=frontier_title,
         **frontier_kwargs,
     )
@@ -294,11 +303,12 @@ def _certificate_status(
     exact_required: bool,
 ) -> tuple[str, tuple[str, ...]]:
     reasons: list[str] = []
-    exact = frontier.search_trace is not None and frontier.search_trace.exact
-    if exact_required and not exact:
+    certifiable_search = _certifiable_search_coverage(frontier)
+    if exact_required and not certifiable_search:
         reasons.append(
-            "The frontier search was heuristic, so the evaluated candidate set "
-            "does not certify the full requested candidate space."
+            "The frontier search was heuristic or did not otherwise certify "
+            "the full requested candidate space under the requested exactness "
+            "standard."
         )
         if selected is not None:
             reasons.append(
@@ -337,10 +347,16 @@ def _certificate_status(
             "The selected representation also satisfied the declared "
             "public-cell budget."
         )
-    if exact:
+    if frontier.search_trace is not None and frontier.search_trace.exact:
         reasons.append(
             "The search was exhaustive over the declared candidate space, so the "
             "certificate covers every requested candidate within the search bounds."
+        )
+    elif _conservative_screening_covers_exhaustive_search(frontier):
+        reasons.append(
+            "The candidate search was exhaustive over the declared candidate "
+            "space. Conservative screened endpoint bounds were sufficient to "
+            "certify the selected representation under the ambiguity limit."
         )
     else:
         reasons.append(
@@ -408,11 +424,41 @@ def _search_guarantee(frontier: PublicRepresentationFrontier) -> str:
                 "MIP-exact over the declared discrete search objective"
             )
         return "exhaustive over the declared candidate space"
+    if _conservative_screening_covers_exhaustive_search(frontier):
+        return (
+            "exhaustive over candidate representations with conservative "
+            "screened endpoint certificates"
+        )
     if frontier.search_trace.search in {"mip", "mip_oracle", "mip_minimum"}:
         return frontier.search_trace.optimization_guarantee or (
             "MIP-backed search without a full certificate guarantee"
         )
     return "heuristic over evaluated candidates only"
+
+
+def _certifiable_search_coverage(frontier: PublicRepresentationFrontier) -> bool:
+    return (
+        frontier.search_trace is not None
+        and (
+            frontier.search_trace.exact
+            or _conservative_screening_covers_exhaustive_search(frontier)
+        )
+    )
+
+
+def _conservative_screening_covers_exhaustive_search(
+    frontier: PublicRepresentationFrontier,
+) -> bool:
+    trace = frontier.search_trace
+    screening = frontier.screening
+    if trace is None or screening is None:
+        return False
+    return (
+        trace.search == "exhaustive"
+        and trace.stopping_reason == "completed"
+        and trace.evaluated_candidates >= trace.candidate_space_size
+        and screening.certified_count == screening.endpoint_count
+    )
 
 
 def _column_label(columns: tuple[str, ...]) -> str:
@@ -441,6 +487,18 @@ def _scenario_table(candidate: PublicRepresentationCandidate) -> list[str]:
             f"{'yes' if row.public_adequate else 'no'} |"
         )
     return lines
+
+
+def _screening_summary_markdown(screening: Any) -> list[str]:
+    return [
+        f"- Screening backend: {screening.backend}",
+        "- Screening endpoints certified: "
+        f"{screening.certified_count}/{screening.endpoint_count}",
+        f"- Conservative endpoints used: {screening.conservative_endpoint_count}",
+        f"- Exact fallback enabled: {'yes' if screening.exact_fallback else 'no'}",
+        f"- Exact fallback solves run: {screening.exact_solve_count}",
+        f"- Exact endpoint solves avoided: {screening.exact_solve_avoided_count}",
+    ]
 
 
 __all__ = [

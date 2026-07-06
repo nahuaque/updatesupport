@@ -516,6 +516,73 @@ class PublicDescentReportTests(unittest.TestCase):
         self.assertAlmostEqual(candidates[1].reduction, 0.0)
         self.assertAlmostEqual(candidates[1].reduction_percent, 0.0)
 
+    def test_recommend_refinements_can_use_residopt_screening(self):
+        try:
+            import residopt  # noqa: F401
+        except ImportError as exc:
+            raise unittest.SkipTest("residopt is not importable") from exc
+
+        rows = [
+            {"public": "A", "hidden": "x", "noise": "n", "target": 0.0, "weight": 30},
+            {"public": "A", "hidden": "y", "noise": "n", "target": 1.0, "weight": 30},
+            {"public": "B", "hidden": "z", "noise": "n", "target": 0.5, "weight": 40},
+        ]
+
+        candidates = us.recommend_refinements(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden", "noise"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["noise", "hidden"],
+            q=us.q_l2_budget(0.05, solver="CLARABEL"),
+            screening_backend="residopt",
+            ambiguity_limit=1.0,
+        )
+
+        self.assertEqual(candidates[0].column, "hidden")
+        self.assertEqual(candidates[0].screening_backend, "residopt")
+        self.assertEqual(candidates[0].screening_status, "screen_certified")
+        self.assertTrue(candidates[0].screening_certified)
+        self.assertTrue(candidates[0].screening_exact_solve_avoided)
+        self.assertEqual(
+            candidates[0].after_ambiguity_bound_type,
+            "conservative_upper_bound",
+        )
+
+    def test_public_descent_report_renders_refinement_screening_metadata(self):
+        try:
+            import residopt  # noqa: F401
+        except ImportError as exc:
+            raise unittest.SkipTest("residopt is not importable") from exc
+
+        rows = [
+            {"public": "A", "hidden": "x", "noise": "n", "target": 0.0, "weight": 30},
+            {"public": "A", "hidden": "y", "noise": "n", "target": 1.0, "weight": 30},
+            {"public": "B", "hidden": "z", "noise": "n", "target": 0.5, "weight": 40},
+        ]
+
+        report = us.public_descent_report(
+            rows,
+            public=["public"],
+            hidden=["public", "hidden", "noise"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["noise", "hidden"],
+            q=us.q_l2_budget(0.05, solver="CLARABEL"),
+            refinement_screening_backend="residopt",
+            refinement_ambiguity_limit=1.0,
+        )
+        markdown = report.to_markdown()
+        tables = report.to_tables()
+
+        self.assertIsNotNone(report.refinement_screening)
+        self.assertIn("Refinement screening used", markdown)
+        self.assertIn("screening_status=screen_certified", markdown)
+        self.assertTrue(tables["summary"][0]["has_refinement_screening"])
+        self.assertIn("refinement_screening_summary", tables)
+        self.assertIn("refinement_screening_candidates", tables)
+
     def test_recommend_refinements_sensitivity_aggregates_grid(self):
         rows = [
             {"public": "A", "hidden": "x", "noise": "n", "target": 0.0, "weight": 30},

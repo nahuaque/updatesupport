@@ -103,6 +103,25 @@ such as `greedy` or `beam` are marked inconclusive rather than passed; set
 `exact_required=False` when the certificate should cover only evaluated
 candidates.
 
+Frontier and certificate specs can also request experimental residopt screening
+for L2-budget stress tests:
+
+```python
+spec = us.AuditSpec(
+    kind="certificate",
+    public=["segment"],
+    hidden=["segment", "region", "tenure_band", "channel"],
+    target="outcome_rate",
+    candidate_refinements=["region", "tenure_band", "channel"],
+    q_presets=[{"name": "l2_budget", "radius": 0.05}],
+    ambiguity_limit=0.01,
+    screening_backend="residopt",
+)
+```
+
+The resulting frontier or certificate report records conservative endpoints,
+exact fallbacks, and avoided exact solves in Markdown and structured exports.
+
 `run_audit(...)` also accepts a plain mapping, which is useful when loading a
 spec from JSON or YAML:
 

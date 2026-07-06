@@ -31,6 +31,26 @@ certificate = us.certify_public_representation(
 print(certificate.to_markdown())
 ```
 
+For L2-budget stress tests, certificates can optionally use the experimental
+residopt screening backend during frontier evaluation:
+
+```python
+certificate = us.certify_public_representation(
+    rows_or_frame,
+    base_public=["product", "region"],
+    hidden=["product", "region", "score_band", "ltv_band", "vintage"],
+    target="expected_loss",
+    candidate_refinements=["score_band", "ltv_band", "vintage"],
+    q_presets=[us.q_l2_budget(0.05)],
+    ambiguity_limit=0.0025,
+    screening_backend="residopt",
+)
+```
+
+When screening is enabled, the certificate reports which frontier endpoints
+were certified by conservative bounds, which endpoints required exact fallback,
+and how many exact solves were avoided.
+
 The returned `RepresentationStabilityCertificate` includes:
 
 - `status`: `pass`, `fail`, or `inconclusive`;

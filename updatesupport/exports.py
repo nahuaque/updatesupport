@@ -215,6 +215,19 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
                 "diagnostic_warning_count": sum(
                     1 for row in report.diagnostics if row.severity == "warning"
                 ),
+                "has_refinement_screening": report.refinement_screening is not None,
+                "refinement_screening_backend": None
+                if report.refinement_screening is None
+                else report.refinement_screening.backend,
+                "refinement_screening_certified_count": None
+                if report.refinement_screening is None
+                else report.refinement_screening.certified_count,
+                "refinement_screening_exact_solve_count": None
+                if report.refinement_screening is None
+                else report.refinement_screening.exact_solve_count,
+                "refinement_screening_exact_solve_avoided_count": None
+                if report.refinement_screening is None
+                else report.refinement_screening.exact_solve_avoided_count,
             },
         ),
         "worst_fibers": tuple(row.as_dict() for row in report.fibers),
@@ -230,6 +243,10 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
             tables["estimator_uncertainty_confidence_core"] = (
                 report.estimator_uncertainty.confidence_core.as_dict(),
             )
+    if report.refinement_screening is not None:
+        screening_tables = report.refinement_screening.to_tables()
+        for name, rows in screening_tables.items():
+            tables[f"refinement_screening_{name}"] = rows
     return tables
 
 
@@ -373,11 +390,25 @@ def _frontier_tables(report: PublicRepresentationFrontier) -> ReportTables:
                 "best_scalarized": None
                 if report.best_scalarized is None
                 else report.best_scalarized.added_columns,
+                "has_screening": report.screening is not None,
+                "screening_backend": None
+                if report.screening is None
+                else report.screening.backend,
+                "screening_certified_count": None
+                if report.screening is None
+                else report.screening.certified_count,
+                "screening_exact_solve_count": None
+                if report.screening is None
+                else report.screening.exact_solve_count,
+                "screening_exact_solve_avoided_count": None
+                if report.screening is None
+                else report.screening.exact_solve_avoided_count,
             },
         ),
         "search_trace": ()
         if report.search_trace is None
         else (report.search_trace.as_dict(),),
+        "screening": () if report.screening is None else (report.screening.as_dict(),),
         "screened_refinements": tuple(
             row.as_dict() for row in report.screened_refinements
         ),
@@ -456,6 +487,22 @@ def _certificate_tables(
                 "best_evaluated_max_ambiguity": None
                 if best is None
                 else best.max_ambiguity,
+                "has_screening": certificate.frontier.screening is not None,
+                "screening_backend": None
+                if certificate.frontier.screening is None
+                else certificate.frontier.screening.backend,
+                "screening_certified_count": None
+                if certificate.frontier.screening is None
+                else certificate.frontier.screening.certified_count,
+                "screening_exact_solve_count": None
+                if certificate.frontier.screening is None
+                else certificate.frontier.screening.exact_solve_count,
+                "screening_exact_solve_avoided_count": None
+                if certificate.frontier.screening is None
+                else certificate.frontier.screening.exact_solve_avoided_count,
+                "screening_conservative_endpoint_count": None
+                if certificate.frontier.screening is None
+                else certificate.frontier.screening.conservative_endpoint_count,
             },
         ),
         "reasons": tuple({"reason": reason} for reason in certificate.reasons),
@@ -491,6 +538,16 @@ def _claim_audit_tables(report: ClaimAudit) -> ReportTables:
                     report.claim.statistical_uncertainty is not None
                 ),
                 "has_decision": report.decision is not None,
+                "has_screening": report.screening is not None,
+                "screening_backend": None
+                if report.screening is None
+                else report.screening.backend,
+                "screening_used": None
+                if report.screening is None
+                else report.screening.used,
+                "screening_exact_solve_avoided": None
+                if report.screening is None
+                else report.screening.exact_solve_avoided,
                 "decision_label": None
                 if report.decision is None
                 else report.decision.rule.label,
@@ -512,6 +569,26 @@ def _claim_audit_tables(report: ClaimAudit) -> ReportTables:
                 "certificate_status": None
                 if report.certificate is None
                 else report.certificate.status,
+                "has_frontier_screening": (
+                    report.certificate is not None
+                    and report.certificate.frontier.screening is not None
+                ),
+                "frontier_screening_backend": None
+                if report.certificate is None
+                or report.certificate.frontier.screening is None
+                else report.certificate.frontier.screening.backend,
+                "frontier_screening_certified_count": None
+                if report.certificate is None
+                or report.certificate.frontier.screening is None
+                else report.certificate.frontier.screening.certified_count,
+                "frontier_screening_exact_solve_count": None
+                if report.certificate is None
+                or report.certificate.frontier.screening is None
+                else report.certificate.frontier.screening.exact_solve_count,
+                "frontier_screening_exact_solve_avoided_count": None
+                if report.certificate is None
+                or report.certificate.frontier.screening is None
+                else report.certificate.frontier.screening.exact_solve_avoided_count,
                 "has_witness": report.witness is not None,
                 "has_model_assisted": report.model_assisted is not None,
                 "repair_label": None if repair is None else repair.label,
@@ -533,6 +610,8 @@ def _claim_audit_tables(report: ClaimAudit) -> ReportTables:
     }
     if report.decision is not None:
         tables["decision"] = (report.decision.as_dict(),)
+    if report.screening is not None:
+        tables["screening"] = (report.screening.as_dict(),)
     if report.decision_repair_candidate is not None:
         tables["decision_repair"] = (report.decision_repair_candidate.as_dict(),)
     tables.update(_prefix_tables("primary", _public_descent_tables(report.primary)))

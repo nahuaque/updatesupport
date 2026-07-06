@@ -203,6 +203,8 @@ class AuditSpec:
     enforce_bucket_budget: bool = False
     include_base: bool = True
     exact_required: bool = True
+    screening_backend: str | None = None
+    screening_exact_fallback: bool = True
 
     def __post_init__(self) -> None:
         kind = _normalize_kind(self.kind)
@@ -274,6 +276,13 @@ class AuditSpec:
             "must_exclude",
             _string_tuple(self.must_exclude, "must_exclude"),
         )
+        if self.screening_backend is not None:
+            screening_backend = str(self.screening_backend).lower()
+            if screening_backend not in {"residopt", "residopt_l2"}:
+                raise ValueError(
+                    "screening_backend must be None, 'residopt', or 'residopt_l2'"
+                )
+            object.__setattr__(self, "screening_backend", screening_backend)
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "AuditSpec":
@@ -326,6 +335,8 @@ class AuditSpec:
             "enforce_bucket_budget": self.enforce_bucket_budget,
             "include_base": self.include_base,
             "exact_required": self.exact_required,
+            "screening_backend": self.screening_backend,
+            "screening_exact_fallback": self.screening_exact_fallback,
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -454,6 +465,8 @@ def run_audit(spec: AuditSpec | Mapping[str, Any], data: Any) -> AuditRun:
             must_exclude=spec.must_exclude,
             enforce_bucket_budget=spec.enforce_bucket_budget,
             include_base=spec.include_base,
+            screening_backend=spec.screening_backend,
+            screening_exact_fallback=spec.screening_exact_fallback,
             title=spec.title or "Public Representation Frontier",
         )
     elif spec.kind == "certificate":
@@ -486,6 +499,8 @@ def run_audit(spec: AuditSpec | Mapping[str, Any], data: Any) -> AuditRun:
             enforce_bucket_budget=spec.enforce_bucket_budget,
             include_base=spec.include_base,
             exact_required=spec.exact_required,
+            screening_backend=spec.screening_backend,
+            screening_exact_fallback=spec.screening_exact_fallback,
             title=spec.title or "Representation Stability Certificate",
         )
     else:

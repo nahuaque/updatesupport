@@ -134,6 +134,7 @@ stress-test family.
    :hidden:
 
    causal-library-integration
+   residopt-integration
    benchmark-gallery
    extensions
    folktables-acs-income-interpretation

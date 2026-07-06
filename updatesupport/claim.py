@@ -9,7 +9,7 @@ from .certificate import (
     RepresentationStabilityCertificate,
     certify_public_representation,
 )
-from .data import TabularTarget
+from .data import GroupedProblem, TabularTarget, from_dataframe
 from .frontier import PublicRepresentationCandidate, public_representation_frontier
 from .joint import (
     HiddenCompositionUncertaintyReport,
@@ -22,8 +22,11 @@ from .report import (
     RefinementCandidate,
     StatisticalUncertainty,
     WitnessReport,
+    _repeatable_data,
+    public_fiber_diagnostics,
     public_descent_report,
 )
+from .results import TransportResult
 from .spec import QSpec
 
 
@@ -342,6 +345,52 @@ class ClaimRefinementRecommendation:
 
 
 @dataclass(frozen=True)
+class ClaimScreeningResult:
+    """Optional conservative pre-screen used before an exact claim audit."""
+
+    backend: str
+    attempted: bool
+    used: bool
+    certified: bool
+    fallback_required: bool
+    exact_solve_avoided: bool
+    reason: str
+    observed_value: float | None = None
+    lower: float | None = None
+    upper: float | None = None
+    ambiguity: float | None = None
+    decision_invariant: bool | None = None
+    ambiguity_limit_met: bool | None = None
+    q_name: str | None = None
+    conservative: bool = True
+    compiled_templates_built: int = 0
+    support_solves: int = 0
+    error: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "backend": self.backend,
+            "attempted": self.attempted,
+            "used": self.used,
+            "certified": self.certified,
+            "fallback_required": self.fallback_required,
+            "exact_solve_avoided": self.exact_solve_avoided,
+            "reason": self.reason,
+            "observed_value": self.observed_value,
+            "lower": self.lower,
+            "upper": self.upper,
+            "ambiguity": self.ambiguity,
+            "decision_invariant": self.decision_invariant,
+            "ambiguity_limit_met": self.ambiguity_limit_met,
+            "q_name": self.q_name,
+            "conservative": self.conservative,
+            "compiled_templates_built": self.compiled_templates_built,
+            "support_solves": self.support_solves,
+            "error": self.error,
+        }
+
+
+@dataclass(frozen=True)
 class ClaimSpec:
     """Declarative claim that a reported aggregate is stable enough to defend."""
 
@@ -375,6 +424,9 @@ class ClaimSpec:
     title: str | None = None
     target_description: str | None = None
     observed_label: str = "Reported estimate"
+    screening_backend: str | None = None
+    refinement_screening_backend: str | None = None
+    refinement_screening_exact_fallback: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.estimate_name, str) or not self.estimate_name:
@@ -447,6 +499,27 @@ class ClaimSpec:
             if lower > upper:
                 raise ValueError("statistical_interval lower cannot exceed upper")
             object.__setattr__(self, "statistical_interval", (lower, upper))
+        if self.screening_backend is not None:
+            screening_backend = str(self.screening_backend).lower()
+            if screening_backend not in {"residopt", "residopt_l2"}:
+                raise ValueError(
+                    "screening_backend must be None, 'residopt', or 'residopt_l2'"
+                )
+            object.__setattr__(self, "screening_backend", screening_backend)
+        if self.refinement_screening_backend is not None:
+            refinement_screening_backend = str(
+                self.refinement_screening_backend
+            ).lower()
+            if refinement_screening_backend not in {"residopt", "residopt_l2"}:
+                raise ValueError(
+                    "refinement_screening_backend must be None, 'residopt', "
+                    "or 'residopt_l2'"
+                )
+            object.__setattr__(
+                self,
+                "refinement_screening_backend",
+                refinement_screening_backend,
+            )
         object.__setattr__(
             self,
             "statistical_uncertainty",
@@ -506,6 +579,11 @@ class ClaimSpec:
             "title": self.title,
             "target_description": self.target_description,
             "observed_label": self.observed_label,
+            "screening_backend": self.screening_backend,
+            "refinement_screening_backend": self.refinement_screening_backend,
+            "refinement_screening_exact_fallback": (
+                self.refinement_screening_exact_fallback
+            ),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -531,6 +609,7 @@ class ClaimAudit:
     decision: DecisionResult | None = None
     decision_repair_candidate: PublicRepresentationCandidate | None = None
     decision_repair_search_exact: bool | None = None
+    screening: ClaimScreeningResult | None = None
     status: str = "inconclusive"
     reasons: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
@@ -627,6 +706,7 @@ class ClaimAudit:
             if self.decision_repair_candidate is None
             else self.decision_repair_candidate.as_dict(),
             "decision_repair_search_exact": self.decision_repair_search_exact,
+            "screening": None if self.screening is None else self.screening.as_dict(),
             "repair_candidate": None
             if self.repair_candidate is None
             else self.repair_candidate.as_dict(),
@@ -690,6 +770,13 @@ class ClaimAudit:
             lines.append(
                 f"- Representation certificate: {self.certificate.status.upper()}"
             )
+            if self.certificate.frontier.screening is not None:
+                screening = self.certificate.frontier.screening
+                lines.append(
+                    "- Frontier screening: "
+                    f"{screening.certified_count}/{screening.endpoint_count} "
+                    f"endpoints certified via {screening.backend}"
+                )
         if self.model_assisted is not None:
             failure_rate = _format_optional_rate(self.model_assisted.failure_rate)
             lines.append(
@@ -698,9 +785,19 @@ class ClaimAudit:
                 f"{self.model_assisted.draw_count} successful"
                 f"; failure rate {failure_rate}"
             )
+        if self.screening is not None:
+            lines.append(
+                "- Endpoint screening: "
+                f"{'used' if self.screening.used else 'fallback'}"
+                f" via {self.screening.backend}"
+            )
 
         lines.extend(["", "## Decision Basis", ""])
         lines.extend(f"- {reason}" for reason in self.reasons)
+
+        if self.screening is not None:
+            lines.extend(["", "## Endpoint Screening", ""])
+            lines.extend(_screening_markdown(self.screening))
 
         lines.extend(["", "## Claim", ""])
         lines.extend(
@@ -1211,8 +1308,69 @@ def audit_claim(
     if joint_draws < 0:
         raise ValueError("joint_draws must be non-negative")
 
+    audit_data = data
+    row_count: int | None = None
+    screening: ClaimScreeningResult | None = None
+    if claim.screening_backend is not None:
+        if joint_draws:
+            screening = ClaimScreeningResult(
+                backend=claim.screening_backend,
+                attempted=False,
+                used=False,
+                certified=False,
+                fallback_required=True,
+                exact_solve_avoided=False,
+                reason=(
+                    "Endpoint screening is disabled when model-assisted joint "
+                    "draws are requested."
+                ),
+            )
+        else:
+            if isinstance(data, GroupedProblem):
+                audit_data = data
+            else:
+                audit_data, row_count = _repeatable_data(data)
+            screening, screened_primary, screened_decision = _try_claim_screen(
+                audit_data,
+                claim=claim,
+                row_count=row_count,
+            )
+            if screened_primary is not None:
+                status, reasons = _claim_status(
+                    claim,
+                    primary=screened_primary,
+                    certificate=None,
+                    decision=screened_decision,
+                    decision_repair_candidate=None,
+                    decision_repair_search_exact=None,
+                )
+                return ClaimAudit(
+                    claim=claim,
+                    primary=screened_primary,
+                    certificate=None,
+                    witness=None,
+                    model_assisted=None,
+                    decision=screened_decision,
+                    decision_repair_candidate=None,
+                    decision_repair_search_exact=None,
+                    screening=screening,
+                    status=status,
+                    reasons=(
+                        *reasons,
+                        "A conservative residopt endpoint screen certified the "
+                        "claim, so the exact CVXPY endpoint solve was avoided.",
+                    ),
+                    limitations=_claim_limitations(
+                        claim,
+                        screened_primary,
+                        None,
+                        screening=screening,
+                    ),
+                    title=claim.title or "Claim Audit",
+                )
+
     primary = public_descent_report(
-        data,
+        audit_data,
         public=claim.public,
         hidden=claim.hidden,
         target=claim.target,
@@ -1224,6 +1382,7 @@ def audit_claim(
         target_description=claim.target_description or "target value",
         observed_label=claim.observed_label,
         q=claim.primary_q,
+        row_count=row_count,
     )
     decision = (
         None
@@ -1263,6 +1422,8 @@ def audit_claim(
             enforce_bucket_budget=claim.enforce_bucket_budget,
             include_base=claim.include_base,
             exact_required=claim.exact_required,
+            screening_backend=claim.refinement_screening_backend,
+            screening_exact_fallback=claim.refinement_screening_exact_fallback,
             title=f"{claim.estimate_name} Representation Certificate",
         )
 
@@ -1310,9 +1471,15 @@ def audit_claim(
         decision=decision,
         decision_repair_candidate=decision_repair_candidate,
         decision_repair_search_exact=decision_repair_search_exact,
+        screening=screening,
         status=status,
         reasons=reasons,
-        limitations=_claim_limitations(claim, primary, certificate),
+        limitations=_claim_limitations(
+            claim,
+            primary,
+            certificate,
+            screening=screening,
+        ),
         title=claim.title or "Claim Audit",
     )
 
@@ -1618,6 +1785,8 @@ def _claim_limitations(
     claim: ClaimSpec,
     primary: PublicDescentReport,
     certificate: RepresentationStabilityCertificate | None,
+    *,
+    screening: ClaimScreeningResult | None = None,
 ) -> tuple[str, ...]:
     limitations = [
         "This verifies reporting stability, not whether the upstream causal or "
@@ -1636,10 +1805,24 @@ def _claim_limitations(
         limitations.append(
             "Dual diagnostics are unavailable for this primary solve or backend."
         )
-    if certificate is not None and not certificate.search_exact:
+    if (
+        certificate is not None
+        and not certificate.search_exact
+        and (certificate.frontier.screening is None or certificate.inconclusive)
+    ):
         limitations.append(
             "The repair/certificate search was not exact over the full declared "
             "candidate space."
+        )
+    if certificate is not None and certificate.frontier.screening is not None:
+        frontier_screening = certificate.frontier.screening
+        limitations.append(
+            "The repair/certificate frontier used experimental residopt "
+            "screening. Conservative endpoints certify upper bounds for "
+            f"{frontier_screening.certified_count} of "
+            f"{frontier_screening.endpoint_count} "
+            "evaluated scenario endpoints; inconclusive endpoints use exact "
+            "fallback when enabled."
         )
     limitations.append(
         "Model-assisted joint analysis, when supplied, is conditional on the "
@@ -1651,7 +1834,222 @@ def _claim_limitations(
             "Decision invariance verifies the supplied threshold rule only; it "
             "does not validate whether the threshold itself is appropriate."
         )
+    if screening is not None:
+        if screening.used:
+            limitations.append(
+                "The primary interval was certified by an experimental residopt "
+                "screening backend. It is conservative for the original Q set, "
+                "so a pass is sound but the reported ambiguity may be wider than "
+                "the exact simplex-constrained endpoint."
+            )
+        else:
+            limitations.append(
+                "Experimental residopt endpoint screening was attempted but did "
+                "not certify the claim, so the audit fell back to the exact "
+                "primary solver."
+            )
     return tuple(limitations)
+
+
+def _try_claim_screen(
+    data: Any,
+    *,
+    claim: ClaimSpec,
+    row_count: int | None,
+) -> tuple[ClaimScreeningResult, PublicDescentReport | None, DecisionResult | None]:
+    if claim.screening_backend not in {"residopt", "residopt_l2"}:
+        raise ValueError(f"unsupported screening backend: {claim.screening_backend!r}")
+    if claim.decision is None and claim.ambiguity_limit is None:
+        return (
+            ClaimScreeningResult(
+                backend=claim.screening_backend,
+                attempted=False,
+                used=False,
+                certified=False,
+                fallback_required=True,
+                exact_solve_avoided=False,
+                reason=(
+                    "Endpoint screening requires a decision rule or ambiguity "
+                    "limit to certify."
+                ),
+            ),
+            None,
+            None,
+        )
+    q = claim.primary_q
+    if not isinstance(q, QPreset) or q.name != "l2_budget":
+        return (
+            ClaimScreeningResult(
+                backend=claim.screening_backend,
+                attempted=False,
+                used=False,
+                certified=False,
+                fallback_required=True,
+                exact_solve_avoided=False,
+                reason="Residopt screening currently supports q_l2_budget only.",
+            ),
+            None,
+            None,
+        )
+
+    try:
+        from .residopt_backend import ResidOptL2EndpointCompiler
+
+        grouped = (
+            data
+            if isinstance(data, GroupedProblem)
+            else from_dataframe(
+                data,
+                public=claim.public,
+                hidden=claim.hidden,
+                target=claim.target,
+                weight=claim.weight,
+                min_cell_weight=claim.min_cell_weight,
+                q=q,
+            )
+        )
+        compiler = ResidOptL2EndpointCompiler.from_grouped(grouped)
+        screen_report = compiler.interval(
+            title=f"{claim.estimate_name} ResidOpt Endpoint Screen"
+        )
+    except (ImportError, TypeError, ValueError, RuntimeError) as exc:
+        return (
+            ClaimScreeningResult(
+                backend=claim.screening_backend,
+                attempted=True,
+                used=False,
+                certified=False,
+                fallback_required=True,
+                exact_solve_avoided=False,
+                reason="Residopt screening could not certify this claim.",
+                error=str(exc),
+            ),
+            None,
+            None,
+        )
+
+    decision = (
+        None
+        if claim.decision is None
+        else claim.decision.interval_result(
+            observed_value=screen_report.observed_value,
+            lower=screen_report.lower,
+            upper=screen_report.upper,
+        )
+    )
+    decision_certified = decision is None or decision.invariant
+    ambiguity_limit_met = (
+        None
+        if claim.ambiguity_limit is None
+        else screen_report.ambiguity <= claim.ambiguity_limit
+    )
+    ambiguity_certified = ambiguity_limit_met is not False
+    certified = decision_certified and ambiguity_certified
+
+    if not certified:
+        reason_parts = ["Conservative residopt screening was inconclusive."]
+        if decision is not None and not decision.invariant:
+            reason_parts.append("The conservative interval crosses the decision rule.")
+        if ambiguity_limit_met is False:
+            reason_parts.append(
+                "The conservative interval exceeds the ambiguity limit."
+            )
+        return (
+            ClaimScreeningResult(
+                backend=claim.screening_backend,
+                attempted=True,
+                used=False,
+                certified=False,
+                fallback_required=True,
+                exact_solve_avoided=False,
+                reason=" ".join(reason_parts),
+                observed_value=screen_report.observed_value,
+                lower=screen_report.lower,
+                upper=screen_report.upper,
+                ambiguity=screen_report.ambiguity,
+                decision_invariant=None if decision is None else decision.invariant,
+                ambiguity_limit_met=ambiguity_limit_met,
+                q_name=screen_report.q_name,
+                conservative=screen_report.conservative_for_updatesupport_q,
+                compiled_templates_built=screen_report.compiled_templates_built,
+                support_solves=screen_report.support_solves,
+            ),
+            None,
+            decision,
+        )
+
+    primary = _public_descent_report_from_residopt_screen(
+        grouped,
+        screen_report=screen_report,
+        claim=claim,
+        row_count=row_count,
+    )
+    return (
+        ClaimScreeningResult(
+            backend=claim.screening_backend,
+            attempted=True,
+            used=True,
+            certified=True,
+            fallback_required=False,
+            exact_solve_avoided=True,
+            reason=(
+                "A conservative residopt endpoint interval certified the claim "
+                "without an exact endpoint solve."
+            ),
+            observed_value=screen_report.observed_value,
+            lower=screen_report.lower,
+            upper=screen_report.upper,
+            ambiguity=screen_report.ambiguity,
+            decision_invariant=None if decision is None else decision.invariant,
+            ambiguity_limit_met=ambiguity_limit_met,
+            q_name=screen_report.q_name,
+            conservative=screen_report.conservative_for_updatesupport_q,
+            compiled_templates_built=screen_report.compiled_templates_built,
+            support_solves=screen_report.support_solves,
+        ),
+        primary,
+        decision,
+    )
+
+
+def _public_descent_report_from_residopt_screen(
+    grouped: GroupedProblem,
+    *,
+    screen_report: Any,
+    claim: ClaimSpec,
+    row_count: int | None,
+) -> PublicDescentReport:
+    interval = TransportResult(
+        lower=screen_report.lower,
+        upper=screen_report.upper,
+        diameter=screen_report.ambiguity,
+        public_law=grouped.public_law,
+        bound_type="conservative",
+        lower_bound_type="conservative",
+        upper_bound_type="conservative",
+        notes=tuple(screen_report.notes),
+    )
+    diagnostics = (
+        tuple(grouped.diagnostics.diagnostics)
+        if grouped.diagnostics is not None
+        else ()
+    )
+    return PublicDescentReport(
+        grouped=grouped,
+        observed_value=screen_report.observed_value,
+        interval=interval,
+        public_adequate=screen_report.ambiguity <= grouped.problem.tol,
+        fibers=public_fiber_diagnostics(grouped, top=claim.top),
+        refinements=(),
+        title=f"{claim.estimate_name} Public-Descent Evidence",
+        target_description=claim.target_description or "target value",
+        observed_label=claim.observed_label,
+        row_count=row_count,
+        row_count_label="Rows",
+        min_cell_weight=claim.min_cell_weight,
+        diagnostics=diagnostics,
+        estimator_uncertainty=None,
+    )
 
 
 def _decision_repair_candidate(
@@ -1684,6 +2082,8 @@ def _decision_repair_candidate(
         must_exclude=claim.must_exclude,
         enforce_bucket_budget=claim.enforce_bucket_budget,
         include_base=claim.include_base,
+        screening_backend=claim.refinement_screening_backend,
+        screening_exact_fallback=claim.refinement_screening_exact_fallback,
         title=f"{claim.estimate_name} Decision-Invariant Repair Search",
     )
     candidates = [
@@ -1842,6 +2242,44 @@ def _decision_markdown(report: ClaimAudit) -> list[str]:
             "- Decision-invariant repair candidate: "
             f"`{candidate.label}` with {candidate.public_cells} public cells"
         )
+    return lines
+
+
+def _screening_markdown(screening: ClaimScreeningResult) -> list[str]:
+    lines = [
+        f"- Backend: {screening.backend}",
+        f"- Attempted: {'yes' if screening.attempted else 'no'}",
+        f"- Used: {'yes' if screening.used else 'no'}",
+        f"- Exact solve avoided: {'yes' if screening.exact_solve_avoided else 'no'}",
+        f"- Reason: {screening.reason}",
+    ]
+    if screening.lower is not None and screening.upper is not None:
+        lines.extend(
+            [
+                "- Conservative screening interval: "
+                f"[{screening.lower:.4f}, {screening.upper:.4f}]",
+                f"- Conservative ambiguity: {screening.ambiguity:.4f}",
+            ]
+        )
+    if screening.decision_invariant is not None:
+        lines.append(
+            "- Screening decision invariant: "
+            f"{'yes' if screening.decision_invariant else 'no'}"
+        )
+    if screening.ambiguity_limit_met is not None:
+        lines.append(
+            "- Screening ambiguity limit met: "
+            f"{'yes' if screening.ambiguity_limit_met else 'no'}"
+        )
+    if screening.compiled_templates_built or screening.support_solves:
+        lines.extend(
+            [
+                f"- Compiled templates built: {screening.compiled_templates_built}",
+                f"- Support solves: {screening.support_solves}",
+            ]
+        )
+    if screening.error:
+        lines.append(f"- Error: `{screening.error}`")
     return lines
 
 
@@ -2015,6 +2453,21 @@ def _certificate_summary_markdown(
                 f"- Selected representation: `{candidate.label}`",
                 f"- Public cells: {candidate.public_cells}",
                 f"- Max ambiguity: {candidate.max_ambiguity:.4f}",
+            ]
+        )
+    if certificate.frontier.screening is not None:
+        screening = certificate.frontier.screening
+        lines.extend(
+            [
+                f"- Frontier screening backend: {screening.backend}",
+                "- Frontier screening endpoints certified: "
+                f"{screening.certified_count}/{screening.endpoint_count}",
+                "- Frontier exact fallbacks run: "
+                f"{screening.exact_solve_count}",
+                "- Frontier exact solves avoided: "
+                f"{screening.exact_solve_avoided_count}",
+                "- Frontier conservative endpoints used: "
+                f"{screening.conservative_endpoint_count}",
             ]
         )
     lines.extend(f"- {reason}" for reason in certificate.reasons)
@@ -2254,6 +2707,7 @@ __all__ = [
     "ClaimNode",
     "ClaimNodeAudit",
     "ClaimRefinementRecommendation",
+    "ClaimScreeningResult",
     "ClaimSpec",
     "ClaimTree",
     "ClaimTreeAudit",

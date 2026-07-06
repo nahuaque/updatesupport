@@ -390,6 +390,7 @@ See [packages/updatesupport-finance/README.md](packages/updatesupport-finance/RE
 
 ```bash
 pip install "updatesupport[cvxpy]"      # TV, chi-square, KL, Wasserstein, custom CVXPY Q
+pip install "updatesupport[residopt]"   # experimental residopt endpoint screening
 pip install "updatesupport[scip]"       # CVXPY plus PySCIPOpt for solver="SCIP" and MIP presets
 pip install "updatesupport[examples]"   # Folktables, pandas, plotting examples
 pip install "updatesupport[causal]"     # causal-effect examples
@@ -401,6 +402,7 @@ The same extras work with `uv add`:
 
 ```bash
 uv add "updatesupport[cvxpy]"
+uv add "updatesupport[residopt]"
 uv add "updatesupport[scip]"
 uv add "updatesupport[examples]"
 uv add "updatesupport[causal]"
@@ -424,6 +426,11 @@ uv add "updatesupport[examples,causal,dowhy,cvxpy,finance]"
 `updatesupport[scip]` is intentionally separate because solver wheels and
 platform requirements are heavier than the default CVXPY workflow. It enables
 SCIP-backed mixed-integer presets such as `q_fiber_support_floor(...)`.
+
+`updatesupport[residopt]` is also separate from the causal extras in this first
+release because `residopt` and EconML currently require incompatible
+`scikit-learn` ranges. The published `residopt` package currently requires
+Python 3.13 or newer.
 
 ## Examples
 
