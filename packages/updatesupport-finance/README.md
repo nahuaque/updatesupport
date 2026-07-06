@@ -265,6 +265,14 @@ exports, and DataFrame exports. Rounded-growth helpers assume the previous
 period variable is nonnegative and encode rounded percentages as inclusive
 linear relaxations.
 
+A complete generic example is available in
+`examples/disclosure_triangulation.py`:
+
+```bash
+uv run --package updatesupport-finance python \
+  packages/updatesupport-finance/examples/disclosure_triangulation.py
+```
+
 ## Analyst Workflow
 
 1. Choose public buckets from the model report.

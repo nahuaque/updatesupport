@@ -664,7 +664,15 @@ class FinancePluginTests(unittest.TestCase):
             ),
             usf.model_assisted_portfolio_uncertainty,
         )
+        self.assertIs(
+            us.plugin_report_profile("finance", "disclosure_triangulation"),
+            usf.triangulate_disclosure,
+        )
         self.assertIs(us.plugin_compiler("finance", "portfolio"), usf.from_portfolio)
+        self.assertIs(
+            us.plugin_compiler("finance", "disclosure_triangulation"),
+            usf.disclosure_triangulation_spec,
+        )
 
     def test_plugin_entry_point_can_be_discovered(self):
         discovered = us.discover_plugins()
@@ -695,6 +703,40 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIn("EL_SYNTHETIC_RETAIL_001", markdown)
         self.assertIn("hardship_history", markdown)
         self.assertIn("local_housing_market", markdown)
+
+    def test_disclosure_triangulation_example_builds_tiered_report(self):
+        example_path = (
+            Path(__file__).resolve().parents[1]
+            / "examples"
+            / "disclosure_triangulation.py"
+        )
+        namespace = runpy.run_path(str(example_path), run_name="updatesupport_example")
+
+        spec = namespace["build_spec"]()
+        report = namespace["build_report"]()
+        rows = namespace["width_reduction_rows"](report)
+        markdown = namespace["render_markdown"](report)
+        target_2022 = report.interval(
+            target="component_2022",
+            scenario="T2 + anchor disclosure",
+        )
+        target_2024 = report.interval(
+            target="component_2024",
+            scenario="T2 + anchor disclosure",
+        )
+
+        self.assertIsInstance(spec, us.NamedLinearFeasibilityProblem)
+        self.assertIsInstance(report, us.NamedLinearFeasibilityReport)
+        self.assertEqual(len(rows), 9)
+        self.assertAlmostEqual(target_2022.lower, 100.0 / 1.475 / 1.325)
+        self.assertAlmostEqual(target_2022.upper, 120.0 / 1.425 / 1.275)
+        self.assertAlmostEqual(target_2024.lower, 100.0)
+        self.assertAlmostEqual(target_2024.upper, 120.0)
+        self.assertIn("Generic Disclosure Triangulation Worked Example", markdown)
+        self.assertIn("T2 + anchor disclosure", markdown)
+        self.assertIn("Width Reduction By Tier", markdown)
+        self.assertIn("Binding Endpoint Constraints", markdown)
+        self.assertIn("component_2024_anchor", markdown)
 
     def test_colab_demo_notebooks_are_valid_and_unexecuted(self):
         notebook_dir = Path(__file__).resolve().parents[1] / "examples" / "notebooks"
