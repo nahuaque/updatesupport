@@ -184,6 +184,38 @@ ambiguity is marked as a `conservative_upper_bound`; if the screen is
 inconclusive and exact fallback is enabled, the scenario ambiguity is marked
 `exact`.
 
+The same frontier-screening path is available through the certificate and claim
+front doors:
+
+```python
+certificate = us.certify_public_representation(
+    data,
+    base_public=["region"],
+    hidden=["region", "channel", "tenure_band"],
+    target="metric",
+    candidate_refinements=["channel", "tenure_band"],
+    q_presets=[us.q_l2_budget(0.05)],
+    ambiguity_limit=0.01,
+    screening_backend="residopt",
+)
+
+claim = us.claim(
+    "reported metric is stable",
+    public=["region"],
+    hidden=["region", "channel", "tenure_band"],
+    target="metric",
+    q_presets=[us.q_l2_budget(0.05)],
+    candidate_refinements=["channel", "tenure_band"],
+    ambiguity_limit=0.01,
+    refinement_screening_backend="residopt",
+)
+audit = claim.audit(data)
+```
+
+Certificate and claim Markdown reports summarize how many frontier endpoints
+were certified by conservative screening, how many exact fallbacks ran, and how
+many exact endpoint solves were avoided.
+
 ## What It Compiles
 
 For a fixed public law and observed hidden distribution `q0`, the adapter writes

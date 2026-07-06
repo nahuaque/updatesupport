@@ -425,6 +425,8 @@ class ClaimSpec:
     target_description: str | None = None
     observed_label: str = "Reported estimate"
     screening_backend: str | None = None
+    refinement_screening_backend: str | None = None
+    refinement_screening_exact_fallback: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.estimate_name, str) or not self.estimate_name:
@@ -504,6 +506,20 @@ class ClaimSpec:
                     "screening_backend must be None, 'residopt', or 'residopt_l2'"
                 )
             object.__setattr__(self, "screening_backend", screening_backend)
+        if self.refinement_screening_backend is not None:
+            refinement_screening_backend = str(
+                self.refinement_screening_backend
+            ).lower()
+            if refinement_screening_backend not in {"residopt", "residopt_l2"}:
+                raise ValueError(
+                    "refinement_screening_backend must be None, 'residopt', "
+                    "or 'residopt_l2'"
+                )
+            object.__setattr__(
+                self,
+                "refinement_screening_backend",
+                refinement_screening_backend,
+            )
         object.__setattr__(
             self,
             "statistical_uncertainty",
@@ -564,6 +580,10 @@ class ClaimSpec:
             "target_description": self.target_description,
             "observed_label": self.observed_label,
             "screening_backend": self.screening_backend,
+            "refinement_screening_backend": self.refinement_screening_backend,
+            "refinement_screening_exact_fallback": (
+                self.refinement_screening_exact_fallback
+            ),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -750,6 +770,13 @@ class ClaimAudit:
             lines.append(
                 f"- Representation certificate: {self.certificate.status.upper()}"
             )
+            if self.certificate.frontier.screening is not None:
+                screening = self.certificate.frontier.screening
+                lines.append(
+                    "- Frontier screening: "
+                    f"{screening.certified_count}/{screening.endpoint_count} "
+                    f"endpoints certified via {screening.backend}"
+                )
         if self.model_assisted is not None:
             failure_rate = _format_optional_rate(self.model_assisted.failure_rate)
             lines.append(
@@ -1395,6 +1422,8 @@ def audit_claim(
             enforce_bucket_budget=claim.enforce_bucket_budget,
             include_base=claim.include_base,
             exact_required=claim.exact_required,
+            screening_backend=claim.refinement_screening_backend,
+            screening_exact_fallback=claim.refinement_screening_exact_fallback,
             title=f"{claim.estimate_name} Representation Certificate",
         )
 
@@ -1776,10 +1805,24 @@ def _claim_limitations(
         limitations.append(
             "Dual diagnostics are unavailable for this primary solve or backend."
         )
-    if certificate is not None and not certificate.search_exact:
+    if (
+        certificate is not None
+        and not certificate.search_exact
+        and (certificate.frontier.screening is None or certificate.inconclusive)
+    ):
         limitations.append(
             "The repair/certificate search was not exact over the full declared "
             "candidate space."
+        )
+    if certificate is not None and certificate.frontier.screening is not None:
+        frontier_screening = certificate.frontier.screening
+        limitations.append(
+            "The repair/certificate frontier used experimental residopt "
+            "screening. Conservative endpoints certify upper bounds for "
+            f"{frontier_screening.certified_count} of "
+            f"{frontier_screening.endpoint_count} "
+            "evaluated scenario endpoints; inconclusive endpoints use exact "
+            "fallback when enabled."
         )
     limitations.append(
         "Model-assisted joint analysis, when supplied, is conditional on the "
@@ -2039,6 +2082,8 @@ def _decision_repair_candidate(
         must_exclude=claim.must_exclude,
         enforce_bucket_budget=claim.enforce_bucket_budget,
         include_base=claim.include_base,
+        screening_backend=claim.refinement_screening_backend,
+        screening_exact_fallback=claim.refinement_screening_exact_fallback,
         title=f"{claim.estimate_name} Decision-Invariant Repair Search",
     )
     candidates = [
@@ -2408,6 +2453,21 @@ def _certificate_summary_markdown(
                 f"- Selected representation: `{candidate.label}`",
                 f"- Public cells: {candidate.public_cells}",
                 f"- Max ambiguity: {candidate.max_ambiguity:.4f}",
+            ]
+        )
+    if certificate.frontier.screening is not None:
+        screening = certificate.frontier.screening
+        lines.extend(
+            [
+                f"- Frontier screening backend: {screening.backend}",
+                "- Frontier screening endpoints certified: "
+                f"{screening.certified_count}/{screening.endpoint_count}",
+                "- Frontier exact fallbacks run: "
+                f"{screening.exact_solve_count}",
+                "- Frontier exact solves avoided: "
+                f"{screening.exact_solve_avoided_count}",
+                "- Frontier conservative endpoints used: "
+                f"{screening.conservative_endpoint_count}",
             ]
         )
     lines.extend(f"- {reason}" for reason in certificate.reasons)

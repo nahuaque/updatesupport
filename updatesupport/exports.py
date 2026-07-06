@@ -487,6 +487,22 @@ def _certificate_tables(
                 "best_evaluated_max_ambiguity": None
                 if best is None
                 else best.max_ambiguity,
+                "has_screening": certificate.frontier.screening is not None,
+                "screening_backend": None
+                if certificate.frontier.screening is None
+                else certificate.frontier.screening.backend,
+                "screening_certified_count": None
+                if certificate.frontier.screening is None
+                else certificate.frontier.screening.certified_count,
+                "screening_exact_solve_count": None
+                if certificate.frontier.screening is None
+                else certificate.frontier.screening.exact_solve_count,
+                "screening_exact_solve_avoided_count": None
+                if certificate.frontier.screening is None
+                else certificate.frontier.screening.exact_solve_avoided_count,
+                "screening_conservative_endpoint_count": None
+                if certificate.frontier.screening is None
+                else certificate.frontier.screening.conservative_endpoint_count,
             },
         ),
         "reasons": tuple({"reason": reason} for reason in certificate.reasons),
@@ -553,6 +569,26 @@ def _claim_audit_tables(report: ClaimAudit) -> ReportTables:
                 "certificate_status": None
                 if report.certificate is None
                 else report.certificate.status,
+                "has_frontier_screening": (
+                    report.certificate is not None
+                    and report.certificate.frontier.screening is not None
+                ),
+                "frontier_screening_backend": None
+                if report.certificate is None
+                or report.certificate.frontier.screening is None
+                else report.certificate.frontier.screening.backend,
+                "frontier_screening_certified_count": None
+                if report.certificate is None
+                or report.certificate.frontier.screening is None
+                else report.certificate.frontier.screening.certified_count,
+                "frontier_screening_exact_solve_count": None
+                if report.certificate is None
+                or report.certificate.frontier.screening is None
+                else report.certificate.frontier.screening.exact_solve_count,
+                "frontier_screening_exact_solve_avoided_count": None
+                if report.certificate is None
+                or report.certificate.frontier.screening is None
+                else report.certificate.frontier.screening.exact_solve_avoided_count,
                 "has_witness": report.witness is not None,
                 "has_model_assisted": report.model_assisted is not None,
                 "repair_label": None if repair is None else repair.label,

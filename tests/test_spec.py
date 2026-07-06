@@ -151,6 +151,35 @@ class AuditSpecTests(unittest.TestCase):
         self.assertEqual(payload["report"]["status"], "pass")
         self.assertIn("# Configured Certificate", run.to_markdown())
 
+    def test_certificate_spec_can_use_residopt_screening(self):
+        try:
+            import residopt  # noqa: F401
+        except ImportError as exc:
+            raise unittest.SkipTest("residopt is not importable") from exc
+
+        spec = us.AuditSpec(
+            kind="certificate",
+            public=["segment"],
+            hidden=["segment", "driver", "noise"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["noise", "driver"],
+            q_presets=[{"name": "l2_budget", "radius": 0.05, "solver": "CLARABEL"}],
+            ambiguity_limit=1.0,
+            screening_backend="residopt",
+            title="Screened Certificate Spec",
+        )
+
+        run = spec.run(_rows())
+        payload = run.as_dict()
+
+        self.assertEqual(run.spec.screening_backend, "residopt")
+        self.assertIsInstance(run.report, us.RepresentationStabilityCertificate)
+        self.assertIsNotNone(run.report.frontier.screening)
+        self.assertEqual(run.report.frontier.screening.backend, "residopt")
+        self.assertEqual(payload["spec"]["screening_backend"], "residopt")
+        self.assertEqual(payload["report"]["screening"]["backend"], "residopt")
+
     def test_q_spec_rejects_unknown_keys(self):
         with self.assertRaises(ValueError):
             us.QSpec.from_value({"name": "saturated", "unexpected": True})

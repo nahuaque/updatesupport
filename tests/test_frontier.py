@@ -118,6 +118,48 @@ class PublicRepresentationFrontierTests(unittest.TestCase):
         self.assertIn("heuristic", certificate.reasons[0])
         self.assertTrue(relaxed.passed)
 
+    def test_certify_public_representation_can_use_residopt_screening(self):
+        try:
+            import residopt  # noqa: F401
+        except ImportError as exc:
+            raise unittest.SkipTest("residopt is not importable") from exc
+
+        rows = [
+            {"segment": "A", "driver": "low", "noise": "n", "target": 0.0, "weight": 30},
+            {"segment": "A", "driver": "high", "noise": "n", "target": 1.0, "weight": 30},
+            {"segment": "B", "driver": "flat", "noise": "n", "target": 0.5, "weight": 40},
+        ]
+
+        certificate = us.certify_public_representation(
+            rows,
+            base_public=["segment"],
+            hidden=["segment", "driver", "noise"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["noise", "driver"],
+            q_presets=[us.q_l2_budget(0.05, solver="CLARABEL")],
+            ambiguity_limit=1.0,
+            screening_backend="residopt",
+        )
+        payload = certificate.as_dict()
+        markdown = certificate.to_markdown()
+        tables = certificate.to_tables()
+
+        self.assertTrue(certificate.passed)
+        self.assertIsNotNone(certificate.frontier.screening)
+        self.assertEqual(certificate.frontier.screening.backend, "residopt")
+        self.assertEqual(
+            certificate.frontier.screening.certified_count,
+            certificate.frontier.screening.endpoint_count,
+        )
+        self.assertGreater(certificate.frontier.screening.exact_solve_avoided_count, 0)
+        self.assertEqual(payload["screening"]["backend"], "residopt")
+        self.assertEqual(payload["status"], "pass")
+        self.assertIn("Screening backend: residopt", markdown)
+        self.assertIn("conservative screened endpoint certificates", markdown)
+        self.assertTrue(tables["summary"][0]["has_screening"])
+        self.assertIn("frontier_screening", tables)
+
     def test_public_representation_frontier_finds_nondominated_refinements(self):
         rows = [
             {

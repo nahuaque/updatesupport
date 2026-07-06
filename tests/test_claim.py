@@ -132,6 +132,45 @@ class ClaimSpecTests(unittest.TestCase):
         self.assertFalse(report.screening.exact_solve_avoided)
         self.assertEqual(report.primary.interval.bound_type, "exact")
 
+    def test_claim_certificate_can_use_refinement_residopt_screening(self):
+        try:
+            import residopt  # noqa: F401
+        except ImportError as exc:
+            raise unittest.SkipTest("residopt is not importable") from exc
+
+        claim = us.claim(
+            "Screened refinement certificate",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            q_presets=[us.q_l2_budget(0.05, solver="CLARABEL")],
+            candidate_refinements=["driver"],
+            ambiguity_limit=1.0,
+            refinement_screening_backend="residopt",
+            min_cell_weight=0.0,
+        )
+
+        report = us.audit_claim(_rows(), claim)
+        payload = report.as_dict()
+        markdown = report.to_markdown()
+        tables = report.to_tables()
+
+        self.assertTrue(report.passed)
+        self.assertIsNotNone(report.certificate)
+        self.assertTrue(report.certificate.passed)
+        self.assertIsNotNone(report.certificate.frontier.screening)
+        self.assertEqual(
+            report.certificate.frontier.screening.certified_count,
+            report.certificate.frontier.screening.endpoint_count,
+        )
+        self.assertEqual(
+            payload["certificate"]["screening"]["backend"],
+            "residopt",
+        )
+        self.assertIn("Frontier screening", markdown)
+        self.assertTrue(tables["summary"][0]["has_frontier_screening"])
+
     def test_audit_claim_passes_when_current_public_representation_is_stable(self):
         claim = us.ClaimSpec(
             estimate_name="Demo target rate",
