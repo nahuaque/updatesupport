@@ -4,6 +4,25 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
+from .disclosure import (
+    DisclosureConstraint,
+    DisclosureExpression,
+    DisclosureTarget,
+    DisclosureTier,
+    DisclosureTriangulationReport,
+    DisclosureTriangulationSpec,
+    DisclosureVariable,
+    containment_constraint,
+    disclosure_constraint,
+    disclosure_target,
+    disclosure_tier,
+    disclosure_triangulation_spec,
+    disclosure_variable,
+    exact_disclosure_constraint,
+    interval_disclosure_constraint,
+    rounded_growth_constraints,
+    triangulate_disclosure,
+)
 from .metrics import (
     default_rate,
     expected_loss,
@@ -39,14 +58,29 @@ except PackageNotFoundError:
 
 __all__ = [
     "__version__",
+    "containment_constraint",
     "default_rate",
+    "disclosure_constraint",
+    "disclosure_target",
+    "disclosure_tier",
+    "disclosure_triangulation_spec",
+    "disclosure_variable",
+    "DisclosureConstraint",
+    "DisclosureExpression",
+    "DisclosureTarget",
+    "DisclosureTier",
+    "DisclosureTriangulationReport",
+    "DisclosureTriangulationSpec",
+    "DisclosureVariable",
     "expected_loss",
     "expected_loss_amount",
     "expected_loss_standard_error",
+    "exact_disclosure_constraint",
     "FinanceStabilityCertificate",
     "finance_sensitivity_grid",
     "certify_portfolio_segmentation",
     "from_portfolio",
+    "interval_disclosure_constraint",
     "loss_given_default",
     "ModelRiskMetadata",
     "ModelRiskReport",
@@ -59,5 +93,7 @@ __all__ = [
     "q_factor_exposure_shift",
     "q_portfolio_mix_shift",
     "q_regional_concentration_shift",
+    "rounded_growth_constraints",
     "ReviewThresholds",
+    "triangulate_disclosure",
 ]

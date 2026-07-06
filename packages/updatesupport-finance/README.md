@@ -39,6 +39,12 @@ The package provides finance-oriented row metrics, Q preset aliases, portfolio
 compilation, and a model-risk report profile while keeping financial vocabulary
 out of the core `updatesupport` package.
 
+It also provides a thin disclosure-triangulation front end over the core
+`updatesupport` named-linear feasibility solver. That surface is generic:
+unknown variables, linear constraints, target expressions, and tiered
+assumption sets are user supplied. The finance package only adds disclosure
+vocabulary, provenance fields, and convenience constructors.
+
 Conic concentration presets require the core CVXPY extra when solved:
 
 ```bash
@@ -154,6 +160,110 @@ The package is intentionally narrow. It separates:
 This is not a confidence interval and not a full model-risk-management system.
 It is a reviewable control for one practical question: whether the reporting
 representation is stable enough for the risk metric.
+
+## Disclosure Triangulation
+
+Some finance questions are not hidden-composition audits. They are feasibility
+questions over overlapping disclosures:
+
+> Given several reported totals, component containments, rounded growth rates,
+> anchors, and analyst assumptions, what interval remains possible for an
+> undisclosed scalar quantity?
+
+Use `triangulate_disclosure(...)` for that shape. It delegates to the core
+`updatesupport` named-linear feasibility API, so there is no separate finance
+solver and no issuer-specific logic.
+
+```python
+import updatesupport_finance as usf
+
+growth_constraints = usf.rounded_growth_constraints(
+    "component_growth",
+    current="component_current",
+    previous="component_previous",
+    growth_percent=55.0,
+    rounding=5.0,
+    provenance="Example rounded growth disclosure",
+    verified=True,
+)
+
+spec = usf.disclosure_triangulation_spec(
+    variables=[
+        usf.disclosure_variable("component_previous"),
+        usf.disclosure_variable("component_current"),
+        usf.disclosure_variable("total_previous"),
+        usf.disclosure_variable("total_current"),
+    ],
+    constraints=[
+        usf.exact_disclosure_constraint(
+            "reported_total_previous",
+            "total_previous",
+            100.0,
+        ),
+        usf.exact_disclosure_constraint(
+            "reported_total_current",
+            "total_current",
+            200.0,
+        ),
+        usf.containment_constraint(
+            "previous_containment",
+            child="component_previous",
+            parent="total_previous",
+        ),
+        usf.containment_constraint(
+            "current_containment",
+            child="component_current",
+            parent="total_current",
+        ),
+        *growth_constraints,
+        usf.interval_disclosure_constraint(
+            "current_anchor",
+            "component_current",
+            lower=90.0,
+            category="assumption",
+        ),
+    ],
+    targets=[
+        usf.disclosure_target(
+            "previous_component",
+            "component_previous",
+            label="Previous-period component",
+        )
+    ],
+    tiers=[
+        usf.disclosure_tier(
+            "T0 containment",
+            [
+                "reported_total_previous",
+                "reported_total_current",
+                "previous_containment",
+                "current_containment",
+            ],
+        ),
+        usf.disclosure_tier(
+            "T1 + growth + anchor",
+            [
+                "reported_total_previous",
+                "reported_total_current",
+                "previous_containment",
+                "current_containment",
+                "component_growth_lower",
+                "component_growth_upper",
+                "current_anchor",
+            ],
+        ),
+    ],
+)
+
+report = usf.triangulate_disclosure(spec)
+print(report.to_markdown())
+```
+
+The output is a tiered feasibility interval report with active-constraint
+tables, endpoint assignments, binding constraints, provenance metadata, JSON
+exports, and DataFrame exports. Rounded-growth helpers assume the previous
+period variable is nonnegative and encode rounded percentages as inclusive
+linear relaxations.
 
 ## Analyst Workflow
 

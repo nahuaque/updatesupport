@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import updatesupport as us
 
+from .disclosure import disclosure_triangulation_spec, triangulate_disclosure
 from .metrics import (
     default_rate,
     expected_loss,
@@ -43,11 +44,13 @@ plugin = us.UpdateSupportPlugin(
         "regional_concentration_shift": q_regional_concentration_shift,
     },
     report_profiles={
+        "disclosure_triangulation": triangulate_disclosure,
         "model_risk": model_risk_report,
         "model_assisted_portfolio_uncertainty": model_assisted_portfolio_uncertainty,
         "segmentation_certificate": certify_portfolio_segmentation,
     },
     compilers={
+        "disclosure_triangulation": disclosure_triangulation_spec,
         "portfolio": from_portfolio,
     },
     metadata=us.PluginMetadata(

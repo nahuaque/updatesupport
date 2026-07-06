@@ -381,8 +381,9 @@ pip install "updatesupport[finance]"
 uv add "updatesupport[finance]"
 ```
 
-It adds finance-oriented metrics such as expected loss and default rate without
-cluttering the core package.
+It adds finance-oriented metrics such as expected loss and default rate, plus
+generic disclosure-triangulation helpers over the core named-linear feasibility
+solver, without cluttering the core package.
 
 See [packages/updatesupport-finance/README.md](packages/updatesupport-finance/README.md).
 

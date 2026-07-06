@@ -18,6 +18,7 @@ module pages below document the core implementation areas directly.
    adapters
    claims
    model_assisted
+   linear_feasibility
    plugins
    exports
    specs

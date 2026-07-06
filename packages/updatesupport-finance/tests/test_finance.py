@@ -119,6 +119,118 @@ class FinancePluginTests(unittest.TestCase):
         )
         self.assertAlmostEqual(sum(grouped.cell_weights.values()), 1.0)
 
+    def test_disclosure_triangulation_uses_core_named_linear_solver(self):
+        growth = usf.rounded_growth_constraints(
+            "component_growth",
+            current="component_current",
+            previous="component_previous",
+            growth_percent=55.0,
+            rounding=5.0,
+            provenance="Example rounded growth disclosure",
+            verified=True,
+        )
+        spec = usf.disclosure_triangulation_spec(
+            title="Generic Disclosure Triangulation",
+            variables=[
+                usf.disclosure_variable("component_previous"),
+                usf.disclosure_variable("component_current"),
+                usf.disclosure_variable("total_previous"),
+                usf.disclosure_variable("total_current"),
+            ],
+            constraints=[
+                usf.exact_disclosure_constraint(
+                    "reported_total_previous",
+                    "total_previous",
+                    100.0,
+                    provenance="Example total disclosure",
+                    verified=True,
+                ),
+                usf.exact_disclosure_constraint(
+                    "reported_total_current",
+                    "total_current",
+                    200.0,
+                    provenance="Example total disclosure",
+                    verified=True,
+                ),
+                usf.containment_constraint(
+                    "previous_containment",
+                    child="component_previous",
+                    parent="total_previous",
+                ),
+                usf.containment_constraint(
+                    "current_containment",
+                    child="component_current",
+                    parent="total_current",
+                ),
+                *growth,
+                usf.interval_disclosure_constraint(
+                    "current_anchor",
+                    "component_current",
+                    lower=90.0,
+                    category="assumption",
+                    provenance="Example analyst assumption",
+                ),
+            ],
+            targets=[
+                usf.disclosure_target(
+                    "previous_component",
+                    "component_previous",
+                    label="Previous-period component",
+                )
+            ],
+            tiers=[
+                usf.disclosure_tier(
+                    "T0 containment",
+                    [
+                        "reported_total_previous",
+                        "reported_total_current",
+                        "previous_containment",
+                        "current_containment",
+                    ],
+                ),
+                usf.disclosure_tier(
+                    "T1 + growth + anchor",
+                    [
+                        "reported_total_previous",
+                        "reported_total_current",
+                        "previous_containment",
+                        "current_containment",
+                        "component_growth_lower",
+                        "component_growth_upper",
+                        "current_anchor",
+                    ],
+                ),
+            ],
+        )
+
+        report = usf.triangulate_disclosure(spec)
+        interval = report.interval(
+            target="previous_component",
+            scenario="T1 + growth + anchor",
+        )
+        tables = report.to_tables()
+
+        self.assertIsInstance(report, us.NamedLinearFeasibilityReport)
+        self.assertAlmostEqual(interval.lower, 56.25)
+        self.assertAlmostEqual(interval.upper, 100.0)
+        self.assertIn("Disclosure Triangulation", report.to_markdown())
+        self.assertIn("triangulate_disclosure", usf.__all__)
+        self.assertIn("disclosure_triangulation", usf.plugin.report_profiles)
+        self.assertIn("disclosure_triangulation", usf.plugin.compilers)
+        self.assertEqual(
+            {
+                row["kind"]
+                for row in tables["active_constraints"]
+                if row["scenario"] == "T1 + growth + anchor"
+            },
+            {
+                "assumption",
+                "containment",
+                "disclosure",
+                "rounded_growth_disclosure",
+            },
+        )
+
     def test_model_risk_report_uses_finance_labels(self):
         report = usf.model_risk_report(
             _portfolio_rows(),
