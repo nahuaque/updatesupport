@@ -43,6 +43,35 @@ The compiler caches the public-incidence nullspace and a parameterized residopt
 SOCP template. The first interval builds the template; later intervals update
 the projected direction parameter and solve the same compiled problem.
 
+## Claim Screening
+
+Claim audits can opt into a screen-then-certify path:
+
+```python
+claim = us.claim(
+    "reported lift remains positive",
+    public=["segment"],
+    hidden=["segment", "channel", "tenure_band"],
+    target="lift",
+    weight="users",
+    q=us.q_l2_budget(0.05),
+    decision=us.threshold_decision(">=", 0.0),
+    screening_backend="residopt",
+)
+
+audit = claim.audit(rows)
+print(audit.screening.as_dict())
+```
+
+When the conservative residopt interval already proves the decision rule or
+ambiguity limit, the audit returns without running the exact endpoint solve. If
+the screen is unavailable or inconclusive, the audit falls back to the ordinary
+exact primary solver and records the screening attempt in `audit.screening`.
+
+This mode is intentionally conservative: it can certify passes early, but it
+does not use a wide conservative interval to fail a claim without the exact
+fallback.
+
 During local development with a sibling checkout, run with:
 
 ```bash

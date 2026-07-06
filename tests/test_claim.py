@@ -27,6 +27,7 @@ class ClaimSpecTests(unittest.TestCase):
         self.assertIn("audit_claim_tree", us.__all__)
         self.assertIn("ClaimSpec", us.__all__)
         self.assertIn("ClaimAudit", us.__all__)
+        self.assertIn("ClaimScreeningResult", us.__all__)
         self.assertIn("ClaimTree", us.__all__)
         self.assertIn("ClaimTreeAudit", us.__all__)
         self.assertNotIn("verify_claim", us.__all__)
@@ -81,6 +82,55 @@ class ClaimSpecTests(unittest.TestCase):
         self.assertIsInstance(claim, us.ClaimSpec)
         self.assertTrue(verdict.inconclusive)
         self.assertEqual(verdict.claim.public, ("segment",))
+
+    def test_residopt_screening_certifies_simple_l2_decision_when_available(self):
+        try:
+            import residopt  # noqa: F401
+        except ImportError as exc:
+            raise unittest.SkipTest("residopt is not importable") from exc
+
+        claim = us.claim(
+            "Screened launch decision",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            q=us.q_l2_budget(0.05, solver="CLARABEL"),
+            decision=us.threshold_decision(">=", -1.0),
+            screening_backend="residopt",
+            min_cell_weight=0.0,
+        )
+
+        report = us.audit_claim(_rows(), claim)
+        tables = report.to_tables()
+
+        self.assertTrue(report.passed)
+        self.assertIsNotNone(report.screening)
+        self.assertTrue(report.screening.used)
+        self.assertTrue(report.screening.exact_solve_avoided)
+        self.assertEqual(report.primary.interval.bound_type, "conservative")
+        self.assertEqual(tables["screening"][0]["used"], True)
+        self.assertIn("Endpoint Screening", report.to_markdown())
+
+    def test_residopt_screening_falls_back_when_inconclusive(self):
+        claim = us.claim(
+            "Screened threshold decision",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            q=us.q_l2_budget(0.05, solver="CLARABEL"),
+            decision=us.threshold_decision(">=", 0.5),
+            screening_backend="residopt",
+            min_cell_weight=0.0,
+        )
+
+        report = us.audit_claim(_rows(), claim)
+
+        self.assertIsNotNone(report.screening)
+        self.assertFalse(report.screening.used)
+        self.assertFalse(report.screening.exact_solve_avoided)
+        self.assertEqual(report.primary.interval.bound_type, "exact")
 
     def test_audit_claim_passes_when_current_public_representation_is_stable(self):
         claim = us.ClaimSpec(

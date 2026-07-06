@@ -491,6 +491,16 @@ def _claim_audit_tables(report: ClaimAudit) -> ReportTables:
                     report.claim.statistical_uncertainty is not None
                 ),
                 "has_decision": report.decision is not None,
+                "has_screening": report.screening is not None,
+                "screening_backend": None
+                if report.screening is None
+                else report.screening.backend,
+                "screening_used": None
+                if report.screening is None
+                else report.screening.used,
+                "screening_exact_solve_avoided": None
+                if report.screening is None
+                else report.screening.exact_solve_avoided,
                 "decision_label": None
                 if report.decision is None
                 else report.decision.rule.label,
@@ -533,6 +543,8 @@ def _claim_audit_tables(report: ClaimAudit) -> ReportTables:
     }
     if report.decision is not None:
         tables["decision"] = (report.decision.as_dict(),)
+    if report.screening is not None:
+        tables["screening"] = (report.screening.as_dict(),)
     if report.decision_repair_candidate is not None:
         tables["decision_repair"] = (report.decision_repair_candidate.as_dict(),)
     tables.update(_prefix_tables("primary", _public_descent_tables(report.primary)))
