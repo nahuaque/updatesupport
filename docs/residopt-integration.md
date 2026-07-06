@@ -133,6 +133,32 @@ Use `us.residopt_refinement_screen(...)` for a one-shot helper, or keep a
 `ResidOptRefinementScreenContext` alive when running several related screens
 over the same dataset.
 
+The standard one-column refinement API can also opt into the same screen:
+
+```python
+rows = us.recommend_refinements(
+    data,
+    public=["region"],
+    hidden=["region", "channel", "tenure_band"],
+    target="metric",
+    weight="weight",
+    candidate_refinements=["channel", "tenure_band"],
+    q=us.q_l2_budget(0.05),
+    screening_backend="residopt",
+    ambiguity_limit=0.01,
+)
+
+for row in rows:
+    print(row.column, row.after_ambiguity, row.after_ambiguity_bound_type)
+```
+
+When a candidate is certified by the conservative screen, its returned
+`after_ambiguity` is marked as a `conservative_upper_bound`. When the screen is
+inconclusive and exact fallback runs, the returned value is marked `exact`.
+`public_descent_report(...)` exposes the same refinement-screening option
+through `refinement_screening_backend="residopt"` and includes the screening
+summary in Markdown and structured exports.
+
 ## What It Compiles
 
 For a fixed public law and observed hidden distribution `q0`, the adapter writes

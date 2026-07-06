@@ -271,6 +271,15 @@ class RefinementCandidate:
     reduction: float
     reduction_percent: float
     public_cells: int
+    before_ambiguity_bound_type: str = "exact"
+    after_ambiguity_bound_type: str = "exact"
+    screening_backend: str | None = None
+    screening_status: str | None = None
+    screening_certified: bool = False
+    screening_exact_solve_run: bool = False
+    screening_exact_solve_avoided: bool = False
+    screening_conservative_ambiguity: float | None = None
+    screening_exact_ambiguity: float | None = None
 
     @property
     def diameter(self) -> float:
@@ -299,6 +308,17 @@ class RefinementCandidate:
             "reduction_percent": self.reduction_percent,
             "percent_reduction": self.reduction_percent,
             "public_cells": self.public_cells,
+            "before_ambiguity_bound_type": self.before_ambiguity_bound_type,
+            "after_ambiguity_bound_type": self.after_ambiguity_bound_type,
+            "screening_backend": self.screening_backend,
+            "screening_status": self.screening_status,
+            "screening_certified": self.screening_certified,
+            "screening_exact_solve_run": self.screening_exact_solve_run,
+            "screening_exact_solve_avoided": self.screening_exact_solve_avoided,
+            "screening_conservative_ambiguity": (
+                self.screening_conservative_ambiguity
+            ),
+            "screening_exact_ambiguity": self.screening_exact_ambiguity,
         }
 
 
@@ -1437,6 +1457,7 @@ class PublicDescentReport:
     min_cell_weight: float | None = None
     diagnostics: tuple[DataDiagnostic, ...] = ()
     estimator_uncertainty: EstimatorUncertaintyAdjustment | None = None
+    refinement_screening: Any | None = None
 
     @property
     def fiber_decomposition_available(self) -> bool:
@@ -1702,14 +1723,36 @@ class PublicDescentReport:
                     "uncertainty.",
                 ]
             )
+            if self.refinement_screening is not None:
+                screening = self.refinement_screening
+                lines.extend(
+                    [
+                        "",
+                        "Refinement screening used "
+                        f"`{screening.backend}`: certified "
+                        f"`{screening.certified_count}` of "
+                        f"`{screening.screened_count}` candidate representations, "
+                        f"ran `{screening.exact_solve_count}` exact fallback solves, "
+                        f"and avoided `{screening.exact_solve_avoided_count}` exact "
+                        "solves. Conservative screen values are upper bounds on "
+                        "the exact L2 ambiguity; exact fallback values are marked "
+                        "as exact.",
+                    ]
+                )
             for row in self.refinements:
-                lines.append(
+                detail = (
                     f"- add {row.column}: before={row.before_ambiguity:.4f}, "
                     f"after={row.after_ambiguity:.4f}, "
                     f"reduction={row.reduction:.4f}, "
                     f"reduction_pct={row.reduction_percent:.1f}%, "
                     f"public_cells={row.public_cells}"
                 )
+                if row.screening_backend is not None:
+                    detail += (
+                        f", bound={row.after_ambiguity_bound_type}, "
+                        f"screening_status={row.screening_status}"
+                    )
+                lines.append(detail)
 
         lines.extend(
             [
@@ -1759,6 +1802,9 @@ def public_descent_report(
     q: Any | None = None,
     q_radius: float | None = None,
     target_confidence_multiplier: float = 1.96,
+    refinement_screening_backend: str | None = None,
+    refinement_ambiguity_limit: float | None = None,
+    refinement_screening_exact_fallback: bool = True,
 ) -> PublicDescentReport:
     """Build an analyst-facing public-descent report.
 
@@ -1845,6 +1891,7 @@ def public_descent_report(
             hidden=grouped.hidden_columns,
         )
     refinements: tuple[RefinementCandidate, ...] = ()
+    refinement_screening = None
     if candidate_refinements:
         if refinement_data is None:
             raise ValueError(
@@ -1855,7 +1902,7 @@ def public_descent_report(
             if grouped.target_procedure is not None
             else grouped.target_column
         )
-        refinements = recommend_refinements(
+        refinements, refinement_screening = _recommend_refinements_internal(
             refinement_data,
             public=grouped.public_columns,
             hidden=grouped.hidden_columns,
@@ -1866,6 +1913,9 @@ def public_descent_report(
             q=effective_q,
             q_radius=q_radius,
             top=top,
+            screening_backend=refinement_screening_backend,
+            ambiguity_limit=refinement_ambiguity_limit,
+            screening_exact_fallback=refinement_screening_exact_fallback,
         )
 
     return PublicDescentReport(
@@ -1883,6 +1933,7 @@ def public_descent_report(
         min_cell_weight=min_cell_weight,
         diagnostics=diagnostics,
         estimator_uncertainty=estimator_uncertainty,
+        refinement_screening=refinement_screening,
     )
 
 
@@ -1971,6 +2022,9 @@ def audit_effects(
     q: Any | None = None,
     q_radius: float | None = None,
     effect_confidence_multiplier: float = 1.96,
+    refinement_screening_backend: str | None = None,
+    refinement_ambiguity_limit: float | None = None,
+    refinement_screening_exact_fallback: bool = True,
 ) -> PublicDescentReport:
     """Audit whether public categories stably report estimated effects.
 
@@ -2022,6 +2076,9 @@ def audit_effects(
         q=q,
         q_radius=q_radius,
         target_confidence_multiplier=effect_confidence_multiplier,
+        refinement_screening_backend=refinement_screening_backend,
+        refinement_ambiguity_limit=refinement_ambiguity_limit,
+        refinement_screening_exact_fallback=refinement_screening_exact_fallback,
     )
 
 
@@ -2451,11 +2508,59 @@ def recommend_refinements(
     q: Any = "saturated",
     q_radius: float | None = None,
     top: int | None = 8,
+    screening_backend: str | None = None,
+    ambiguity_limit: float | None = None,
+    screening_exact_fallback: bool = True,
 ) -> tuple[RefinementCandidate, ...]:
     """Rank one-column public refinements by transport-ambiguity reduction."""
 
+    candidates, _screening = _recommend_refinements_internal(
+        data,
+        public=public,
+        hidden=hidden,
+        target=target,
+        candidate_refinements=candidate_refinements,
+        candidate_columns=candidate_columns,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
+        top=top,
+        screening_backend=screening_backend,
+        ambiguity_limit=ambiguity_limit,
+        screening_exact_fallback=screening_exact_fallback,
+    )
+    return candidates
+
+
+def _recommend_refinements_internal(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    candidate_refinements: Sequence[str] | None = None,
+    candidate_columns: Sequence[str] | None = None,
+    weight: str | None = None,
+    min_cell_weight: float = 1.0,
+    q: Any = "saturated",
+    q_radius: float | None = None,
+    top: int | None = 8,
+    screening_backend: str | None = None,
+    ambiguity_limit: float | None = None,
+    screening_exact_fallback: bool = True,
+) -> tuple[tuple[RefinementCandidate, ...], Any | None]:
     if top is not None and top < 0:
         raise ValueError("top must be non-negative")
+    if ambiguity_limit is not None and ambiguity_limit < 0:
+        raise ValueError("ambiguity_limit must be non-negative")
+    if screening_backend is not None and screening_backend not in {
+        "residopt",
+        "residopt_l2",
+    }:
+        raise ValueError(
+            "screening_backend must be None, 'residopt', or 'residopt_l2'"
+        )
     candidate_refinements = _resolve_sequence_arg(
         candidate_refinements,
         candidate_columns,
@@ -2466,6 +2571,22 @@ def recommend_refinements(
         candidate_refinements = ()
 
     repeatable_data, _row_count = _repeatable_data(data)
+    if screening_backend in {"residopt", "residopt_l2"}:
+        return _recommend_refinements_via_residopt_screen(
+            repeatable_data,
+            public=public,
+            hidden=hidden,
+            target=target,
+            candidate_refinements=candidate_refinements,
+            weight=weight,
+            min_cell_weight=min_cell_weight,
+            q=q,
+            q_radius=q_radius,
+            top=top,
+            ambiguity_limit=ambiguity_limit,
+            exact_fallback=screening_exact_fallback,
+        )
+
     baseline = from_dataframe(
         repeatable_data,
         public=public,
@@ -2512,7 +2633,94 @@ def recommend_refinements(
         )
 
     scores.sort(key=lambda row: row.reduction, reverse=True)
-    return tuple(scores if top is None else scores[:top])
+    return tuple(scores if top is None else scores[:top]), None
+
+
+def _recommend_refinements_via_residopt_screen(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    candidate_refinements: Sequence[str],
+    weight: str | None,
+    min_cell_weight: float,
+    q: Any,
+    q_radius: float | None,
+    top: int | None,
+    ambiguity_limit: float | None,
+    exact_fallback: bool,
+) -> tuple[tuple[RefinementCandidate, ...], Any]:
+    from .residopt_backend import residopt_refinement_screen
+
+    screen = residopt_refinement_screen(
+        data,
+        public=public,
+        hidden=hidden,
+        target=target,
+        candidate_refinements=candidate_refinements,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
+        include_base=True,
+        ambiguity_limit=ambiguity_limit,
+        exact_fallback=exact_fallback,
+        top=None,
+    )
+    base = next((row for row in screen.candidates if not row.added_columns), None)
+    if base is None or base.final_ambiguity is None:
+        raise RuntimeError("residopt refinement screen did not produce a base interval")
+
+    before = float(base.final_ambiguity)
+    before_bound_type = _screen_candidate_bound_type(base)
+    rows: list[RefinementCandidate] = []
+    incomplete = []
+    for row in screen.candidates:
+        if not row.added_columns:
+            continue
+        if len(row.added_columns) != 1:
+            continue
+        if row.final_ambiguity is None:
+            incomplete.append(row)
+            continue
+        after = float(row.final_ambiguity)
+        reduction = before - after
+        reduction_percent = 100.0 * reduction / before if before > 0 else 0.0
+        rows.append(
+            RefinementCandidate(
+                column=row.added_columns[0],
+                before_ambiguity=before,
+                after_ambiguity=after,
+                reduction=reduction,
+                reduction_percent=reduction_percent,
+                public_cells=row.public_cells,
+                before_ambiguity_bound_type=before_bound_type,
+                after_ambiguity_bound_type=_screen_candidate_bound_type(row),
+                screening_backend=screen.backend,
+                screening_status=row.status,
+                screening_certified=row.certified_by_screen,
+                screening_exact_solve_run=row.exact_solve_run,
+                screening_exact_solve_avoided=row.exact_solve_avoided,
+                screening_conservative_ambiguity=row.conservative_ambiguity,
+                screening_exact_ambiguity=row.exact_ambiguity,
+            )
+        )
+    if incomplete:
+        labels = ", ".join(
+            ", ".join(row.added_columns) or "(base)" for row in incomplete[:5]
+        )
+        raise RuntimeError(
+            "residopt refinement screen did not produce rankable intervals for: "
+            f"{labels}"
+        )
+
+    rows.sort(key=lambda item: item.reduction, reverse=True)
+    return tuple(rows if top is None else rows[:top]), screen
+
+
+def _screen_candidate_bound_type(row: Any) -> str:
+    return "exact" if row.exact_ambiguity is not None else "conservative_upper_bound"
 
 
 def recommend_refinement_interactions(
@@ -4878,6 +5086,9 @@ def _public_descent_summary_dict(report: PublicDescentReport) -> dict[str, Any]:
         "public_cells": len(report.grouped.problem.public_values),
         "top_fibers": [row.as_dict() for row in report.fibers],
         "refinements": [row.as_dict() for row in report.refinements],
+        "refinement_screening": None
+        if report.refinement_screening is None
+        else report.refinement_screening.as_dict(),
         "diagnostics": [row.as_dict() for row in report.diagnostics],
         "duals": [row.as_dict() for row in report.interval.dual_summary(top=20)],
         "estimator_uncertainty": None

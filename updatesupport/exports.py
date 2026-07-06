@@ -215,6 +215,19 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
                 "diagnostic_warning_count": sum(
                     1 for row in report.diagnostics if row.severity == "warning"
                 ),
+                "has_refinement_screening": report.refinement_screening is not None,
+                "refinement_screening_backend": None
+                if report.refinement_screening is None
+                else report.refinement_screening.backend,
+                "refinement_screening_certified_count": None
+                if report.refinement_screening is None
+                else report.refinement_screening.certified_count,
+                "refinement_screening_exact_solve_count": None
+                if report.refinement_screening is None
+                else report.refinement_screening.exact_solve_count,
+                "refinement_screening_exact_solve_avoided_count": None
+                if report.refinement_screening is None
+                else report.refinement_screening.exact_solve_avoided_count,
             },
         ),
         "worst_fibers": tuple(row.as_dict() for row in report.fibers),
@@ -230,6 +243,10 @@ def _public_descent_tables(report: PublicDescentReport) -> ReportTables:
             tables["estimator_uncertainty_confidence_core"] = (
                 report.estimator_uncertainty.confidence_core.as_dict(),
             )
+    if report.refinement_screening is not None:
+        screening_tables = report.refinement_screening.to_tables()
+        for name, rows in screening_tables.items():
+            tables[f"refinement_screening_{name}"] = rows
     return tables
 
 
