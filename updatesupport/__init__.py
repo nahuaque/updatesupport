@@ -175,6 +175,13 @@ from .report import (
     sensitivity_report,
     witness_report,
 )
+from .residopt_backend import (
+    ResidOptAvailability,
+    ResidOptEndpointCertificate,
+    ResidOptEndpointReport,
+    residopt_available,
+    residopt_l2_support_interval,
+)
 from .results import (
     AdequacyResult,
     CardinalGapResult,
@@ -278,6 +285,11 @@ __all__ = [
     "SupportFunctionTargetInterval",
     "SupportFunctionReport",
     "support_function_report",
+    "residopt_available",
+    "residopt_l2_support_interval",
+    "ResidOptAvailability",
+    "ResidOptEndpointCertificate",
+    "ResidOptEndpointReport",
     # Model-assisted and estimator handoff helpers.
     "fit_joint_distribution",
     "hidden_composition_uncertainty",
