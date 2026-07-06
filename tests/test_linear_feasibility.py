@@ -141,11 +141,36 @@ class NamedLinearFeasibilityTests(unittest.TestCase):
         self.assertIn("intervals", tables)
         self.assertIn("endpoints", tables)
         self.assertIn("active_constraints", tables)
+        self.assertIn("endpoint_constraint_diagnostics", tables)
         self.assertIn("Generic Disclosure Triangulation", report.to_json())
         self.assertEqual(
             json.loads(report.to_json())["backend"],
             "scipy-linprog",
         )
+
+    def test_endpoint_constraint_diagnostics_include_binding_duals(self):
+        report = us.solve_named_linear_feasibility(_example_problem())
+        interval = report.interval(
+            target="previous_component",
+            scenario="T2 + anchor",
+        )
+
+        diagnostics = interval.lower_endpoint.constraint_diagnostics
+        anchor_lower = next(
+            row
+            for row in diagnostics
+            if row.constraint == "current_anchor" and row.side == "lower"
+        )
+
+        self.assertIsInstance(anchor_lower, us.NamedLinearConstraintDiagnostic)
+        self.assertTrue(anchor_lower.binding)
+        self.assertEqual(anchor_lower.kind, "anchor")
+        self.assertEqual(anchor_lower.slack, 0.0)
+        self.assertIsNotNone(anchor_lower.solver_marginal)
+        self.assertIsNotNone(anchor_lower.target_marginal)
+        self.assertGreater(anchor_lower.dual_magnitude, 0.0)
+        self.assertIn("current_anchor:lower", interval.lower_endpoint.binding_constraint_sides)
+        self.assertIn("Dual / Binding Constraint Diagnostics", report.to_markdown())
 
     def test_constraint_attribution_ranks_interval_tightening(self):
         report = us.solve_named_linear_feasibility(_example_problem())

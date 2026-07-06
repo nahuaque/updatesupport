@@ -268,6 +268,8 @@ linear relaxations.
 Use `attribute_disclosure_constraints(...)` to rank which active disclosures
 actually narrow a target interval. It removes one constraint or constraint group
 at a time, re-solves the interval, and reports the resulting width increase.
+The underlying named-linear report also includes side-specific binding
+constraints and HiGHS marginal diagnostics for each solved endpoint.
 
 A complete generic example is available in
 `examples/disclosure_triangulation.py`:

@@ -745,6 +745,7 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIn("Width Reduction By Tier", markdown)
         self.assertIn("Constraint Value Attribution", markdown)
         self.assertIn("Ranked Constraint Values", markdown)
+        self.assertIn("Dual / Binding Constraint Diagnostics", markdown)
         self.assertIn("Binding Endpoint Constraints", markdown)
         self.assertIn("component_2024_anchor", markdown)
 

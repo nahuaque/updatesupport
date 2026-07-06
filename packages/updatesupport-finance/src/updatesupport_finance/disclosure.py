@@ -13,6 +13,7 @@ DisclosureExpression = us.NamedLinearExpression
 DisclosureConstraint = us.NamedLinearConstraint
 DisclosureConstraintAttribution = us.NamedLinearConstraintAttribution
 DisclosureConstraintAttributionReport = us.NamedLinearConstraintAttributionReport
+DisclosureConstraintDiagnostic = us.NamedLinearConstraintDiagnostic
 DisclosureTarget = us.NamedLinearTarget
 DisclosureTier = us.NamedLinearScenario
 DisclosureTriangulationSpec = us.NamedLinearFeasibilityProblem
@@ -299,6 +300,7 @@ __all__ = [
     "DisclosureConstraint",
     "DisclosureConstraintAttribution",
     "DisclosureConstraintAttributionReport",
+    "DisclosureConstraintDiagnostic",
     "DisclosureExpression",
     "DisclosureTarget",
     "DisclosureTier",

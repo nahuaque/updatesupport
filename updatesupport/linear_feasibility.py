@@ -279,6 +279,44 @@ class NamedLinearFeasibilityProblem:
 
 
 @dataclass(frozen=True)
+class NamedLinearConstraintDiagnostic:
+    """One endpoint-side diagnostic for an active linear constraint."""
+
+    scenario: str
+    target: str
+    endpoint: str
+    constraint: str
+    side: str
+    kind: str
+    provenance: str | None
+    expression_value: float
+    bound: float
+    slack: float
+    binding: bool
+    solver_marginal: float | None
+    target_marginal: float | None
+    dual_magnitude: float | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "scenario": self.scenario,
+            "target": self.target,
+            "endpoint": self.endpoint,
+            "constraint": self.constraint,
+            "side": self.side,
+            "kind": self.kind,
+            "provenance": self.provenance,
+            "expression_value": self.expression_value,
+            "bound": self.bound,
+            "slack": self.slack,
+            "binding": self.binding,
+            "solver_marginal": self.solver_marginal,
+            "target_marginal": self.target_marginal,
+            "dual_magnitude": self.dual_magnitude,
+        }
+
+
+@dataclass(frozen=True)
 class NamedLinearEndpoint:
     """One endpoint solve for a target under a scenario."""
 
@@ -290,11 +328,23 @@ class NamedLinearEndpoint:
     scaled_value: float | None = None
     assignment: Mapping[str, float] | None = None
     binding_constraints: tuple[str, ...] = ()
+    binding_constraint_sides: tuple[str, ...] = ()
+    constraint_diagnostics: tuple[NamedLinearConstraintDiagnostic, ...] = ()
     solver_status: int | None = None
     message: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "binding_constraints", tuple(self.binding_constraints))
+        object.__setattr__(
+            self,
+            "binding_constraint_sides",
+            tuple(self.binding_constraint_sides),
+        )
+        object.__setattr__(
+            self,
+            "constraint_diagnostics",
+            tuple(self.constraint_diagnostics),
+        )
         if self.assignment is not None:
             object.__setattr__(self, "assignment", dict(self.assignment))
 
@@ -308,6 +358,10 @@ class NamedLinearEndpoint:
             "scaled_value": self.scaled_value,
             "assignment": self.assignment,
             "binding_constraints": self.binding_constraints,
+            "binding_constraint_sides": self.binding_constraint_sides,
+            "constraint_diagnostics": [
+                row.as_dict() for row in self.constraint_diagnostics
+            ],
             "solver_status": self.solver_status,
             "message": self.message,
         }
@@ -614,6 +668,12 @@ class NamedLinearFeasibilityReport:
                 for row in self.intervals
                 for endpoint in (row.lower_endpoint, row.upper_endpoint)
             ),
+            "endpoint_constraint_diagnostics": tuple(
+                diagnostic.as_dict()
+                for row in self.intervals
+                for endpoint in (row.lower_endpoint, row.upper_endpoint)
+                for diagnostic in endpoint.constraint_diagnostics
+            ),
             "limitations": tuple(
                 {"limitation": limitation} for limitation in self.problem.limitations
             ),
@@ -660,6 +720,8 @@ class NamedLinearFeasibilityReport:
             )
         lines.extend(["## Binding Endpoint Constraints", ""])
         lines.extend(_binding_table(self))
+        lines.extend(["", "## Dual / Binding Constraint Diagnostics", ""])
+        lines.extend(_dual_diagnostic_table(self))
         lines.extend(["", "## Limitations", ""])
         lines.extend(f"- {limitation}" for limitation in self.problem.limitations)
         return "\n".join(lines)
@@ -982,6 +1044,15 @@ def coerce_named_linear_scenario(
     raise TypeError("scenarios must be NamedLinearScenario or mapping")
 
 
+@dataclass(frozen=True)
+class _InequalityRow:
+    constraint: NamedLinearConstraint
+    side: str
+    coefficients: tuple[float, ...]
+    rhs: float
+    bound: float
+
+
 def _solve_endpoint(
     problem: NamedLinearFeasibilityProblem,
     *,
@@ -998,15 +1069,35 @@ def _solve_endpoint(
 
     a_ub: list[list[float]] = []
     b_ub: list[float] = []
+    inequality_rows: list[_InequalityRow] = []
     for constraint in constraints:
         row = _coefficient_row(constraint.expression, index)
         constant = constraint.expression.constant
         if constraint.upper is not None:
             a_ub.append(row)
             b_ub.append(constraint.upper - constant)
+            inequality_rows.append(
+                _InequalityRow(
+                    constraint=constraint,
+                    side="upper",
+                    coefficients=tuple(row),
+                    rhs=constraint.upper - constant,
+                    bound=constraint.upper,
+                )
+            )
         if constraint.lower is not None:
-            a_ub.append([-value for value in row])
+            lower_row = [-value for value in row]
+            a_ub.append(lower_row)
             b_ub.append(constant - constraint.lower)
+            inequality_rows.append(
+                _InequalityRow(
+                    constraint=constraint,
+                    side="lower",
+                    coefficients=tuple(lower_row),
+                    rhs=constant - constraint.lower,
+                    bound=constraint.lower,
+                )
+            )
 
     result = linprog(
         objective,
@@ -1029,6 +1120,14 @@ def _solve_endpoint(
         variable.name: float(result.x[index[variable.name]]) for variable in variables
     }
     value = target.expression.evaluate(assignment)
+    diagnostics = _constraint_diagnostics(
+        scenario=scenario,
+        target=target,
+        sense=sense,
+        assignment=assignment,
+        rows=inequality_rows,
+        marginals=_inequality_marginals(result),
+    )
     return NamedLinearEndpoint(
         scenario=scenario.name,
         target=target.name,
@@ -1037,7 +1136,9 @@ def _solve_endpoint(
         value=value,
         scaled_value=value / target.scale,
         assignment=assignment,
-        binding_constraints=_binding_constraints(assignment, constraints),
+        binding_constraints=_binding_constraints(diagnostics),
+        binding_constraint_sides=_binding_constraint_sides(diagnostics),
+        constraint_diagnostics=diagnostics,
         solver_status=int(result.status),
         message=str(result.message),
     )
@@ -1087,24 +1188,76 @@ def _coefficient_row(
     return row
 
 
-def _binding_constraints(
-    assignment: Mapping[str, float],
-    constraints: Sequence[NamedLinearConstraint],
+def _constraint_diagnostics(
     *,
+    scenario: NamedLinearScenario,
+    target: NamedLinearTarget,
+    sense: str,
+    assignment: Mapping[str, float],
+    rows: Sequence[_InequalityRow],
+    marginals: Sequence[float | None],
     tol: float = 1e-7,
+) -> tuple[NamedLinearConstraintDiagnostic, ...]:
+    diagnostics: list[NamedLinearConstraintDiagnostic] = []
+    for index, row in enumerate(rows):
+        expression_value = row.constraint.expression.evaluate(assignment)
+        if row.side == "upper":
+            slack = row.bound - expression_value
+        else:
+            slack = expression_value - row.bound
+        solver_marginal = marginals[index] if index < len(marginals) else None
+        target_marginal = None
+        dual_magnitude = None
+        if solver_marginal is not None:
+            target_marginal = solver_marginal if sense == "min" else -solver_marginal
+            dual_magnitude = abs(target_marginal)
+        diagnostics.append(
+            NamedLinearConstraintDiagnostic(
+                scenario=scenario.name,
+                target=target.name,
+                endpoint=sense,
+                constraint=row.constraint.name,
+                side=row.side,
+                kind=row.constraint.kind,
+                provenance=row.constraint.provenance,
+                expression_value=expression_value,
+                bound=row.bound,
+                slack=max(0.0, slack) if abs(slack) <= tol else slack,
+                binding=abs(slack) <= tol,
+                solver_marginal=solver_marginal,
+                target_marginal=target_marginal,
+                dual_magnitude=dual_magnitude,
+            )
+        )
+    return tuple(diagnostics)
+
+
+def _inequality_marginals(result: Any) -> tuple[float | None, ...]:
+    ineqlin = getattr(result, "ineqlin", None)
+    marginals = getattr(ineqlin, "marginals", None)
+    if marginals is None:
+        return ()
+    return tuple(float(value) for value in marginals)
+
+
+def _binding_constraints(
+    diagnostics: Sequence[NamedLinearConstraintDiagnostic],
 ) -> tuple[str, ...]:
-    names = []
-    for constraint in constraints:
-        value = constraint.expression.evaluate(assignment)
-        lower_binding = (
-            constraint.lower is not None and abs(value - constraint.lower) <= tol
-        )
-        upper_binding = (
-            constraint.upper is not None and abs(value - constraint.upper) <= tol
-        )
-        if lower_binding or upper_binding:
-            names.append(constraint.name)
+    names: list[str] = []
+    for diagnostic in diagnostics:
+        if diagnostic.binding and diagnostic.constraint not in names:
+            names.append(diagnostic.constraint)
     return tuple(names)
+
+
+def _binding_constraint_sides(
+    diagnostics: Sequence[NamedLinearConstraintDiagnostic],
+) -> tuple[str, ...]:
+    return tuple(
+        f"{diagnostic.constraint}:{diagnostic.side}"
+        for diagnostic in diagnostics
+        if diagnostic.binding
+    )
 
 
 def _endpoint_status(status: int) -> str:
@@ -1270,7 +1423,7 @@ def _interval_table(report: NamedLinearFeasibilityReport) -> list[str]:
 
 def _binding_table(report: NamedLinearFeasibilityReport) -> list[str]:
     lines = [
-        "| Scenario | Target | Endpoint | Binding constraints |",
+        "| Scenario | Target | Endpoint | Binding constraint sides |",
         "| --- | --- | --- | --- |",
     ]
     for interval in report.intervals:
@@ -1283,12 +1436,65 @@ def _binding_table(report: NamedLinearFeasibilityReport) -> list[str]:
                         _escape_markdown(endpoint.target),
                         endpoint.sense,
                         _escape_markdown(
-                            ", ".join(endpoint.binding_constraints) or "none"
+                            ", ".join(endpoint.binding_constraint_sides) or "none"
                         ),
                     ]
                 )
                 + " |"
             )
+    return lines
+
+
+def _dual_diagnostic_table(
+    report: NamedLinearFeasibilityReport,
+    *,
+    top: int = 24,
+) -> list[str]:
+    diagnostics = [
+        diagnostic
+        for interval in report.intervals
+        for endpoint in (interval.lower_endpoint, interval.upper_endpoint)
+        for diagnostic in endpoint.constraint_diagnostics
+        if diagnostic.binding
+        or (diagnostic.dual_magnitude is not None and diagnostic.dual_magnitude > 1e-9)
+    ]
+    diagnostics.sort(
+        key=lambda row: (
+            -(row.dual_magnitude or 0.0),
+            not row.binding,
+            row.scenario,
+            row.target,
+            row.endpoint,
+            row.constraint,
+            row.side,
+        )
+    )
+    diagnostics = diagnostics[:top]
+    lines = [
+        "| Scenario | Target | Endpoint | Constraint | Side | Binding | Slack | Target marginal | Dual magnitude |",
+        "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |",
+    ]
+    if not diagnostics:
+        lines.append("| n/a | n/a | n/a | none | n/a | n/a | n/a | n/a | n/a |")
+        return lines
+    for row in diagnostics:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _escape_markdown(row.scenario),
+                    _escape_markdown(row.target),
+                    row.endpoint,
+                    _escape_markdown(row.constraint),
+                    row.side,
+                    "yes" if row.binding else "no",
+                    _format_optional(row.slack, ""),
+                    _format_optional(row.target_marginal, ""),
+                    _format_optional(row.dual_magnitude, ""),
+                ]
+            )
+            + " |"
+        )
     return lines
 
 
@@ -1345,6 +1551,7 @@ __all__ = [
     "NamedLinearConstraint",
     "NamedLinearConstraintAttribution",
     "NamedLinearConstraintAttributionReport",
+    "NamedLinearConstraintDiagnostic",
     "NamedLinearEndpoint",
     "NamedLinearExpression",
     "NamedLinearFeasibilityProblem",

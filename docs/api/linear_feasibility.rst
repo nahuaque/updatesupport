@@ -21,6 +21,7 @@ a public/hidden cell recomposition problem.
    updatesupport.NamedLinearEndpoint
    updatesupport.NamedLinearConstraintAttribution
    updatesupport.NamedLinearConstraintAttributionReport
+   updatesupport.NamedLinearConstraintDiagnostic
    updatesupport.NamedLinearVariable
    updatesupport.NamedLinearExpression
    updatesupport.NamedLinearConstraint
