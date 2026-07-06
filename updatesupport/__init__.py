@@ -179,6 +179,7 @@ from .residopt_backend import (
     ResidOptAvailability,
     ResidOptEndpointCertificate,
     ResidOptEndpointReport,
+    ResidOptL2EndpointCompiler,
     residopt_available,
     residopt_l2_support_interval,
 )
@@ -290,6 +291,7 @@ __all__ = [
     "ResidOptAvailability",
     "ResidOptEndpointCertificate",
     "ResidOptEndpointReport",
+    "ResidOptL2EndpointCompiler",
     # Model-assisted and estimator handoff helpers.
     "fit_joint_distribution",
     "hidden_composition_uncertainty",

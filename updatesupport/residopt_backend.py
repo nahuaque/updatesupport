@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
 from math import isclose
@@ -20,6 +20,16 @@ import numpy as np
 from .data import GroupedProblem
 from .problem import FiniteProblem
 from .targets import LinearTarget, UncertainLinearTarget
+
+
+_RESIDOPT_L2_NOTES = (
+    "Public-law equality is preserved by projecting shifts into the "
+    "nullspace of the public-incidence matrix.",
+    "Hidden-cell nonnegativity is not enforced in this experimental adapter; "
+    "the interval is conservative for the exact simplex-constrained endpoint.",
+    "The residopt certificate is exact for the compiled ellipsoidal support "
+    "atom, not for every constraint in the original updatesupport Q set.",
+)
 
 
 @dataclass(frozen=True)
@@ -95,6 +105,8 @@ class ResidOptEndpointReport:
     hidden_columns: tuple[str, ...] = ()
     lower_certificate: ResidOptEndpointCertificate | None = None
     upper_certificate: ResidOptEndpointCertificate | None = None
+    compiled_templates_built: int = 0
+    support_solves: int = 0
     notes: tuple[str, ...] = ()
     backend: str = "residopt"
 
@@ -138,6 +150,8 @@ class ResidOptEndpointReport:
             "ambiguity": self.ambiguity,
             "lower_support_value": self.lower_support_value,
             "upper_support_value": self.upper_support_value,
+            "compiled_templates_built": self.compiled_templates_built,
+            "support_solves": self.support_solves,
             "state_count": self.state_count,
             "public_cell_count": self.public_cell_count,
             "nullspace_dimension": self.nullspace_dimension,
@@ -172,6 +186,8 @@ class ResidOptEndpointReport:
                     "lower": self.lower,
                     "upper": self.upper,
                     "ambiguity": self.ambiguity,
+                    "compiled_templates_built": self.compiled_templates_built,
+                    "support_solves": self.support_solves,
                     "state_count": self.state_count,
                     "public_cell_count": self.public_cell_count,
                     "nullspace_dimension": self.nullspace_dimension,
@@ -202,6 +218,11 @@ class ResidOptEndpointReport:
             (
                 f"Backend: `{self.backend}`. Q preset: `{self.q_name}` "
                 f"with L2 radius `{_format_float(self.radius)}`."
+            ),
+            (
+                f"Compiled templates built for this call: "
+                f"`{self.compiled_templates_built}`. Support solves: "
+                f"`{self.support_solves}`."
             ),
             "",
             "| Observed | Lower | Upper | Ambiguity width |",
@@ -256,6 +277,217 @@ def residopt_available() -> ResidOptAvailability:
     return ResidOptAvailability(available=True, version=installed_version)
 
 
+@dataclass
+class ResidOptL2EndpointCompiler:
+    """Reusable residopt endpoint compiler for fixed-public-law L2 stress tests.
+
+    Create one compiler for a compiled :class:`GroupedProblem`, then call
+    :meth:`interval` repeatedly for different linear directions. The compiler
+    caches the public-law nullspace and a parameterized residopt support
+    template, so repeated calls avoid rebuilding the SOCP.
+    """
+
+    problem: FiniteProblem
+    observed_distribution: np.ndarray
+    public_law: dict[Hashable, float]
+    radius: float
+    public_columns: tuple[str, ...] = ()
+    hidden_columns: tuple[str, ...] = ()
+    solver: str | None = None
+    solver_options: Mapping[str, Any] = field(default_factory=dict)
+    nullspace: np.ndarray = field(repr=False, default_factory=lambda: np.empty((0, 0)))
+    _support_template: "_ResidOptSupportTemplate | None" = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    compiled_template_count: int = field(default=0, init=False)
+    support_solve_count: int = field(default=0, init=False)
+
+    @classmethod
+    def from_grouped(
+        cls,
+        grouped: GroupedProblem,
+        *,
+        observed_distribution: Mapping[Hashable, float] | Sequence[float] | None = None,
+        public_law: Mapping[Hashable, float] | None = None,
+        radius: float | None = None,
+        solver: str | None = None,
+        solver_options: Mapping[str, Any] | None = None,
+    ) -> "ResidOptL2EndpointCompiler":
+        """Build a reusable compiler from a tabular ``GroupedProblem``."""
+
+        base = _prepare_base_inputs(
+            grouped,
+            observed_distribution=observed_distribution,
+            public_law=public_law,
+            radius=radius,
+            solver=solver,
+            solver_options=solver_options,
+        )
+        return cls._from_base(base)
+
+    @classmethod
+    def from_problem(
+        cls,
+        problem: FiniteProblem,
+        *,
+        observed_distribution: Mapping[Hashable, float] | Sequence[float],
+        public_law: Mapping[Hashable, float],
+        radius: float,
+        solver: str | None = None,
+        solver_options: Mapping[str, Any] | None = None,
+    ) -> "ResidOptL2EndpointCompiler":
+        """Build a reusable compiler from an explicit finite problem."""
+
+        base = _prepare_base_inputs(
+            problem,
+            observed_distribution=observed_distribution,
+            public_law=public_law,
+            radius=radius,
+            solver=solver,
+            solver_options=solver_options,
+        )
+        return cls._from_base(base)
+
+    @classmethod
+    def _from_base(
+        cls,
+        base: "_PreparedResidOptBase",
+    ) -> "ResidOptL2EndpointCompiler":
+        incidence = _public_incidence_matrix(base.problem)
+        nullspace = _orthonormal_nullspace(incidence, tol=base.problem.tol)
+        return cls(
+            problem=base.problem,
+            observed_distribution=base.observed_distribution,
+            public_law=base.public_law,
+            radius=base.radius,
+            public_columns=base.public_columns,
+            hidden_columns=base.hidden_columns,
+            solver=base.solver,
+            solver_options=base.solver_options,
+            nullspace=nullspace,
+        )
+
+    @property
+    def state_count(self) -> int:
+        return len(self.problem.states)
+
+    @property
+    def public_cell_count(self) -> int:
+        return len(self.problem.public_values)
+
+    @property
+    def nullspace_dimension(self) -> int:
+        return int(self.nullspace.shape[1])
+
+    def interval(
+        self,
+        direction: Mapping[Hashable, float] | Sequence[float] | None = None,
+        *,
+        solver: str | None = None,
+        solver_options: Mapping[str, Any] | None = None,
+        title: str = "ResidOpt L2 Endpoint Compilation",
+    ) -> ResidOptEndpointReport:
+        """Evaluate an interval, reusing the cached support template when possible."""
+
+        direction_vector = _coerce_direction(self.problem, direction)
+        observed_value = float(np.dot(direction_vector, self.observed_distribution))
+        projected_direction = _project_to_nullspace(self.nullspace, direction_vector)
+        projected_negative_direction = _project_to_nullspace(
+            self.nullspace,
+            -direction_vector,
+        )
+
+        compiled_before = self.compiled_template_count
+        solves_before = self.support_solve_count
+        lower_compiled = self._solve_support(
+            projected_negative_direction,
+            endpoint="lower",
+            solver=solver,
+            solver_options=solver_options,
+        )
+        upper_compiled = self._solve_support(
+            projected_direction,
+            endpoint="upper",
+            solver=solver,
+            solver_options=solver_options,
+        )
+        target_contract = self.problem.target_contract
+        return ResidOptEndpointReport(
+            title=title,
+            observed_value=observed_value,
+            lower=observed_value - lower_compiled.value,
+            upper=observed_value + upper_compiled.value,
+            lower_support_value=lower_compiled.value,
+            upper_support_value=upper_compiled.value,
+            radius=self.radius,
+            q_name="l2_budget",
+            target_name=target_contract.name,
+            target_description=target_contract.description,
+            state_count=self.state_count,
+            public_cell_count=self.public_cell_count,
+            nullspace_dimension=self.nullspace_dimension,
+            public_columns=self.public_columns,
+            hidden_columns=self.hidden_columns,
+            lower_certificate=lower_compiled.certificate,
+            upper_certificate=upper_compiled.certificate,
+            compiled_templates_built=(
+                self.compiled_template_count - compiled_before
+            ),
+            support_solves=self.support_solve_count - solves_before,
+            notes=_RESIDOPT_L2_NOTES,
+        )
+
+    def _solve_support(
+        self,
+        projected_direction: np.ndarray,
+        *,
+        endpoint: str,
+        solver: str | None,
+        solver_options: Mapping[str, Any] | None,
+    ) -> "_CompiledSupport":
+        if (
+            self.radius == 0.0
+            or self.nullspace_dimension == 0
+            or np.linalg.norm(projected_direction, ord=2) == 0.0
+        ):
+            return _CompiledSupport(
+                value=0.0,
+                certificate=_deterministic_certificate(
+                    endpoint=endpoint,
+                    value=0.0,
+                    reason=(
+                        "No support solve is needed because the projected "
+                        "direction has zero admissible L2 variation."
+                    ),
+                ),
+            )
+
+        template = self._get_support_template()
+        effective_solver = self.solver if solver is None else solver
+        effective_solver_options = (
+            self.solver_options if solver_options is None else dict(solver_options)
+        )
+        result = template.solve(
+            projected_direction,
+            endpoint=endpoint,
+            solver=effective_solver,
+            solver_options=effective_solver_options,
+        )
+        self.support_solve_count += 1
+        return result
+
+    def _get_support_template(self) -> "_ResidOptSupportTemplate":
+        if self._support_template is None:
+            self._support_template = _compile_residopt_support_template(
+                dimension=self.nullspace_dimension,
+                radius=self.radius,
+            )
+            self.compiled_template_count += 1
+        return self._support_template
+
+
 def residopt_l2_support_interval(
     grouped_or_problem: GroupedProblem | FiniteProblem,
     *,
@@ -276,85 +508,29 @@ def residopt_l2_support_interval(
     simplex-constrained ``updatesupport`` endpoint.
     """
 
-    prepared = _prepare_inputs(
-        grouped_or_problem,
-        direction=direction,
-        observed_distribution=observed_distribution,
-        public_law=public_law,
-        radius=radius,
-        solver=solver,
-        solver_options=solver_options,
+    compiler = ResidOptL2EndpointCompiler._from_base(
+        _prepare_base_inputs(
+            grouped_or_problem,
+            observed_distribution=observed_distribution,
+            public_law=public_law,
+            radius=radius,
+            solver=solver,
+            solver_options=solver_options,
+        )
     )
-    problem = prepared.problem
-    target_contract = problem.target_contract
+    return compiler.interval(direction=direction, title=title)
 
-    incidence = _public_incidence_matrix(problem)
-    nullspace = _orthonormal_nullspace(incidence, tol=problem.tol)
-    observed_value = float(prepared.direction @ prepared.observed_distribution)
-    projected_direction = _project_to_nullspace(nullspace, prepared.direction)
-    projected_negative_direction = _project_to_nullspace(nullspace, -prepared.direction)
 
-    if prepared.radius == 0.0 or nullspace.shape[1] == 0:
-        lower_support = 0.0
-        upper_support = 0.0
-        lower_certificate = _deterministic_certificate(
-            endpoint="lower",
-            value=0.0,
-            reason="No admissible L2 hidden-composition shift is available.",
-        )
-        upper_certificate = _deterministic_certificate(
-            endpoint="upper",
-            value=0.0,
-            reason="No admissible L2 hidden-composition shift is available.",
-        )
-    else:
-        lower_compiled = _compile_residopt_ellipsoid_support(
-            projected_negative_direction,
-            radius=prepared.radius,
-            endpoint="lower",
-            solver=prepared.solver,
-            solver_options=prepared.solver_options,
-        )
-        upper_compiled = _compile_residopt_ellipsoid_support(
-            projected_direction,
-            radius=prepared.radius,
-            endpoint="upper",
-            solver=prepared.solver,
-            solver_options=prepared.solver_options,
-        )
-        lower_support = lower_compiled.value
-        upper_support = upper_compiled.value
-        lower_certificate = lower_compiled.certificate
-        upper_certificate = upper_compiled.certificate
-
-    notes = (
-        "Public-law equality is preserved by projecting shifts into the "
-        "nullspace of the public-incidence matrix.",
-        "Hidden-cell nonnegativity is not enforced in this experimental adapter; "
-        "the interval is conservative for the exact simplex-constrained endpoint.",
-        "The residopt certificate is exact for the compiled ellipsoidal support "
-        "atom, not for every constraint in the original updatesupport Q set.",
-    )
-    return ResidOptEndpointReport(
-        title=title,
-        observed_value=observed_value,
-        lower=observed_value - lower_support,
-        upper=observed_value + upper_support,
-        lower_support_value=lower_support,
-        upper_support_value=upper_support,
-        radius=prepared.radius,
-        q_name="l2_budget",
-        target_name=target_contract.name,
-        target_description=target_contract.description,
-        state_count=len(problem.states),
-        public_cell_count=len(problem.public_values),
-        nullspace_dimension=int(nullspace.shape[1]),
-        public_columns=prepared.public_columns,
-        hidden_columns=prepared.hidden_columns,
-        lower_certificate=lower_certificate,
-        upper_certificate=upper_certificate,
-        notes=notes,
-    )
+@dataclass(frozen=True)
+class _PreparedResidOptBase:
+    problem: FiniteProblem
+    observed_distribution: np.ndarray
+    public_law: dict[Hashable, float]
+    radius: float
+    solver: str | None
+    solver_options: Mapping[str, Any]
+    public_columns: tuple[str, ...]
+    hidden_columns: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -376,6 +552,74 @@ class _CompiledSupport:
     certificate: ResidOptEndpointCertificate
 
 
+@dataclass
+class _ResidOptSupportTemplate:
+    dimension: int
+    radius: float
+    compiled: Any
+    direction_parameter: Any
+    solve_count: int = 0
+
+    def solve(
+        self,
+        projected_direction: np.ndarray,
+        *,
+        endpoint: str,
+        solver: str | None,
+        solver_options: Mapping[str, Any],
+    ) -> _CompiledSupport:
+        self.direction_parameter.value = np.asarray(projected_direction, dtype=float)
+        solve_kwargs = dict(solver_options)
+        if solver is not None:
+            solve_kwargs["solver"] = solver
+        value = float(self.compiled.solve(**solve_kwargs))
+        status = self.compiled.problem.status
+        if status not in {"optimal", "optimal_inaccurate"}:
+            raise RuntimeError(f"residopt endpoint solve failed with status {status!r}")
+        self.solve_count += 1
+
+        residopt_certificate = (
+            self.compiled.certificates[0] if self.compiled.certificates else None
+        )
+        metadata = (
+            {}
+            if residopt_certificate is None
+            else dict(residopt_certificate.metadata or {})
+        )
+        metadata["public_nullspace_dimension"] = self.dimension
+        metadata["projected_direction_norm"] = float(
+            np.linalg.norm(projected_direction, ord=2)
+        )
+        metadata["parameterized_template"] = True
+        metadata["template_solve_count"] = self.solve_count
+        reason = (
+            "residopt certifies the parameterized ellipsoidal support atom "
+            "exactly. updatesupport marks the endpoint conservative because "
+            "this adapter relaxes away hidden-cell nonnegativity from the "
+            "original Q set."
+        )
+        return _CompiledSupport(
+            value=value,
+            certificate=ResidOptEndpointCertificate(
+                endpoint=endpoint,
+                label=_enum_value(getattr(residopt_certificate, "label", "exact")),
+                template=getattr(residopt_certificate, "template", None),
+                output=getattr(residopt_certificate, "output", None),
+                strategy=_enum_value(getattr(residopt_certificate, "strategy", None)),
+                solver_status=status,
+                value=value,
+                exact_for_compiled_support=True,
+                exact_for_updatesupport_q=False,
+                conservative_for_updatesupport_q=True,
+                reason=reason,
+                residopt_diagnostics=tuple(
+                    getattr(residopt_certificate, "diagnostics", ()) or ()
+                ),
+                metadata=metadata,
+            ),
+        )
+
+
 def _prepare_inputs(
     grouped_or_problem: GroupedProblem | FiniteProblem,
     *,
@@ -386,6 +630,36 @@ def _prepare_inputs(
     solver: str | None,
     solver_options: Mapping[str, Any] | None,
 ) -> _PreparedResidOptInputs:
+    base = _prepare_base_inputs(
+        grouped_or_problem,
+        observed_distribution=observed_distribution,
+        public_law=public_law,
+        radius=radius,
+        solver=solver,
+        solver_options=solver_options,
+    )
+    return _PreparedResidOptInputs(
+        problem=base.problem,
+        direction=_coerce_direction(base.problem, direction),
+        observed_distribution=base.observed_distribution,
+        public_law=base.public_law,
+        radius=base.radius,
+        solver=base.solver,
+        solver_options=base.solver_options,
+        public_columns=base.public_columns,
+        hidden_columns=base.hidden_columns,
+    )
+
+
+def _prepare_base_inputs(
+    grouped_or_problem: GroupedProblem | FiniteProblem,
+    *,
+    observed_distribution: Mapping[Hashable, float] | Sequence[float] | None,
+    public_law: Mapping[Hashable, float] | None,
+    radius: float | None,
+    solver: str | None,
+    solver_options: Mapping[str, Any] | None,
+) -> _PreparedResidOptBase:
     if isinstance(grouped_or_problem, GroupedProblem):
         grouped = grouped_or_problem
         problem = grouped.problem
@@ -420,18 +694,6 @@ def _prepare_inputs(
     if radius < 0:
         raise ValueError("radius must be non-negative")
 
-    if direction is None:
-        if not isinstance(problem.target_functional, LinearTarget | UncertainLinearTarget):
-            raise TypeError(
-                "residopt_l2_support_interval currently requires an explicit "
-                "direction for non-linear target contracts."
-            )
-        direction_vector = tuple(
-            problem.estimand_map[state] for state in problem.states
-        )
-    else:
-        direction_vector = problem._coerce_vector(direction)
-
     observed_vector = problem._coerce_distribution(observed_distribution)
     public_law_dict = problem._coerce_public_law(public_law)
     observed_public_law = problem.public_law(observed_vector)
@@ -451,9 +713,8 @@ def _prepare_inputs(
             f"delta-space compilation; mismatches: {mismatches!r}"
         )
 
-    return _PreparedResidOptInputs(
+    return _PreparedResidOptBase(
         problem=problem,
-        direction=np.asarray(direction_vector, dtype=float),
         observed_distribution=np.asarray(observed_vector, dtype=float),
         public_law=public_law_dict,
         radius=float(radius),
@@ -461,6 +722,70 @@ def _prepare_inputs(
         solver_options=dict(solver_options or {}),
         public_columns=public_columns,
         hidden_columns=hidden_columns,
+    )
+
+
+def _coerce_direction(
+    problem: FiniteProblem,
+    direction: Mapping[Hashable, float] | Sequence[float] | None,
+) -> np.ndarray:
+    if direction is None:
+        if not isinstance(problem.target_functional, LinearTarget | UncertainLinearTarget):
+            raise TypeError(
+                "residopt_l2_support_interval currently requires an explicit "
+                "direction for non-linear target contracts."
+            )
+        direction_vector = tuple(
+            problem.estimand_map[state] for state in problem.states
+        )
+    else:
+        direction_vector = problem._coerce_vector(direction)
+    return np.asarray(direction_vector, dtype=float)
+
+
+def _compile_residopt_support_template(
+    *,
+    dimension: int,
+    radius: float,
+) -> _ResidOptSupportTemplate:
+    if dimension <= 0:
+        raise ValueError("dimension must be positive")
+    if radius <= 0:
+        raise ValueError("radius must be positive")
+
+    residopt = _load_residopt()
+    cp = import_module("cvxpy")
+    decision = cp.Variable(dimension + 1, name="cached_l2_support_decision")
+    direction_parameter = cp.Parameter(dimension, name="projected_direction")
+    selector = np.concatenate(
+        [np.zeros((dimension, 1)), np.eye(dimension)],
+        axis=1,
+    )
+    epigraph_selector = np.concatenate([[1.0], np.zeros(dimension)])
+    atom = residopt.EllipsoidSupportAtom(
+        atom_id="cached_l2_public_nullspace_support",
+        C=np.eye(dimension),
+        rho=float(radius),
+        S=selector,
+        s0=np.zeros(dimension),
+        g=epigraph_selector,
+        h=0.0,
+    )
+    compiler = residopt.ResidualCompiler()
+    compiled = compiler.compile_problem(
+        objective=decision[0],
+        x=decision,
+        atoms=(atom,),
+        base_constraints=(decision[1:] == direction_parameter,),
+        minimize=True,
+    )
+    if compiled.oracle_atoms:
+        raise RuntimeError("residopt selected oracle mode for the endpoint atom")
+    return _ResidOptSupportTemplate(
+        dimension=dimension,
+        radius=float(radius),
+        compiled=compiled,
+        direction_parameter=direction_parameter,
     )
 
 
@@ -472,8 +797,6 @@ def _compile_residopt_ellipsoid_support(
     solver: str | None,
     solver_options: Mapping[str, Any],
 ) -> _CompiledSupport:
-    residopt = _load_residopt()
-    cp = import_module("cvxpy")
     dimension = int(projected_direction.shape[0])
     if dimension == 0 or np.linalg.norm(projected_direction, ord=2) == 0.0:
         return _CompiledSupport(
@@ -484,70 +807,14 @@ def _compile_residopt_ellipsoid_support(
                 reason="The target direction is orthogonal to all public-law-preserving shifts.",
             ),
         )
-
-    gamma = cp.Variable(1, name=f"{endpoint}_support")
-    atom = residopt.EllipsoidSupportAtom(
-        atom_id=f"{endpoint}_l2_public_nullspace_support",
-        C=np.eye(dimension),
-        rho=float(radius),
-        S=np.zeros((dimension, 1)),
-        s0=projected_direction,
-        g=np.array([1.0]),
-        h=0.0,
-    )
-    compiler = residopt.ResidualCompiler()
-    compiled = compiler.compile_problem(
-        objective=gamma[0],
-        x=gamma,
-        atoms=(atom,),
-        base_constraints=(),
-        minimize=True,
-    )
-    if compiled.oracle_atoms:
-        raise RuntimeError("residopt selected oracle mode for the endpoint atom")
-
-    solve_kwargs = dict(solver_options)
-    if solver is not None:
-        solve_kwargs["solver"] = solver
-    value = float(compiled.solve(**solve_kwargs))
-    status = compiled.problem.status
-    if status not in {"optimal", "optimal_inaccurate"}:
-        raise RuntimeError(f"residopt endpoint solve failed with status {status!r}")
-
-    residopt_certificate = compiled.certificates[0] if compiled.certificates else None
-    metadata = (
-        {}
-        if residopt_certificate is None
-        else dict(residopt_certificate.metadata or {})
-    )
-    metadata["public_nullspace_dimension"] = dimension
-    metadata["projected_direction_norm"] = float(
-        np.linalg.norm(projected_direction, ord=2)
-    )
-    reason = (
-        "residopt certifies the ellipsoidal support atom exactly. updatesupport "
-        "marks the endpoint conservative because this adapter relaxes away "
-        "hidden-cell nonnegativity from the original Q set."
-    )
-    return _CompiledSupport(
-        value=value,
-        certificate=ResidOptEndpointCertificate(
-            endpoint=endpoint,
-            label=_enum_value(getattr(residopt_certificate, "label", "exact")),
-            template=getattr(residopt_certificate, "template", None),
-            output=getattr(residopt_certificate, "output", None),
-            strategy=_enum_value(getattr(residopt_certificate, "strategy", None)),
-            solver_status=status,
-            value=value,
-            exact_for_compiled_support=True,
-            exact_for_updatesupport_q=False,
-            conservative_for_updatesupport_q=True,
-            reason=reason,
-            residopt_diagnostics=tuple(
-                getattr(residopt_certificate, "diagnostics", ()) or ()
-            ),
-            metadata=metadata,
-        ),
+    return _compile_residopt_support_template(
+        dimension=dimension,
+        radius=radius,
+    ).solve(
+        projected_direction,
+        endpoint=endpoint,
+        solver=solver,
+        solver_options=solver_options,
     )
 
 
@@ -644,6 +911,7 @@ __all__ = [
     "ResidOptAvailability",
     "ResidOptEndpointCertificate",
     "ResidOptEndpointReport",
+    "ResidOptL2EndpointCompiler",
     "residopt_available",
     "residopt_l2_support_interval",
 ]

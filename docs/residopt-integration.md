@@ -23,6 +23,26 @@ report = us.residopt_l2_support_interval(grouped)
 print(report.to_markdown())
 ```
 
+For repeated endpoint evaluations, build a reusable compiler once:
+
+```python
+compiler = us.ResidOptL2EndpointCompiler.from_grouped(grouped)
+
+primary = compiler.interval()
+channel_direction = {
+    state: 1.0 if state[-1] == "paid" else 0.0
+    for state in grouped.problem.states
+}
+channel = compiler.interval(direction=channel_direction)
+
+print(compiler.compiled_template_count)
+print(compiler.support_solve_count)
+```
+
+The compiler caches the public-incidence nullspace and a parameterized residopt
+SOCP template. The first interval builds the template; later intervals update
+the projected direction parameter and solve the same compiled problem.
+
 During local development with a sibling checkout, run with:
 
 ```bash
@@ -86,7 +106,8 @@ frontier search, claim repair, and other workflows that evaluate many candidate
 public representations. `residopt` gives `updatesupport` a place to route
 subproblems through compiled support-function certificates, oracle decisions,
 and timing metadata without making the core package depend on a separate
-compiler.
+compiler. Use `ResidOptL2EndpointCompiler` when many target directions share the
+same fixed public representation and L2 radius.
 
 ## Current Limits
 
