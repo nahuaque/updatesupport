@@ -159,6 +159,31 @@ inconclusive and exact fallback runs, the returned value is marked `exact`.
 through `refinement_screening_backend="residopt"` and includes the screening
 summary in Markdown and structured exports.
 
+The public-representation frontier search can opt into conservative screening
+as well:
+
+```python
+frontier = us.public_representation_frontier(
+    data,
+    base_public=["region"],
+    hidden=["region", "channel", "tenure_band"],
+    target="metric",
+    weight="weight",
+    candidate_refinements=["channel", "tenure_band"],
+    q_presets=[us.q_l2_budget(0.05)],
+    ambiguity_limit=0.01,
+    screening_backend="residopt",
+)
+
+print(frontier.screening.as_dict())
+```
+
+This path uses one cached residopt context per frontier stress-test scenario. If
+a candidate representation is certified by the conservative screen, the scenario
+ambiguity is marked as a `conservative_upper_bound`; if the screen is
+inconclusive and exact fallback is enabled, the scenario ambiguity is marked
+`exact`.
+
 ## What It Compiles
 
 For a fixed public law and observed hidden distribution `q0`, the adapter writes

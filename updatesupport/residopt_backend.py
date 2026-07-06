@@ -638,6 +638,33 @@ class ResidOptRefinementScreenContext:
             notes=_RESIDOPT_L2_NOTES,
         )
 
+    def evaluate_public_representation(
+        self,
+        added_columns: Sequence[str] = (),
+        *,
+        ambiguity_limit: float | None = None,
+        exact_fallback: bool = True,
+    ) -> ResidOptRefinementScreenCandidate:
+        """Screen one public representation, reusing this context's caches."""
+
+        ordered_added = tuple(dict.fromkeys(added_columns))
+        unknown = [
+            column
+            for column in ordered_added
+            if column not in self.hidden_columns or column in self.public_columns
+        ]
+        if unknown:
+            raise ValueError(
+                "added_columns must be hidden columns not already public; "
+                f"invalid columns: {unknown!r}"
+            )
+        return self._screen_public_representation(
+            self.public_columns + ordered_added,
+            added_columns=ordered_added,
+            ambiguity_limit=ambiguity_limit,
+            exact_fallback=exact_fallback,
+        )
+
     def _screen_public_representation(
         self,
         columns: tuple[str, ...],

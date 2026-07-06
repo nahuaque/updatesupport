@@ -390,11 +390,25 @@ def _frontier_tables(report: PublicRepresentationFrontier) -> ReportTables:
                 "best_scalarized": None
                 if report.best_scalarized is None
                 else report.best_scalarized.added_columns,
+                "has_screening": report.screening is not None,
+                "screening_backend": None
+                if report.screening is None
+                else report.screening.backend,
+                "screening_certified_count": None
+                if report.screening is None
+                else report.screening.certified_count,
+                "screening_exact_solve_count": None
+                if report.screening is None
+                else report.screening.exact_solve_count,
+                "screening_exact_solve_avoided_count": None
+                if report.screening is None
+                else report.screening.exact_solve_avoided_count,
             },
         ),
         "search_trace": ()
         if report.search_trace is None
         else (report.search_trace.as_dict(),),
+        "screening": () if report.screening is None else (report.screening.as_dict(),),
         "screened_refinements": tuple(
             row.as_dict() for row in report.screened_refinements
         ),

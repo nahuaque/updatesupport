@@ -82,6 +82,14 @@ class FrontierScenarioResult:
     ambiguity: float
     observed_value: float
     public_adequate: bool
+    bound_type: str = "exact"
+    screening_backend: str | None = None
+    screening_status: str | None = None
+    screening_certified: bool = False
+    screening_exact_solve_run: bool = False
+    screening_exact_solve_avoided: bool = False
+    screening_conservative_ambiguity: float | None = None
+    screening_exact_ambiguity: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -97,6 +105,16 @@ class FrontierScenarioResult:
             "ambiguity": self.ambiguity,
             "observed_value": self.observed_value,
             "public_adequate": self.public_adequate,
+            "bound_type": self.bound_type,
+            "screening_backend": self.screening_backend,
+            "screening_status": self.screening_status,
+            "screening_certified": self.screening_certified,
+            "screening_exact_solve_run": self.screening_exact_solve_run,
+            "screening_exact_solve_avoided": self.screening_exact_solve_avoided,
+            "screening_conservative_ambiguity": (
+                self.screening_conservative_ambiguity
+            ),
+            "screening_exact_ambiguity": self.screening_exact_ambiguity,
         }
 
 
@@ -149,6 +167,44 @@ class FrontierSearchTrace:
             "oracle_iterations": self.oracle_iterations,
             "oracle_rejections": self.oracle_rejections,
             "stopping_reason": self.stopping_reason,
+        }
+
+
+@dataclass(frozen=True)
+class FrontierScreeningSummary:
+    """Opt-in conservative endpoint screening used during frontier evaluation."""
+
+    backend: str
+    candidate_count: int
+    endpoint_count: int
+    scenario_count: int
+    certified_count: int
+    exact_solve_count: int
+    exact_solve_avoided_count: int
+    conservative_endpoint_count: int
+    exact_endpoint_count: int
+    support_solve_count: int
+    compiled_template_count: int
+    exact_fallback: bool
+    ambiguity_limit: float | None
+    reason: str = ""
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "backend": self.backend,
+            "candidate_count": self.candidate_count,
+            "endpoint_count": self.endpoint_count,
+            "scenario_count": self.scenario_count,
+            "certified_count": self.certified_count,
+            "exact_solve_count": self.exact_solve_count,
+            "exact_solve_avoided_count": self.exact_solve_avoided_count,
+            "conservative_endpoint_count": self.conservative_endpoint_count,
+            "exact_endpoint_count": self.exact_endpoint_count,
+            "support_solve_count": self.support_solve_count,
+            "compiled_template_count": self.compiled_template_count,
+            "exact_fallback": self.exact_fallback,
+            "ambiguity_limit": self.ambiguity_limit,
+            "reason": self.reason,
         }
 
 
@@ -404,6 +460,7 @@ class PublicRepresentationFrontier:
     title: str = "Public Representation Frontier"
     row_count: int | None = None
     search_trace: FrontierSearchTrace | None = None
+    screening: FrontierScreeningSummary | None = None
 
     @property
     def minimal_stable(self) -> PublicRepresentationCandidate | None:
@@ -553,6 +610,7 @@ class PublicRepresentationFrontier:
             "search_trace": None
             if self.search_trace is None
             else self.search_trace.as_dict(),
+            "screening": None if self.screening is None else self.screening.as_dict(),
             "minimal_stable": None
             if self.minimal_stable is None
             else self.minimal_stable.as_dict(),
@@ -620,6 +678,17 @@ class PublicRepresentationFrontier:
                     "- Support-function oracle rejections: "
                     f"{self.search_trace.oracle_rejections}"
                 )
+        if self.screening is not None:
+            lines.extend(
+                [
+                    f"- Screening backend: {self.screening.backend}",
+                    "- Screening outcomes: "
+                    f"certified {self.screening.certified_count}/"
+                    f"{self.screening.endpoint_count} scenario endpoints, "
+                    f"ran {self.screening.exact_solve_count} exact fallbacks, "
+                    f"avoided {self.screening.exact_solve_avoided_count} exact solves",
+                ]
+            )
         if self.ambiguity_limit is not None:
             lines.append(f"- Ambiguity limit: {self.ambiguity_limit:.4f}")
         if self.bucket_budget is not None:
@@ -733,6 +802,8 @@ def public_representation_frontier(
     must_exclude: Sequence[str] | None = None,
     enforce_bucket_budget: bool = False,
     include_base: bool = True,
+    screening_backend: str | None = None,
+    screening_exact_fallback: bool = True,
     title: str = "Public Representation Frontier",
 ) -> PublicRepresentationFrontier:
     """Search public-column refinements and return the Pareto frontier.
@@ -792,6 +863,13 @@ def public_representation_frontier(
         raise TypeError("mip_solver_options must be a mapping or None")
     if not q_presets:
         raise ValueError("q_presets must contain at least one preset")
+    if screening_backend is not None and screening_backend not in {
+        "residopt",
+        "residopt_l2",
+    }:
+        raise ValueError(
+            "screening_backend must be None, 'residopt', or 'residopt_l2'"
+        )
 
     base_public_tuple = tuple(base_public)
     hidden_tuple = tuple(hidden)
@@ -872,6 +950,8 @@ def public_representation_frontier(
         enforce_bucket_budget=effective_enforce_bucket_budget,
         minimum_objective=normalized_minimum_objective,
         candidate_space_size=candidate_space_size,
+        screening_backend=screening_backend,
+        screening_exact_fallback=screening_exact_fallback,
     )
 
     candidates_tuple = tuple(sorted(search_result.candidates, key=_candidate_sort_key))
@@ -893,6 +973,7 @@ def public_representation_frontier(
         title=title,
         row_count=row_count,
         search_trace=search_result.trace,
+        screening=search_result.screening,
     )
 
 
@@ -900,6 +981,7 @@ def public_representation_frontier(
 class _SearchResult:
     candidates: tuple[PublicRepresentationCandidate, ...]
     trace: FrontierSearchTrace
+    screening: FrontierScreeningSummary | None = None
 
 
 @dataclass(frozen=True)
@@ -932,6 +1014,69 @@ class _MipSolveResult:
 
 
 @dataclass
+class _FrontierScreeningState:
+    backend: str
+    contexts: dict[str, Any]
+    ambiguity_limit: float | None
+    exact_fallback: bool
+    endpoint_count: int = 0
+    certified_count: int = 0
+    exact_solve_count: int = 0
+    exact_solve_avoided_count: int = 0
+    conservative_endpoint_count: int = 0
+    exact_endpoint_count: int = 0
+    support_solve_count: int = 0
+    compiled_template_count: int = 0
+
+    @property
+    def scenario_count(self) -> int:
+        return len(self.contexts)
+
+    def evaluate(
+        self,
+        spec: _ScenarioSpec,
+        added_columns: tuple[str, ...],
+    ) -> Any:
+        screen = self.contexts[spec.scenario].evaluate_public_representation(
+            added_columns,
+            ambiguity_limit=self.ambiguity_limit,
+            exact_fallback=self.exact_fallback,
+        )
+        self.endpoint_count += 1
+        self.certified_count += int(screen.certified_by_screen)
+        self.exact_solve_count += int(screen.exact_solve_run)
+        self.exact_solve_avoided_count += int(screen.exact_solve_avoided)
+        self.support_solve_count += screen.support_solves
+        self.compiled_template_count += screen.compiled_templates_built
+        if screen.exact_ambiguity is None:
+            self.conservative_endpoint_count += 1
+        else:
+            self.exact_endpoint_count += 1
+        return screen
+
+    def summary(self, *, candidate_count: int) -> FrontierScreeningSummary:
+        return FrontierScreeningSummary(
+            backend=self.backend,
+            candidate_count=candidate_count,
+            endpoint_count=self.endpoint_count,
+            scenario_count=self.scenario_count,
+            certified_count=self.certified_count,
+            exact_solve_count=self.exact_solve_count,
+            exact_solve_avoided_count=self.exact_solve_avoided_count,
+            conservative_endpoint_count=self.conservative_endpoint_count,
+            exact_endpoint_count=self.exact_endpoint_count,
+            support_solve_count=self.support_solve_count,
+            compiled_template_count=self.compiled_template_count,
+            exact_fallback=self.exact_fallback,
+            ambiguity_limit=self.ambiguity_limit,
+            reason=(
+                "Conservative residopt L2 screening was used for compatible "
+                "frontier scenario endpoints."
+            ),
+        )
+
+
+@dataclass
 class _EvaluationState:
     data: Any
     base_public: tuple[str, ...]
@@ -944,6 +1089,7 @@ class _EvaluationState:
     max_evaluations: int | None
     scalarized_weights: dict[str, float] | None
     enforce_bucket_budget: bool
+    screening_state: "_FrontierScreeningState | None"
     candidates_by_subset: dict[
         tuple[str, ...],
         PublicRepresentationCandidate,
@@ -986,6 +1132,7 @@ class _EvaluationState:
                 weight=self.weight,
                 ambiguity_limit=self.ambiguity_limit,
                 scalarized_weights=self.scalarized_weights,
+                screening_state=self.screening_state,
             )
             self.candidates_by_subset[subset] = candidate
 
@@ -1034,7 +1181,19 @@ def _search_candidates(
     enforce_bucket_budget: bool,
     minimum_objective: str,
     candidate_space_size: int,
+    screening_backend: str | None,
+    screening_exact_fallback: bool,
 ) -> _SearchResult:
+    screening_state = _build_frontier_screening_state(
+        data,
+        base_public=base_public,
+        target=target,
+        scenario_specs=scenario_specs,
+        weight=weight,
+        ambiguity_limit=ambiguity_limit,
+        screening_backend=screening_backend,
+        exact_fallback=screening_exact_fallback,
+    )
     state = _EvaluationState(
         data=data,
         base_public=base_public,
@@ -1047,6 +1206,7 @@ def _search_candidates(
         max_evaluations=max_evaluations,
         scalarized_weights=scalarized_weights,
         enforce_bucket_budget=enforce_bucket_budget,
+        screening_state=screening_state,
         candidates_by_subset={},
         result_subsets=[],
         result_subset_set=set(),
@@ -1132,6 +1292,11 @@ def _search_candidates(
     )
     if state.evaluation_limit_hit:
         stopping_reason = "max_evaluations reached"
+    screening = None if screening_state is None else screening_state.summary(
+        candidate_count=state.evaluated_count,
+    )
+    if screening is not None and screening.conservative_endpoint_count:
+        exact = False
     return _SearchResult(
         candidates=state.result_candidates(),
         trace=FrontierSearchTrace(
@@ -1167,6 +1332,58 @@ def _search_candidates(
             else mip_outcome.oracle_rejections,
             stopping_reason=stopping_reason,
         ),
+        screening=screening,
+    )
+
+
+def _build_frontier_screening_state(
+    data: Any,
+    *,
+    base_public: tuple[str, ...],
+    target: TabularTarget,
+    scenario_specs: tuple[_ScenarioSpec, ...],
+    weight: str | None,
+    ambiguity_limit: float | None,
+    screening_backend: str | None,
+    exact_fallback: bool,
+) -> _FrontierScreeningState | None:
+    if screening_backend is None:
+        return None
+    if screening_backend not in {"residopt", "residopt_l2"}:
+        raise ValueError(
+            "screening_backend must be None, 'residopt', or 'residopt_l2'"
+        )
+    for spec in scenario_specs:
+        preset = normalize_q_preset(spec.q)
+        if preset is None or preset.name != "l2_budget":
+            raise ValueError(
+                "frontier screening_backend='residopt' currently supports only "
+                "q_l2_budget(...) scenarios"
+            )
+        if preset.radius is None:
+            raise ValueError(
+                "frontier screening_backend='residopt' requires q_l2_budget "
+                "scenarios with an explicit radius"
+            )
+
+    from .residopt_backend import ResidOptRefinementScreenContext
+
+    contexts = {}
+    for spec in scenario_specs:
+        contexts[spec.scenario] = ResidOptRefinementScreenContext(
+            data,
+            public=base_public,
+            hidden=spec.hidden_columns,
+            target=target,
+            weight=weight,
+            min_cell_weight=spec.min_cell_weight,
+            q=spec.q,
+        )
+    return _FrontierScreeningState(
+        backend="residopt",
+        contexts=contexts,
+        ambiguity_limit=ambiguity_limit,
+        exact_fallback=exact_fallback,
     )
 
 
@@ -2082,26 +2299,59 @@ def _evaluate_candidate(
     weight: str | None,
     ambiguity_limit: float | None,
     scalarized_weights: dict[str, float] | None,
+    screening_state: _FrontierScreeningState | None = None,
 ) -> PublicRepresentationCandidate:
     public_columns = base_public + added_columns
     scenarios = []
     public_cell_counts = []
     hidden_cell_counts = []
     for spec in scenario_specs:
-        grouped = from_dataframe(
-            data,
-            public=public_columns,
-            hidden=spec.hidden_columns,
-            target=target,
-            weight=weight,
-            min_cell_weight=spec.min_cell_weight,
-            q=spec.q,
-        )
-        interval = grouped.problem.global_transport_modulus()
-        public_cells = len(grouped.problem.public_values)
-        hidden_cells = len(grouped.problem.states)
-        public_cell_counts.append(public_cells)
-        hidden_cell_counts.append(hidden_cells)
+        if screening_state is None:
+            grouped = from_dataframe(
+                data,
+                public=public_columns,
+                hidden=spec.hidden_columns,
+                target=target,
+                weight=weight,
+                min_cell_weight=spec.min_cell_weight,
+                q=spec.q,
+            )
+            interval = grouped.problem.global_transport_modulus()
+            public_cells = len(grouped.problem.public_values)
+            hidden_cells = len(grouped.problem.states)
+            public_cell_counts.append(public_cells)
+            hidden_cell_counts.append(hidden_cells)
+            scenarios.append(
+                FrontierScenarioResult(
+                    scenario=spec.scenario,
+                    q_name=q_name(spec.q),
+                    q_description=q_description(spec.q),
+                    min_cell_weight=spec.min_cell_weight,
+                    hidden_columns=spec.hidden_columns,
+                    public_cells=public_cells,
+                    hidden_cells=hidden_cells,
+                    lower=interval.lower,
+                    upper=interval.upper,
+                    ambiguity=interval.diameter,
+                    observed_value=_observed_value(grouped),
+                    public_adequate=grouped.problem.is_public_adequate(),
+                )
+            )
+            continue
+
+        screened = screening_state.evaluate(spec, added_columns)
+        if (
+            screened.final_lower is None
+            or screened.final_upper is None
+            or screened.final_ambiguity is None
+            or screened.observed_value is None
+        ):
+            raise RuntimeError(
+                "residopt frontier screening did not produce a usable endpoint "
+                f"for scenario {spec.scenario!r} and columns {public_columns!r}"
+            )
+        public_cell_counts.append(screened.public_cells)
+        hidden_cell_counts.append(screened.hidden_cells)
         scenarios.append(
             FrontierScenarioResult(
                 scenario=spec.scenario,
@@ -2109,13 +2359,21 @@ def _evaluate_candidate(
                 q_description=q_description(spec.q),
                 min_cell_weight=spec.min_cell_weight,
                 hidden_columns=spec.hidden_columns,
-                public_cells=public_cells,
-                hidden_cells=hidden_cells,
-                lower=interval.lower,
-                upper=interval.upper,
-                ambiguity=interval.diameter,
-                observed_value=_observed_value(grouped),
-                public_adequate=grouped.problem.is_public_adequate(),
+                public_cells=screened.public_cells,
+                hidden_cells=screened.hidden_cells,
+                lower=screened.final_lower,
+                upper=screened.final_upper,
+                ambiguity=screened.final_ambiguity,
+                observed_value=screened.observed_value,
+                public_adequate=screened.final_ambiguity <= 1e-9,
+                bound_type=_screened_frontier_bound_type(screened),
+                screening_backend=screening_state.backend,
+                screening_status=screened.status,
+                screening_certified=screened.certified_by_screen,
+                screening_exact_solve_run=screened.exact_solve_run,
+                screening_exact_solve_avoided=screened.exact_solve_avoided,
+                screening_conservative_ambiguity=screened.conservative_ambiguity,
+                screening_exact_ambiguity=screened.exact_ambiguity,
             )
         )
 
@@ -2155,6 +2413,10 @@ def _evaluate_candidate(
         if scalarized_weights is not None
         else {},
     )
+
+
+def _screened_frontier_bound_type(screened: Any) -> str:
+    return "exact" if screened.exact_ambiguity is not None else "conservative_upper_bound"
 
 
 def _dominates(
@@ -2764,6 +3026,12 @@ def _frontier_interpretation(report: PublicRepresentationFrontier) -> list[str]:
                 "public representation whose worst-case ambiguity stays within "
                 "the supplied limit."
             )
+    if report.screening is not None:
+        lines.append(
+            "- Conservative endpoint screening was enabled. Scenario ambiguities "
+            "certified by the screen are upper bounds on the exact L2 ambiguity; "
+            "inconclusive endpoints use exact fallback when requested."
+        )
     if report.bucket_budget is not None:
         lines.append(
             "- The bucket-budget recommendation chooses the lowest worst-case "
