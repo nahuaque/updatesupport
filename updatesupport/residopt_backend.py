@@ -897,8 +897,9 @@ def residopt_available() -> ResidOptAvailability:
         return ResidOptAvailability(
             available=False,
             reason=(
-                "residopt is not importable. Install it or add the sibling "
-                "repo to PYTHONPATH, for example `PYTHONPATH=../residopt/src`."
+                "residopt is not importable. Install it with "
+                "`pip install 'updatesupport[residopt]'` or "
+                "`uv add 'updatesupport[residopt]'`."
             ),
         )
     try:
@@ -1565,8 +1566,8 @@ def _load_residopt() -> Any:
     except ImportError as exc:
         raise ImportError(
             "residopt is required for residopt_l2_support_interval(). "
-            "Install it or run with `PYTHONPATH=../residopt/src` while using "
-            "the sibling checkout."
+            "Install it with `pip install 'updatesupport[residopt]'` or "
+            "`uv add 'updatesupport[residopt]'`."
         ) from exc
 
 

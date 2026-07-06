@@ -39,7 +39,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked --all-packages --group dev --extra cvxpy --extra examples
+        run: uv sync --locked --all-packages --group dev --extra cvxpy --extra examples --extra residopt
 
       - name: Test core
         run: uv run pytest
@@ -63,7 +63,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked --all-packages --group dev --group docs --extra cvxpy --extra examples
+        run: uv sync --locked --all-packages --group dev --group docs --extra cvxpy --extra examples --extra residopt
 
       - name: Lint
         run: uv run ruff check .
@@ -90,7 +90,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked --all-packages --group dev --extra cvxpy --extra examples
+        run: uv sync --locked --all-packages --group dev --extra cvxpy --extra examples --extra residopt
 
       - name: Build core distributions
         run: uv build

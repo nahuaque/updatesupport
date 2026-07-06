@@ -33,7 +33,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked --all-packages --group dev --extra cvxpy --extra examples
+        run: uv sync --locked --all-packages --group dev --extra cvxpy --extra examples --extra residopt
 
       - name: Lint
         run: uv run ruff check .

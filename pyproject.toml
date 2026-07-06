@@ -49,6 +49,9 @@ causal = [
 cvxpy = [
     "cvxpy>=1.5",
 ]
+residopt = [
+    "residopt>=0.1.0; python_version >= '3.13'",
+]
 scip = [
     "cvxpy>=1.5",
     "pyscipopt>=5.0",
@@ -83,6 +86,14 @@ docs = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "causal" },
+        { extra = "residopt" },
+    ],
+]
 
 [tool.setuptools.packages.find]
 include = ["updatesupport*"]

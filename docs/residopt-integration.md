@@ -5,6 +5,16 @@
 some repeated robust-optimization subproblems. This is an experimental
 integration, not a default dependency.
 
+Install the integration with:
+
+```bash
+pip install "updatesupport[residopt]"
+# or
+uv add "updatesupport[residopt]"
+```
+
+The published `residopt` 0.1.x package currently requires Python 3.13 or newer.
+
 The first supported path is an L2 hidden-composition stress test:
 
 ```python
@@ -72,13 +82,7 @@ This mode is intentionally conservative: it can certify passes early, but it
 does not use a wide conservative interval to fail a claim without the exact
 fallback.
 
-During local development with a sibling checkout, run with:
-
-```bash
-PYTHONPATH=../residopt/src python your_script.py
-```
-
-or check availability directly:
+Check availability directly:
 
 ```python
 import updatesupport as us
