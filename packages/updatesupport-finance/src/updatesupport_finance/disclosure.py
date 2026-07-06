@@ -11,6 +11,8 @@ import updatesupport as us
 DisclosureVariable = us.NamedLinearVariable
 DisclosureExpression = us.NamedLinearExpression
 DisclosureConstraint = us.NamedLinearConstraint
+DisclosureConstraintAttribution = us.NamedLinearConstraintAttribution
+DisclosureConstraintAttributionReport = us.NamedLinearConstraintAttributionReport
 DisclosureTarget = us.NamedLinearTarget
 DisclosureTier = us.NamedLinearScenario
 DisclosureTriangulationSpec = us.NamedLinearFeasibilityProblem
@@ -272,14 +274,38 @@ def triangulate_disclosure(
     return us.solve_named_linear_feasibility(spec)
 
 
+def attribute_disclosure_constraints(
+    report: DisclosureTriangulationReport,
+    *,
+    target: str,
+    tier: str,
+    group_by: str = "constraint",
+    groups: Mapping[str, Sequence[str]] | None = None,
+    top: int | None = None,
+) -> DisclosureConstraintAttributionReport:
+    """Rank disclosure constraints by leave-one-group-out interval widening."""
+
+    return us.attribute_named_linear_constraints(
+        report,
+        target=target,
+        scenario=tier,
+        group_by=group_by,
+        groups=groups,
+        top=top,
+    )
+
+
 __all__ = [
     "DisclosureConstraint",
+    "DisclosureConstraintAttribution",
+    "DisclosureConstraintAttributionReport",
     "DisclosureExpression",
     "DisclosureTarget",
     "DisclosureTier",
     "DisclosureTriangulationReport",
     "DisclosureTriangulationSpec",
     "DisclosureVariable",
+    "attribute_disclosure_constraints",
     "containment_constraint",
     "disclosure_constraint",
     "disclosure_target",

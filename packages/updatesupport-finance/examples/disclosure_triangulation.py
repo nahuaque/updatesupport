@@ -200,6 +200,25 @@ def build_report() -> usf.DisclosureTriangulationReport:
     return usf.triangulate_disclosure(build_spec())
 
 
+def build_attribution_report(
+    report: us.NamedLinearFeasibilityReport | None = None,
+    *,
+    target: str = "component_2022",
+    tier: str = "T2 + anchor disclosure",
+    group_by: str = "constraint",
+) -> us.NamedLinearConstraintAttributionReport:
+    """Rank which active disclosures most narrow one target interval."""
+
+    if report is None:
+        report = build_report()
+    return usf.attribute_disclosure_constraints(
+        report,
+        target=target,
+        tier=tier,
+        group_by=group_by,
+    )
+
+
 def width_reduction_rows(
     report: us.NamedLinearFeasibilityReport,
     *,
@@ -261,6 +280,10 @@ def render_markdown(report: us.NamedLinearFeasibilityReport | None = None) -> st
     lines.extend(_width_reduction_table(width_reduction_rows(report)))
     lines.extend(
         [
+            "",
+            "## Constraint Value Attribution",
+            "",
+            build_attribution_report(report).to_markdown(),
             "",
             "## Solver Report",
             "",

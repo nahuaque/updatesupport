@@ -14,10 +14,13 @@ a public/hidden cell recomposition problem.
    updatesupport.named_linear_constraint
    updatesupport.named_linear_target
    updatesupport.named_linear_scenario
+   updatesupport.attribute_named_linear_constraints
    updatesupport.NamedLinearFeasibilityProblem
    updatesupport.NamedLinearFeasibilityReport
    updatesupport.NamedLinearInterval
    updatesupport.NamedLinearEndpoint
+   updatesupport.NamedLinearConstraintAttribution
+   updatesupport.NamedLinearConstraintAttributionReport
    updatesupport.NamedLinearVariable
    updatesupport.NamedLinearExpression
    updatesupport.NamedLinearConstraint

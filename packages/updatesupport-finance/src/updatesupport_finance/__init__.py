@@ -6,12 +6,15 @@ from importlib.metadata import PackageNotFoundError, version
 
 from .disclosure import (
     DisclosureConstraint,
+    DisclosureConstraintAttribution,
+    DisclosureConstraintAttributionReport,
     DisclosureExpression,
     DisclosureTarget,
     DisclosureTier,
     DisclosureTriangulationReport,
     DisclosureTriangulationSpec,
     DisclosureVariable,
+    attribute_disclosure_constraints,
     containment_constraint,
     disclosure_constraint,
     disclosure_target,
@@ -58,6 +61,7 @@ except PackageNotFoundError:
 
 __all__ = [
     "__version__",
+    "attribute_disclosure_constraints",
     "containment_constraint",
     "default_rate",
     "disclosure_constraint",
@@ -66,6 +70,8 @@ __all__ = [
     "disclosure_triangulation_spec",
     "disclosure_variable",
     "DisclosureConstraint",
+    "DisclosureConstraintAttribution",
+    "DisclosureConstraintAttributionReport",
     "DisclosureExpression",
     "DisclosureTarget",
     "DisclosureTier",

@@ -265,6 +265,10 @@ exports, and DataFrame exports. Rounded-growth helpers assume the previous
 period variable is nonnegative and encode rounded percentages as inclusive
 linear relaxations.
 
+Use `attribute_disclosure_constraints(...)` to rank which active disclosures
+actually narrow a target interval. It removes one constraint or constraint group
+at a time, re-solves the interval, and reports the resulting width increase.
+
 A complete generic example is available in
 `examples/disclosure_triangulation.py`:
 

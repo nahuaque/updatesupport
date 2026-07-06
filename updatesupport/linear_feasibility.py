@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from math import isfinite
 from typing import Any
@@ -356,6 +356,132 @@ class NamedLinearInterval:
 
 
 @dataclass(frozen=True)
+class NamedLinearConstraintAttribution:
+    """Effect of relaxing one active constraint group for one interval."""
+
+    target: str
+    scenario: str
+    group: str
+    constraints: tuple[str, ...]
+    constraint_count: int
+    kind: str | None
+    provenance: str | None
+    verified_count: int
+    full_lower: float | None
+    full_upper: float | None
+    full_width: float | None
+    relaxed_lower: float | None
+    relaxed_upper: float | None
+    relaxed_width: float | None
+    relaxed_status: str
+    lower_tightening: float | None
+    upper_tightening: float | None
+    width_increase: float | None
+    width_increase_percent: float | None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "constraints", tuple(self.constraints))
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "target": self.target,
+            "scenario": self.scenario,
+            "group": self.group,
+            "constraints": self.constraints,
+            "constraint_count": self.constraint_count,
+            "kind": self.kind,
+            "provenance": self.provenance,
+            "verified_count": self.verified_count,
+            "full_lower": self.full_lower,
+            "full_upper": self.full_upper,
+            "full_width": self.full_width,
+            "relaxed_lower": self.relaxed_lower,
+            "relaxed_upper": self.relaxed_upper,
+            "relaxed_width": self.relaxed_width,
+            "relaxed_status": self.relaxed_status,
+            "lower_tightening": self.lower_tightening,
+            "upper_tightening": self.upper_tightening,
+            "width_increase": self.width_increase,
+            "width_increase_percent": self.width_increase_percent,
+        }
+
+
+@dataclass(frozen=True)
+class NamedLinearConstraintAttributionReport:
+    """Leave-one-group-out interval attribution for a named linear report."""
+
+    source_report: "NamedLinearFeasibilityReport"
+    target: str
+    scenario: str
+    group_by: str
+    baseline_interval: NamedLinearInterval
+    rows: tuple[NamedLinearConstraintAttribution, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "rows", tuple(self.rows))
+
+    @property
+    def title(self) -> str:
+        return "Named Linear Constraint Attribution"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "target": self.target,
+            "scenario": self.scenario,
+            "group_by": self.group_by,
+            "baseline_interval": self.baseline_interval.as_dict(),
+            "rows": [row.as_dict() for row in self.rows],
+        }
+
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        return {
+            "summary": (
+                {
+                    "title": self.title,
+                    "target": self.target,
+                    "scenario": self.scenario,
+                    "group_by": self.group_by,
+                    "baseline_lower": self.baseline_interval.lower,
+                    "baseline_upper": self.baseline_interval.upper,
+                    "baseline_width": self.baseline_interval.width,
+                    "row_count": len(self.rows),
+                },
+            ),
+            "constraint_attribution": tuple(row.as_dict() for row in self.rows),
+        }
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import tables_to_dataframes
+
+        return tables_to_dataframes(self.to_tables())
+
+    def to_markdown(self) -> str:
+        lines = [
+            f"# {self.title}",
+            "",
+            f"- Target: `{_escape_markdown(self.target)}`",
+            f"- Scenario: `{_escape_markdown(self.scenario)}`",
+            f"- Grouping: `{_escape_markdown(self.group_by)}`",
+            "",
+            "Each row removes one active constraint group, re-solves the target "
+            "interval, and reports how much wider the interval becomes. Larger "
+            "width increases indicate constraints that do more work in the "
+            "encoded feasibility problem.",
+            "",
+            "## Ranked Constraint Values",
+            "",
+        ]
+        lines.extend(_attribution_table(self.rows))
+        return "\n".join(lines)
+
+
+@dataclass(frozen=True)
 class NamedLinearFeasibilityReport:
     """Interval report for a named linear feasibility problem."""
 
@@ -402,6 +528,26 @@ class NamedLinearFeasibilityReport:
             "baseline_scaled_width": baseline.scaled_width,
             "comparison_scaled_width": comparison.scaled_width,
         }
+
+    def attribute_constraints(
+        self,
+        *,
+        target: str,
+        scenario: str,
+        group_by: str = "constraint",
+        groups: Mapping[str, Sequence[str]] | None = None,
+        top: int | None = None,
+    ) -> NamedLinearConstraintAttributionReport:
+        """Rank active constraints by leave-one-group-out interval widening."""
+
+        return attribute_named_linear_constraints(
+            self,
+            target=target,
+            scenario=scenario,
+            group_by=group_by,
+            groups=groups,
+            top=top,
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -674,6 +820,104 @@ def solve_named_linear_feasibility(
     return NamedLinearFeasibilityReport(problem=problem, intervals=tuple(intervals))
 
 
+def attribute_named_linear_constraints(
+    report: NamedLinearFeasibilityReport,
+    *,
+    target: str,
+    scenario: str,
+    group_by: str = "constraint",
+    groups: Mapping[str, Sequence[str]] | None = None,
+    top: int | None = None,
+) -> NamedLinearConstraintAttributionReport:
+    """Rank active constraints by how much they narrow one target interval.
+
+    The attribution is local to the supplied target, scenario, and grouping. It
+    removes each active constraint group, re-solves the interval, and measures
+    how much wider the feasible interval becomes.
+    """
+
+    if top is not None and top <= 0:
+        raise ValueError("top must be positive when supplied")
+    problem = report.problem
+    scenario_row = _scenario_by_name(problem, scenario)
+    target_row = _target_by_name(problem, target)
+    baseline = report.interval(target=target, scenario=scenario)
+    constraint_lookup = {row.name: row for row in problem.constraints}
+    group_map = _constraint_group_map(
+        scenario_row,
+        constraint_lookup,
+        group_by=group_by,
+        groups=groups,
+    )
+    rows: list[NamedLinearConstraintAttribution] = []
+    active_names = tuple(scenario_row.constraints)
+    for group, removed_names in group_map.items():
+        relaxed_names = tuple(name for name in active_names if name not in removed_names)
+        relaxed_scenario = NamedLinearScenario(
+            name=f"{scenario} without {group}",
+            constraints=relaxed_names,
+        )
+        relaxed_constraints = tuple(constraint_lookup[name] for name in relaxed_names)
+        relaxed = _solve_interval(
+            problem,
+            scenario=relaxed_scenario,
+            constraints=relaxed_constraints,
+            target=target_row,
+        )
+        lower_tightening = None
+        upper_tightening = None
+        width_increase = None
+        width_increase_percent = None
+        if baseline.lower is not None and relaxed.lower is not None:
+            lower_tightening = baseline.lower - relaxed.lower
+        if baseline.upper is not None and relaxed.upper is not None:
+            upper_tightening = relaxed.upper - baseline.upper
+        if baseline.width is not None and relaxed.width is not None:
+            width_increase = relaxed.width - baseline.width
+            width_increase_percent = (
+                None
+                if baseline.width <= 0.0
+                else 100.0 * width_increase / baseline.width
+            )
+        removed_constraints = tuple(constraint_lookup[name] for name in removed_names)
+        rows.append(
+            NamedLinearConstraintAttribution(
+                target=target,
+                scenario=scenario,
+                group=group,
+                constraints=tuple(removed_names),
+                constraint_count=len(removed_names),
+                kind=_common_value(row.kind for row in removed_constraints),
+                provenance=_common_value(
+                    row.provenance for row in removed_constraints
+                ),
+                verified_count=sum(1 for row in removed_constraints if row.verified),
+                full_lower=baseline.lower,
+                full_upper=baseline.upper,
+                full_width=baseline.width,
+                relaxed_lower=relaxed.lower,
+                relaxed_upper=relaxed.upper,
+                relaxed_width=relaxed.width,
+                relaxed_status=relaxed.status,
+                lower_tightening=lower_tightening,
+                upper_tightening=upper_tightening,
+                width_increase=width_increase,
+                width_increase_percent=width_increase_percent,
+            )
+        )
+    rows.sort(key=lambda row: (-_attribution_rank_value(row), row.group))
+    if top is not None:
+        rows = rows[:top]
+    return NamedLinearConstraintAttributionReport(
+        source_report=report,
+        target=target,
+        scenario=scenario,
+        group_by=group_by,
+        baseline_interval=baseline,
+        rows=tuple(rows),
+    )
+
+
 def coerce_named_linear_variable(
     value: NamedLinearVariable | str | Mapping[str, Any],
 ) -> NamedLinearVariable:
@@ -799,6 +1043,40 @@ def _solve_endpoint(
     )
 
 
+def _solve_interval(
+    problem: NamedLinearFeasibilityProblem,
+    *,
+    scenario: NamedLinearScenario,
+    constraints: Sequence[NamedLinearConstraint],
+    target: NamedLinearTarget,
+) -> NamedLinearInterval:
+    lower_endpoint = _solve_endpoint(
+        problem,
+        scenario=scenario,
+        constraints=constraints,
+        target=target,
+        sense="min",
+    )
+    upper_endpoint = _solve_endpoint(
+        problem,
+        scenario=scenario,
+        constraints=constraints,
+        target=target,
+        sense="max",
+    )
+    return NamedLinearInterval(
+        scenario=scenario.name,
+        target=target.name,
+        lower=lower_endpoint.value,
+        upper=upper_endpoint.value,
+        scaled_lower=lower_endpoint.scaled_value,
+        scaled_upper=upper_endpoint.scaled_value,
+        status=_interval_status(lower_endpoint, upper_endpoint),
+        lower_endpoint=lower_endpoint,
+        upper_endpoint=upper_endpoint,
+    )
+
+
 def _coefficient_row(
     expression: NamedLinearExpression,
     index: Mapping[str, int],
@@ -871,6 +1149,85 @@ def _duplicates(values: Sequence[str]) -> list[str]:
     return duplicates
 
 
+def _scenario_by_name(
+    problem: NamedLinearFeasibilityProblem,
+    name: str,
+) -> NamedLinearScenario:
+    for scenario in problem.scenarios:
+        if scenario.name == name:
+            return scenario
+    raise KeyError(f"unknown scenario: {name!r}")
+
+
+def _target_by_name(
+    problem: NamedLinearFeasibilityProblem,
+    name: str,
+) -> NamedLinearTarget:
+    for target in problem.targets:
+        if target.name == name:
+            return target
+    raise KeyError(f"unknown target: {name!r}")
+
+
+def _constraint_group_map(
+    scenario: NamedLinearScenario,
+    constraint_lookup: Mapping[str, NamedLinearConstraint],
+    *,
+    group_by: str,
+    groups: Mapping[str, Sequence[str]] | None,
+) -> dict[str, tuple[str, ...]]:
+    active = set(scenario.constraints)
+    if groups is not None:
+        mapped = {
+            str(group): tuple(str(name) for name in names)
+            for group, names in groups.items()
+        }
+        for group, names in mapped.items():
+            missing = sorted(set(names) - active)
+            if missing:
+                raise ValueError(
+                    f"group {group!r} references constraints not active in "
+                    f"scenario {scenario.name!r}: {missing!r}"
+                )
+            if not names:
+                raise ValueError(f"group {group!r} must contain constraints")
+        return mapped
+    if group_by == "constraint":
+        return {name: (name,) for name in scenario.constraints}
+    grouped: dict[str, list[str]] = {}
+    if group_by == "kind":
+        for name in scenario.constraints:
+            group = constraint_lookup[name].kind
+            grouped.setdefault(group, []).append(name)
+        return {group: tuple(names) for group, names in grouped.items()}
+    if group_by == "provenance":
+        for name in scenario.constraints:
+            group = constraint_lookup[name].provenance or "unprovenanced"
+            grouped.setdefault(group, []).append(name)
+        return {group: tuple(names) for group, names in grouped.items()}
+    raise ValueError(
+        "group_by must be 'constraint', 'kind', or 'provenance' when groups "
+        "is not supplied"
+    )
+
+
+def _common_value(values: Iterable[str | None]) -> str | None:
+    unique = {value for value in values if value is not None}
+    if len(unique) == 1:
+        return next(iter(unique))
+    if len(unique) > 1:
+        return "mixed"
+    return None
+
+
+def _attribution_rank_value(row: NamedLinearConstraintAttribution) -> float:
+    if row.width_increase is not None:
+        return row.width_increase
+    if row.relaxed_status == "unbounded":
+        return float("inf")
+    return float("-inf")
+
+
 def _finite_float(value: float, name: str) -> float:
     number = float(value)
     if not isfinite(number):
@@ -935,6 +1292,32 @@ def _binding_table(report: NamedLinearFeasibilityReport) -> list[str]:
     return lines
 
 
+def _attribution_table(
+    rows: Sequence[NamedLinearConstraintAttribution],
+) -> list[str]:
+    lines = [
+        "| Group | Kind | Constraints | Relaxed width | Width increase | Lower tightening | Upper tightening |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _escape_markdown(row.group),
+                    _escape_markdown(row.kind or "mixed"),
+                    str(row.constraint_count),
+                    _format_optional(row.relaxed_width, ""),
+                    _format_optional(row.width_increase, ""),
+                    _format_optional(row.lower_tightening, ""),
+                    _format_optional(row.upper_tightening, ""),
+                ]
+            )
+            + " |"
+        )
+    return lines
+
+
 def _constraint_kind_counts(
     scenario: NamedLinearScenario,
     constraints: Sequence[NamedLinearConstraint],
@@ -960,6 +1343,8 @@ def _escape_markdown(value: str) -> str:
 __all__ = [
     "DEFAULT_LINEAR_FEASIBILITY_LIMITATIONS",
     "NamedLinearConstraint",
+    "NamedLinearConstraintAttribution",
+    "NamedLinearConstraintAttributionReport",
     "NamedLinearEndpoint",
     "NamedLinearExpression",
     "NamedLinearFeasibilityProblem",
@@ -973,6 +1358,7 @@ __all__ = [
     "coerce_named_linear_scenario",
     "coerce_named_linear_target",
     "coerce_named_linear_variable",
+    "attribute_named_linear_constraints",
     "named_linear_constraint",
     "named_linear_expression",
     "named_linear_feasibility_problem",

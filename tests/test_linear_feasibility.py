@@ -147,6 +147,45 @@ class NamedLinearFeasibilityTests(unittest.TestCase):
             "scipy-linprog",
         )
 
+    def test_constraint_attribution_ranks_interval_tightening(self):
+        report = us.solve_named_linear_feasibility(_example_problem())
+
+        attribution = us.attribute_named_linear_constraints(
+            report,
+            target="previous_component",
+            scenario="T2 + anchor",
+        )
+        anchor = next(row for row in attribution.rows if row.group == "current_anchor")
+
+        self.assertIsInstance(
+            attribution,
+            us.NamedLinearConstraintAttributionReport,
+        )
+        self.assertEqual(attribution.rows[0].group, "current_anchor")
+        self.assertAlmostEqual(anchor.relaxed_lower, 0.0)
+        self.assertAlmostEqual(anchor.relaxed_upper, 100.0)
+        self.assertAlmostEqual(anchor.width_increase, 56.25)
+        self.assertAlmostEqual(anchor.lower_tightening, 56.25)
+        self.assertAlmostEqual(anchor.upper_tightening, 0.0)
+        self.assertIn("Ranked Constraint Values", attribution.to_markdown())
+        self.assertIn("constraint_attribution", attribution.to_tables())
+        self.assertIn("current_anchor", attribution.to_json())
+
+    def test_constraint_attribution_can_group_by_kind(self):
+        report = us.solve_named_linear_feasibility(_example_problem())
+
+        attribution = report.attribute_constraints(
+            target="previous_component",
+            scenario="T2 + anchor",
+            group_by="kind",
+        )
+        rows = {row.group: row for row in attribution.rows}
+
+        self.assertEqual(rows["rounded_growth"].constraint_count, 2)
+        self.assertEqual(rows["anchor"].constraint_count, 1)
+        self.assertGreater(rows["anchor"].width_increase, 50.0)
+        self.assertEqual(attribution.group_by, "kind")
+
     def test_problem_mapping_round_trip(self):
         problem = _example_problem()
         report = us.solve_named_linear_feasibility(problem.as_dict())
