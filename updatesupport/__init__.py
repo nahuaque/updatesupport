@@ -181,8 +181,12 @@ from .residopt_backend import (
     ResidOptEndpointCertificate,
     ResidOptEndpointReport,
     ResidOptL2EndpointCompiler,
+    ResidOptRefinementScreenCandidate,
+    ResidOptRefinementScreenContext,
+    ResidOptRefinementScreenReport,
     residopt_available,
     residopt_l2_support_interval,
+    residopt_refinement_screen,
 )
 from .results import (
     AdequacyResult,
@@ -294,6 +298,10 @@ __all__ = [
     "ResidOptEndpointCertificate",
     "ResidOptEndpointReport",
     "ResidOptL2EndpointCompiler",
+    "ResidOptRefinementScreenCandidate",
+    "ResidOptRefinementScreenContext",
+    "ResidOptRefinementScreenReport",
+    "residopt_refinement_screen",
     # Model-assisted and estimator handoff helpers.
     "fit_joint_distribution",
     "hidden_composition_uncertainty",

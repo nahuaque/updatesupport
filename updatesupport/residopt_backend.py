@@ -8,8 +8,9 @@ subspace to a residopt ellipsoidal support atom.
 from __future__ import annotations
 
 import json
+from itertools import combinations
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
 from math import isclose
@@ -17,7 +18,8 @@ from typing import Any, Hashable
 
 import numpy as np
 
-from .data import GroupedProblem
+from .data import GroupedProblem, TabularTarget, from_dataframe
+from .presets import QPreset
 from .problem import FiniteProblem
 from .targets import LinearTarget, UncertainLinearTarget
 
@@ -255,6 +257,608 @@ class ResidOptEndpointReport:
             lines.extend(["", "## Notes", ""])
             lines.extend(f"- {_markdown_escape(note)}" for note in self.notes)
         return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class ResidOptRefinementScreenCandidate:
+    """One candidate public representation screened through ``residopt``."""
+
+    columns: tuple[str, ...]
+    added_columns: tuple[str, ...]
+    public_cells: int
+    hidden_cells: int
+    observed_value: float | None
+    conservative_lower: float | None
+    conservative_upper: float | None
+    conservative_ambiguity: float | None
+    exact_lower: float | None = None
+    exact_upper: float | None = None
+    exact_ambiguity: float | None = None
+    conservative_reduction: float | None = None
+    exact_reduction: float | None = None
+    final_reduction: float | None = None
+    final_reduction_percent: float | None = None
+    certified_by_screen: bool = False
+    exact_solve_run: bool = False
+    exact_solve_avoided: bool = False
+    compiler_cache_hit: bool = False
+    compiled_templates_built: int = 0
+    support_solves: int = 0
+    status: str = "screen_only"
+    reason: str = ""
+    error: str | None = None
+
+    @property
+    def final_lower(self) -> float | None:
+        return self.exact_lower if self.exact_lower is not None else self.conservative_lower
+
+    @property
+    def final_upper(self) -> float | None:
+        return self.exact_upper if self.exact_upper is not None else self.conservative_upper
+
+    @property
+    def final_ambiguity(self) -> float | None:
+        return (
+            self.exact_ambiguity
+            if self.exact_ambiguity is not None
+            else self.conservative_ambiguity
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "columns": self.columns,
+            "added_columns": self.added_columns,
+            "public_cells": self.public_cells,
+            "hidden_cells": self.hidden_cells,
+            "observed_value": self.observed_value,
+            "conservative_lower": self.conservative_lower,
+            "conservative_upper": self.conservative_upper,
+            "conservative_ambiguity": self.conservative_ambiguity,
+            "exact_lower": self.exact_lower,
+            "exact_upper": self.exact_upper,
+            "exact_ambiguity": self.exact_ambiguity,
+            "final_lower": self.final_lower,
+            "final_upper": self.final_upper,
+            "final_ambiguity": self.final_ambiguity,
+            "conservative_reduction": self.conservative_reduction,
+            "exact_reduction": self.exact_reduction,
+            "final_reduction": self.final_reduction,
+            "final_reduction_percent": self.final_reduction_percent,
+            "certified_by_screen": self.certified_by_screen,
+            "exact_solve_run": self.exact_solve_run,
+            "exact_solve_avoided": self.exact_solve_avoided,
+            "compiler_cache_hit": self.compiler_cache_hit,
+            "compiled_templates_built": self.compiled_templates_built,
+            "support_solves": self.support_solves,
+            "status": self.status,
+            "reason": self.reason,
+            "error": self.error,
+        }
+
+
+@dataclass(frozen=True)
+class ResidOptRefinementScreenReport:
+    """Cached residopt screen over candidate public refinements."""
+
+    title: str
+    base_public: tuple[str, ...]
+    hidden: tuple[str, ...]
+    q_name: str
+    radius: float
+    ambiguity_limit: float | None
+    exact_fallback: bool
+    candidates: tuple[ResidOptRefinementScreenCandidate, ...]
+    compiler_cache_size: int
+    grouped_cache_size: int
+    notes: tuple[str, ...] = ()
+    backend: str = "residopt"
+
+    @property
+    def screened_count(self) -> int:
+        return len(self.candidates)
+
+    @property
+    def certified_count(self) -> int:
+        return sum(1 for row in self.candidates if row.certified_by_screen)
+
+    @property
+    def exact_solve_count(self) -> int:
+        return sum(1 for row in self.candidates if row.exact_solve_run)
+
+    @property
+    def exact_solve_avoided_count(self) -> int:
+        return sum(1 for row in self.candidates if row.exact_solve_avoided)
+
+    @property
+    def error_count(self) -> int:
+        return sum(1 for row in self.candidates if row.error is not None)
+
+    @property
+    def support_solve_count(self) -> int:
+        return sum(row.support_solves for row in self.candidates)
+
+    @property
+    def compiled_template_count(self) -> int:
+        return sum(row.compiled_templates_built for row in self.candidates)
+
+    @property
+    def best_by_conservative_ambiguity(
+        self,
+    ) -> ResidOptRefinementScreenCandidate | None:
+        rows = [
+            row for row in self.candidates if row.conservative_ambiguity is not None
+        ]
+        if not rows:
+            return None
+        return min(
+            rows,
+            key=lambda row: (
+                float("inf")
+                if row.conservative_ambiguity is None
+                else row.conservative_ambiguity
+            ),
+        )
+
+    @property
+    def best_by_final_ambiguity(self) -> ResidOptRefinementScreenCandidate | None:
+        rows = [row for row in self.candidates if row.final_ambiguity is not None]
+        if not rows:
+            return None
+        return min(
+            rows,
+            key=lambda row: (
+                float("inf") if row.final_ambiguity is None else row.final_ambiguity
+            ),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        best_conservative = self.best_by_conservative_ambiguity
+        best_final = self.best_by_final_ambiguity
+        return {
+            "title": self.title,
+            "backend": self.backend,
+            "base_public": self.base_public,
+            "hidden": self.hidden,
+            "q_name": self.q_name,
+            "radius": self.radius,
+            "ambiguity_limit": self.ambiguity_limit,
+            "exact_fallback": self.exact_fallback,
+            "screened_count": self.screened_count,
+            "certified_count": self.certified_count,
+            "exact_solve_count": self.exact_solve_count,
+            "exact_solve_avoided_count": self.exact_solve_avoided_count,
+            "error_count": self.error_count,
+            "support_solve_count": self.support_solve_count,
+            "compiled_template_count": self.compiled_template_count,
+            "compiler_cache_size": self.compiler_cache_size,
+            "grouped_cache_size": self.grouped_cache_size,
+            "best_by_conservative_ambiguity": None
+            if best_conservative is None
+            else best_conservative.as_dict(),
+            "best_by_final_ambiguity": None
+            if best_final is None
+            else best_final.as_dict(),
+            "candidates": [row.as_dict() for row in self.candidates],
+            "notes": self.notes,
+        }
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        return {
+            "summary": (
+                {
+                    "title": self.title,
+                    "backend": self.backend,
+                    "q_name": self.q_name,
+                    "radius": self.radius,
+                    "ambiguity_limit": self.ambiguity_limit,
+                    "exact_fallback": self.exact_fallback,
+                    "screened_count": self.screened_count,
+                    "certified_count": self.certified_count,
+                    "exact_solve_count": self.exact_solve_count,
+                    "exact_solve_avoided_count": self.exact_solve_avoided_count,
+                    "error_count": self.error_count,
+                    "support_solve_count": self.support_solve_count,
+                    "compiled_template_count": self.compiled_template_count,
+                    "compiler_cache_size": self.compiler_cache_size,
+                    "grouped_cache_size": self.grouped_cache_size,
+                },
+            ),
+            "candidates": tuple(row.as_dict() for row in self.candidates),
+            "notes": tuple({"note": note} for note in self.notes),
+        }
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import tables_to_dataframes
+
+        return tables_to_dataframes(self.to_tables())
+
+    def to_json(self, **kwargs: Any) -> str:
+        options = {"indent": 2, "sort_keys": True}
+        options.update(kwargs)
+        return json.dumps(_json_ready(self.as_dict()), **options)
+
+    def to_markdown(self) -> str:
+        limit = (
+            "none"
+            if self.ambiguity_limit is None
+            else _format_float(self.ambiguity_limit)
+        )
+        lines = [
+            f"# {_markdown_escape(self.title)}",
+            "",
+            (
+                f"Backend: `{self.backend}`. Q preset: `{self.q_name}` "
+                f"with L2 radius `{_format_float(self.radius)}`. "
+                f"Ambiguity limit: `{limit}`."
+            ),
+            (
+                f"Screened `{self.screened_count}` representations; "
+                f"certified `{self.certified_count}` by conservative screen; "
+                f"ran `{self.exact_solve_count}` exact fallback solves; "
+                f"avoided `{self.exact_solve_avoided_count}` exact solves."
+            ),
+            (
+                f"Compiler cache size: `{self.compiler_cache_size}`. "
+                f"Compiled templates built: `{self.compiled_template_count}`. "
+                f"Support solves: `{self.support_solve_count}`."
+            ),
+            "",
+            "| Public columns | Added columns | Public cells | Conservative ambiguity | Exact ambiguity | Final reduction | Status |",
+            "| --- | --- | ---: | ---: | ---: | ---: | --- |",
+        ]
+        for row in self.candidates:
+            lines.append(
+                "| "
+                f"{_markdown_escape(', '.join(row.columns))} | "
+                f"{_markdown_escape(', '.join(row.added_columns) or '(base)')} | "
+                f"{row.public_cells} | "
+                f"{_format_optional_float(row.conservative_ambiguity)} | "
+                f"{_format_optional_float(row.exact_ambiguity)} | "
+                f"{_format_optional_float(row.final_reduction)} | "
+                f"{_markdown_escape(row.status)} |"
+            )
+        if self.notes:
+            lines.extend(["", "## Notes", ""])
+            lines.extend(f"- {_markdown_escape(note)}" for note in self.notes)
+        return "\n".join(lines)
+
+
+@dataclass
+class ResidOptRefinementScreenContext:
+    """Reusable cached screening context for refinement searches.
+
+    The context materializes the input rows once, caches compiled
+    :class:`GroupedProblem` objects by public representation, and caches one
+    :class:`ResidOptL2EndpointCompiler` per compiled public representation.
+    """
+
+    data: Any
+    public: Sequence[str]
+    hidden: Sequence[str]
+    target: TabularTarget
+    weight: str | None = None
+    min_cell_weight: float = 1.0
+    q: Any = "saturated"
+    q_radius: float | None = None
+    solver: str | None = None
+    solver_options: Mapping[str, Any] | None = None
+    _data: Any = field(init=False, repr=False)
+    public_columns: tuple[str, ...] = field(init=False)
+    hidden_columns: tuple[str, ...] = field(init=False)
+    grouped_cache: dict[tuple[str, ...], GroupedProblem] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    compiler_cache: dict[tuple[str, ...], ResidOptL2EndpointCompiler] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+
+    def __post_init__(self) -> None:
+        self.public_columns = tuple(self.public)
+        self.hidden_columns = tuple(self.hidden)
+        self._data = _repeatable_data(self.data)
+        if self.min_cell_weight < 0:
+            raise ValueError("min_cell_weight must be non-negative")
+        missing_public = [
+            column
+            for column in self.public_columns
+            if column not in self.hidden_columns
+        ]
+        if missing_public:
+            raise ValueError(
+                f"public columns must also be hidden columns: {missing_public!r}"
+            )
+
+    def screen(
+        self,
+        *,
+        candidate_refinements: Sequence[str] | None = None,
+        max_added_columns: int = 1,
+        include_base: bool = True,
+        ambiguity_limit: float | None = None,
+        exact_fallback: bool = True,
+        top: int | None = None,
+        title: str = "ResidOpt Refinement Screening Report",
+    ) -> ResidOptRefinementScreenReport:
+        """Screen candidate public refinements with cached residopt compilers."""
+
+        if max_added_columns < 1:
+            raise ValueError("max_added_columns must be at least 1")
+        if top is not None and top < 0:
+            raise ValueError("top must be non-negative")
+        if ambiguity_limit is not None and ambiguity_limit < 0:
+            raise ValueError("ambiguity_limit must be non-negative")
+
+        candidate_refinements_tuple = (
+            tuple(candidate_refinements)
+            if candidate_refinements is not None
+            else tuple(
+                column
+                for column in self.hidden_columns
+                if column not in self.public_columns
+            )
+        )
+        public_representations = _candidate_public_representations(
+            public=self.public_columns,
+            hidden=self.hidden_columns,
+            candidate_refinements=candidate_refinements_tuple,
+            max_added_columns=max_added_columns,
+            include_base=include_base,
+        )
+        rows = tuple(
+            self._screen_public_representation(
+                columns,
+                added_columns=tuple(
+                    column for column in columns if column not in self.public_columns
+                ),
+                ambiguity_limit=ambiguity_limit,
+                exact_fallback=exact_fallback,
+            )
+            for columns in public_representations
+        )
+        rows = _attach_reductions(rows)
+        rows = _sort_refinement_screen_rows(rows, include_base=include_base, top=top)
+
+        grouped = self._grouped(self.public_columns)
+        radius = _require_l2_grouped(grouped).radius
+        return ResidOptRefinementScreenReport(
+            title=title,
+            base_public=self.public_columns,
+            hidden=self.hidden_columns,
+            q_name="l2_budget",
+            radius=float(radius),
+            ambiguity_limit=ambiguity_limit,
+            exact_fallback=exact_fallback,
+            candidates=rows,
+            compiler_cache_size=len(self.compiler_cache),
+            grouped_cache_size=len(self.grouped_cache),
+            notes=_RESIDOPT_L2_NOTES,
+        )
+
+    def _screen_public_representation(
+        self,
+        columns: tuple[str, ...],
+        *,
+        added_columns: tuple[str, ...],
+        ambiguity_limit: float | None,
+        exact_fallback: bool,
+    ) -> ResidOptRefinementScreenCandidate:
+        grouped = self._grouped(columns)
+        public_cells = len(grouped.problem.public_values)
+        hidden_cells = len(grouped.problem.states)
+        cache_hit = columns in self.compiler_cache
+        try:
+            compiler = self._compiler(columns)
+            screen = compiler.interval(
+                title="ResidOpt Refinement Candidate Screen",
+            )
+            certified = (
+                ambiguity_limit is not None
+                and screen.ambiguity <= ambiguity_limit + grouped.problem.tol
+            )
+            if certified:
+                return ResidOptRefinementScreenCandidate(
+                    columns=columns,
+                    added_columns=added_columns,
+                    public_cells=public_cells,
+                    hidden_cells=hidden_cells,
+                    observed_value=screen.observed_value,
+                    conservative_lower=screen.lower,
+                    conservative_upper=screen.upper,
+                    conservative_ambiguity=screen.ambiguity,
+                    certified_by_screen=True,
+                    exact_solve_avoided=True,
+                    compiler_cache_hit=cache_hit,
+                    compiled_templates_built=screen.compiled_templates_built,
+                    support_solves=screen.support_solves,
+                    status="screen_certified",
+                    reason=(
+                        "The conservative residopt interval is within the "
+                        "requested ambiguity limit, so no exact fallback solve "
+                        "is needed."
+                    ),
+                )
+            if exact_fallback:
+                exact = grouped.problem.global_transport_modulus()
+                exact_pass = (
+                    ambiguity_limit is not None
+                    and exact.diameter <= ambiguity_limit + grouped.problem.tol
+                )
+                return ResidOptRefinementScreenCandidate(
+                    columns=columns,
+                    added_columns=added_columns,
+                    public_cells=public_cells,
+                    hidden_cells=hidden_cells,
+                    observed_value=screen.observed_value,
+                    conservative_lower=screen.lower,
+                    conservative_upper=screen.upper,
+                    conservative_ambiguity=screen.ambiguity,
+                    exact_lower=exact.lower,
+                    exact_upper=exact.upper,
+                    exact_ambiguity=exact.diameter,
+                    exact_solve_run=True,
+                    compiler_cache_hit=cache_hit,
+                    compiled_templates_built=screen.compiled_templates_built,
+                    support_solves=screen.support_solves,
+                    status=(
+                        "fallback_exact_pass" if exact_pass else "fallback_exact"
+                    ),
+                    reason=(
+                        "The conservative residopt interval was inconclusive, "
+                        "so the exact updatesupport endpoint was solved."
+                    ),
+                )
+            return ResidOptRefinementScreenCandidate(
+                columns=columns,
+                added_columns=added_columns,
+                public_cells=public_cells,
+                hidden_cells=hidden_cells,
+                observed_value=screen.observed_value,
+                conservative_lower=screen.lower,
+                conservative_upper=screen.upper,
+                conservative_ambiguity=screen.ambiguity,
+                compiler_cache_hit=cache_hit,
+                compiled_templates_built=screen.compiled_templates_built,
+                support_solves=screen.support_solves,
+                status="screen_only",
+                reason=(
+                    "The conservative residopt interval was computed without "
+                    "running exact fallback."
+                ),
+            )
+        except Exception as exc:
+            if exact_fallback:
+                try:
+                    exact = grouped.problem.global_transport_modulus()
+                except Exception as exact_exc:
+                    return ResidOptRefinementScreenCandidate(
+                        columns=columns,
+                        added_columns=added_columns,
+                        public_cells=public_cells,
+                        hidden_cells=hidden_cells,
+                        observed_value=None,
+                        conservative_lower=None,
+                        conservative_upper=None,
+                        conservative_ambiguity=None,
+                        compiler_cache_hit=cache_hit,
+                        exact_solve_run=True,
+                        status="error",
+                        reason="Both the residopt screen and exact fallback failed.",
+                        error=f"{type(exc).__name__}: {exc}; exact fallback: {type(exact_exc).__name__}: {exact_exc}",
+                    )
+                return ResidOptRefinementScreenCandidate(
+                    columns=columns,
+                    added_columns=added_columns,
+                    public_cells=public_cells,
+                    hidden_cells=hidden_cells,
+                    observed_value=None,
+                    conservative_lower=None,
+                    conservative_upper=None,
+                    conservative_ambiguity=None,
+                    exact_lower=exact.lower,
+                    exact_upper=exact.upper,
+                    exact_ambiguity=exact.diameter,
+                    exact_solve_run=True,
+                    compiler_cache_hit=cache_hit,
+                    status="screen_error_fallback_exact",
+                    reason=(
+                        "Residopt screening failed; the exact updatesupport "
+                        "endpoint was solved."
+                    ),
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            return ResidOptRefinementScreenCandidate(
+                columns=columns,
+                added_columns=added_columns,
+                public_cells=public_cells,
+                hidden_cells=hidden_cells,
+                observed_value=None,
+                conservative_lower=None,
+                conservative_upper=None,
+                conservative_ambiguity=None,
+                compiler_cache_hit=cache_hit,
+                status="screen_error",
+                reason="Residopt screening failed and exact fallback was disabled.",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+
+    def _grouped(self, columns: tuple[str, ...]) -> GroupedProblem:
+        if columns not in self.grouped_cache:
+            self.grouped_cache[columns] = from_dataframe(
+                self._data,
+                public=columns,
+                hidden=self.hidden_columns,
+                target=self.target,
+                weight=self.weight,
+                min_cell_weight=self.min_cell_weight,
+                q=self.q,
+                q_radius=self.q_radius,
+            )
+            _require_l2_grouped(self.grouped_cache[columns])
+        return self.grouped_cache[columns]
+
+    def _compiler(self, columns: tuple[str, ...]) -> ResidOptL2EndpointCompiler:
+        if columns not in self.compiler_cache:
+            self.compiler_cache[columns] = ResidOptL2EndpointCompiler.from_grouped(
+                self._grouped(columns),
+                solver=self.solver,
+                solver_options=self.solver_options,
+            )
+        return self.compiler_cache[columns]
+
+
+def residopt_refinement_screen(
+    data: Any,
+    *,
+    public: Sequence[str],
+    hidden: Sequence[str],
+    target: TabularTarget,
+    candidate_refinements: Sequence[str] | None = None,
+    weight: str | None = None,
+    min_cell_weight: float = 1.0,
+    q: Any = "saturated",
+    q_radius: float | None = None,
+    max_added_columns: int = 1,
+    include_base: bool = True,
+    ambiguity_limit: float | None = None,
+    exact_fallback: bool = True,
+    top: int | None = None,
+    solver: str | None = None,
+    solver_options: Mapping[str, Any] | None = None,
+    title: str = "ResidOpt Refinement Screening Report",
+) -> ResidOptRefinementScreenReport:
+    """Screen candidate public refinements with cached residopt compilers.
+
+    This experimental helper is useful when many candidate public
+    representations are evaluated under the same L2 hidden-composition stress
+    test. The conservative screen can certify candidates whose ambiguity is
+    already below ``ambiguity_limit`` and skip their exact CVXPY endpoint solve.
+    """
+
+    context = ResidOptRefinementScreenContext(
+        data=data,
+        public=public,
+        hidden=hidden,
+        target=target,
+        weight=weight,
+        min_cell_weight=min_cell_weight,
+        q=q,
+        q_radius=q_radius,
+        solver=solver,
+        solver_options=solver_options,
+    )
+    return context.screen(
+        candidate_refinements=candidate_refinements,
+        max_added_columns=max_added_columns,
+        include_base=include_base,
+        ambiguity_limit=ambiguity_limit,
+        exact_fallback=exact_fallback,
+        top=top,
+        title=title,
+    )
 
 
 def residopt_available() -> ResidOptAvailability:
@@ -651,6 +1255,116 @@ def _prepare_inputs(
     )
 
 
+def _candidate_public_representations(
+    *,
+    public: tuple[str, ...],
+    hidden: tuple[str, ...],
+    candidate_refinements: tuple[str, ...],
+    max_added_columns: int,
+    include_base: bool,
+) -> tuple[tuple[str, ...], ...]:
+    valid_refinements = tuple(
+        dict.fromkeys(
+            column
+            for column in candidate_refinements
+            if column not in public and column in hidden
+        )
+    )
+    rows: list[tuple[str, ...]] = []
+    if include_base:
+        rows.append(public)
+    for count in range(1, max_added_columns + 1):
+        for added_columns in combinations(valid_refinements, count):
+            rows.append(public + tuple(added_columns))
+    return tuple(dict.fromkeys(rows))
+
+
+def _attach_reductions(
+    rows: tuple[ResidOptRefinementScreenCandidate, ...],
+) -> tuple[ResidOptRefinementScreenCandidate, ...]:
+    if not rows:
+        return rows
+    base = next((row for row in rows if not row.added_columns), None)
+    if base is None:
+        return rows
+    base_conservative = base.conservative_ambiguity
+    base_exact = base.exact_ambiguity
+    base_final = base.final_ambiguity
+
+    reduced_rows: list[ResidOptRefinementScreenCandidate] = []
+    for row in rows:
+        conservative_reduction = (
+            None
+            if base_conservative is None or row.conservative_ambiguity is None
+            else base_conservative - row.conservative_ambiguity
+        )
+        exact_reduction = (
+            None
+            if base_exact is None or row.exact_ambiguity is None
+            else base_exact - row.exact_ambiguity
+        )
+        final_reduction = (
+            None
+            if base_final is None or row.final_ambiguity is None
+            else base_final - row.final_ambiguity
+        )
+        final_reduction_percent = (
+            None
+            if final_reduction is None or base_final is None or base_final <= 0
+            else 100.0 * final_reduction / base_final
+        )
+        reduced_rows.append(
+            replace(
+                row,
+                conservative_reduction=conservative_reduction,
+                exact_reduction=exact_reduction,
+                final_reduction=final_reduction,
+                final_reduction_percent=final_reduction_percent,
+            )
+        )
+    return tuple(reduced_rows)
+
+
+def _sort_refinement_screen_rows(
+    rows: tuple[ResidOptRefinementScreenCandidate, ...],
+    *,
+    include_base: bool,
+    top: int | None,
+) -> tuple[ResidOptRefinementScreenCandidate, ...]:
+    base_rows = tuple(row for row in rows if not row.added_columns)
+    refinement_rows = [row for row in rows if row.added_columns]
+    refinement_rows.sort(
+        key=lambda row: (
+            float("inf") if row.final_ambiguity is None else row.final_ambiguity,
+            row.added_columns,
+        )
+    )
+    if top is not None:
+        refinement_rows = refinement_rows[:top]
+    if include_base:
+        return base_rows + tuple(refinement_rows)
+    return tuple(refinement_rows)
+
+
+def _require_l2_grouped(grouped: GroupedProblem) -> QPreset:
+    if grouped.q is None or grouped.q.name != "l2_budget":
+        raise ValueError(
+            "ResidOpt refinement screening currently supports only "
+            "q_l2_budget(...)."
+        )
+    if grouped.q.radius is None:
+        raise ValueError("q_l2_budget radius is required for residopt screening")
+    return grouped.q
+
+
+def _repeatable_data(data: Any) -> Any:
+    if hasattr(data, "to_dict"):
+        return data
+    if isinstance(data, Sequence) and not isinstance(data, str | bytes):
+        return data
+    return tuple(data)
+
+
 def _prepare_base_inputs(
     grouped_or_problem: GroupedProblem | FiniteProblem,
     *,
@@ -907,11 +1621,19 @@ def _format_float(value: float) -> str:
     return f"{float(value):.6g}"
 
 
+def _format_optional_float(value: float | None) -> str:
+    return "" if value is None else _format_float(value)
+
+
 __all__ = [
     "ResidOptAvailability",
     "ResidOptEndpointCertificate",
     "ResidOptEndpointReport",
     "ResidOptL2EndpointCompiler",
+    "ResidOptRefinementScreenCandidate",
+    "ResidOptRefinementScreenContext",
+    "ResidOptRefinementScreenReport",
     "residopt_available",
     "residopt_l2_support_interval",
+    "residopt_refinement_screen",
 ]

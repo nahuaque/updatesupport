@@ -10,6 +10,19 @@ from updatesupport.residopt_backend import (
 
 
 def _sample_grouped():
+    rows = _sample_rows()
+    return us.from_dataframe(
+        rows,
+        public=["region"],
+        hidden=["region", "segment"],
+        target="metric",
+        weight="weight",
+        min_cell_weight=0.0,
+        q=us.q_l2_budget(0.05),
+    )
+
+
+def _sample_rows():
     rows = [
         {"region": "north", "segment": "new", "metric": 0.10, "weight": 10.0},
         {
@@ -26,15 +39,7 @@ def _sample_grouped():
             "weight": 5.0,
         },
     ]
-    return us.from_dataframe(
-        rows,
-        public=["region"],
-        hidden=["region", "segment"],
-        target="metric",
-        weight="weight",
-        min_cell_weight=0.0,
-        q=us.q_l2_budget(0.05),
-    )
+    return rows
 
 
 class ResidOptBackendTests(unittest.TestCase):
@@ -43,6 +48,9 @@ class ResidOptBackendTests(unittest.TestCase):
         self.assertIn("residopt_l2_support_interval", us.__all__)
         self.assertIn("ResidOptEndpointReport", us.__all__)
         self.assertIn("ResidOptL2EndpointCompiler", us.__all__)
+        self.assertIn("residopt_refinement_screen", us.__all__)
+        self.assertIn("ResidOptRefinementScreenContext", us.__all__)
+        self.assertIn("ResidOptRefinementScreenReport", us.__all__)
 
     def test_availability_is_structured(self):
         availability = us.residopt_available()
@@ -101,6 +109,69 @@ class ResidOptBackendTests(unittest.TestCase):
         self.assertEqual(compiler.support_solve_count, 4)
         self.assertIsNotNone(second.upper_certificate)
         self.assertTrue(second.upper_certificate.metadata["parameterized_template"])
+
+    def test_refinement_screen_certifies_and_avoids_exact_fallback(self):
+        try:
+            import residopt  # noqa: F401
+        except ImportError as exc:
+            raise unittest.SkipTest("residopt is not importable") from exc
+
+        report = us.residopt_refinement_screen(
+            _sample_rows(),
+            public=["region"],
+            hidden=["region", "segment"],
+            target="metric",
+            candidate_refinements=["segment"],
+            weight="weight",
+            min_cell_weight=0.0,
+            q=us.q_l2_budget(0.05, solver="CLARABEL"),
+            ambiguity_limit=1.0,
+            solver="CLARABEL",
+        )
+
+        self.assertIsInstance(report, us.ResidOptRefinementScreenReport)
+        self.assertEqual(report.screened_count, 2)
+        self.assertEqual(report.certified_count, 2)
+        self.assertEqual(report.exact_solve_count, 0)
+        self.assertEqual(report.exact_solve_avoided_count, 2)
+        self.assertGreaterEqual(report.compiler_cache_size, 2)
+        self.assertIn("candidates", report.to_tables())
+        self.assertIn("screen_certified", report.to_markdown())
+
+    def test_refinement_screen_falls_back_to_exact_when_inconclusive(self):
+        try:
+            import residopt  # noqa: F401
+        except ImportError as exc:
+            raise unittest.SkipTest("residopt is not importable") from exc
+
+        context = us.ResidOptRefinementScreenContext(
+            _sample_rows(),
+            public=["region"],
+            hidden=["region", "segment"],
+            target="metric",
+            weight="weight",
+            min_cell_weight=0.0,
+            q=us.q_l2_budget(0.05, solver="CLARABEL"),
+            solver="CLARABEL",
+        )
+        report = context.screen(
+            candidate_refinements=["segment"],
+            ambiguity_limit=0.0,
+        )
+        second = context.screen(
+            candidate_refinements=["segment"],
+            ambiguity_limit=0.0,
+        )
+
+        self.assertEqual(report.certified_count, 1)
+        self.assertEqual(report.exact_solve_count, 1)
+        self.assertEqual(report.exact_solve_avoided_count, 1)
+        self.assertTrue(
+            any(row.exact_ambiguity is not None for row in report.candidates)
+        )
+        self.assertGreaterEqual(report.support_solve_count, 2)
+        self.assertGreaterEqual(second.screened_count, 2)
+        self.assertTrue(all(row.compiler_cache_hit for row in second.candidates))
 
 
 if __name__ == "__main__":
