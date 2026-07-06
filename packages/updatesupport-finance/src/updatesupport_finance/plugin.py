@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import updatesupport as us
 
-from .disclosure import disclosure_triangulation_spec, triangulate_disclosure
+from .disclosure import (
+    audit_disclosure_claim,
+    disclosure_triangulation_spec,
+    triangulate_disclosure,
+)
 from .disclosure import attribute_disclosure_constraints
 from .metrics import (
     default_rate,
@@ -46,6 +50,7 @@ plugin = us.UpdateSupportPlugin(
     },
     report_profiles={
         "disclosure_constraint_attribution": attribute_disclosure_constraints,
+        "disclosure_claim": audit_disclosure_claim,
         "disclosure_triangulation": triangulate_disclosure,
         "model_risk": model_risk_report,
         "model_assisted_portfolio_uncertainty": model_assisted_portfolio_uncertainty,

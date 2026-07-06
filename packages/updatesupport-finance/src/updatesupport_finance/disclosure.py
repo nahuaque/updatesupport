@@ -14,6 +14,8 @@ DisclosureConstraint = us.NamedLinearConstraint
 DisclosureConstraintAttribution = us.NamedLinearConstraintAttribution
 DisclosureConstraintAttributionReport = us.NamedLinearConstraintAttributionReport
 DisclosureConstraintDiagnostic = us.NamedLinearConstraintDiagnostic
+DisclosureClaim = us.NamedLinearClaim
+DisclosureClaimAudit = us.NamedLinearClaimAudit
 DisclosureTarget = us.NamedLinearTarget
 DisclosureTier = us.NamedLinearScenario
 DisclosureTriangulationSpec = us.NamedLinearFeasibilityProblem
@@ -296,7 +298,43 @@ def attribute_disclosure_constraints(
     )
 
 
+def disclosure_claim(
+    *,
+    target: str,
+    tier: str,
+    lower_at_least: float | None = None,
+    upper_at_most: float | None = None,
+    label: str | None = None,
+    description: str | None = None,
+    attribution_top: int = 5,
+    diagnostic_top: int = 8,
+) -> DisclosureClaim:
+    """Create a claim about a disclosure-triangulation target interval."""
+
+    return us.named_linear_claim(
+        target=target,
+        scenario=tier,
+        lower_at_least=lower_at_least,
+        upper_at_most=upper_at_most,
+        label=label,
+        description=description,
+        attribution_top=attribution_top,
+        diagnostic_top=diagnostic_top,
+    )
+
+
+def audit_disclosure_claim(
+    report: DisclosureTriangulationReport,
+    claim: DisclosureClaim | Mapping[str, Any],
+) -> DisclosureClaimAudit:
+    """Audit whether a disclosure report supports a bound claim."""
+
+    return us.audit_named_linear_claim(report, claim)
+
+
 __all__ = [
+    "DisclosureClaim",
+    "DisclosureClaimAudit",
     "DisclosureConstraint",
     "DisclosureConstraintAttribution",
     "DisclosureConstraintAttributionReport",
@@ -307,8 +345,10 @@ __all__ = [
     "DisclosureTriangulationReport",
     "DisclosureTriangulationSpec",
     "DisclosureVariable",
+    "audit_disclosure_claim",
     "attribute_disclosure_constraints",
     "containment_constraint",
+    "disclosure_claim",
     "disclosure_constraint",
     "disclosure_target",
     "disclosure_tier",

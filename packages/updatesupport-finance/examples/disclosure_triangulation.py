@@ -219,6 +219,30 @@ def build_attribution_report(
     )
 
 
+def build_claim_audit(
+    report: us.NamedLinearFeasibilityReport | None = None,
+    *,
+    target: str = "component_2022",
+    tier: str = "T2 + anchor disclosure",
+    lower_at_least: float = 50.0,
+) -> us.NamedLinearClaimAudit:
+    """Audit whether the disclosure system certifies a target lower bound."""
+
+    if report is None:
+        report = build_report()
+    claim = usf.disclosure_claim(
+        target=target,
+        tier=tier,
+        lower_at_least=lower_at_least,
+        label="Example component lower-bound claim",
+        description=(
+            "This claim passes only if every value in the feasible interval is "
+            "at least the asserted lower bound."
+        ),
+    )
+    return claim.audit(report)
+
+
 def width_reduction_rows(
     report: us.NamedLinearFeasibilityReport,
     *,
@@ -280,6 +304,10 @@ def render_markdown(report: us.NamedLinearFeasibilityReport | None = None) -> st
     lines.extend(_width_reduction_table(width_reduction_rows(report)))
     lines.extend(
         [
+            "",
+            "## Disclosure Claim Audit",
+            "",
+            build_claim_audit(report).to_markdown(),
             "",
             "## Constraint Value Attribution",
             "",

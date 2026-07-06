@@ -603,6 +603,14 @@ class NamedLinearFeasibilityReport:
             top=top,
         )
 
+    def audit_claim(
+        self,
+        claim: "NamedLinearClaim",
+    ) -> "NamedLinearClaimAudit":
+        """Audit a named-linear claim against this interval report."""
+
+        return audit_named_linear_claim(self, claim)
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "title": self.title,
@@ -727,6 +735,202 @@ class NamedLinearFeasibilityReport:
         return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class NamedLinearClaim:
+    """Bound claim about a target interval under one named scenario."""
+
+    target: str
+    scenario: str
+    lower_at_least: float | None = None
+    upper_at_most: float | None = None
+    label: str | None = None
+    description: str | None = None
+    attribution_top: int = 5
+    diagnostic_top: int = 8
+
+    def __post_init__(self) -> None:
+        if not self.target:
+            raise ValueError("claim target cannot be empty")
+        if not self.scenario:
+            raise ValueError("claim scenario cannot be empty")
+        lower = (
+            None
+            if self.lower_at_least is None
+            else _finite_float(self.lower_at_least, "lower_at_least")
+        )
+        upper = (
+            None
+            if self.upper_at_most is None
+            else _finite_float(self.upper_at_most, "upper_at_most")
+        )
+        if lower is None and upper is None:
+            raise ValueError("claim must specify lower_at_least or upper_at_most")
+        if lower is not None and upper is not None and lower > upper:
+            raise ValueError("claim lower_at_least cannot exceed upper_at_most")
+        object.__setattr__(self, "lower_at_least", lower)
+        object.__setattr__(self, "upper_at_most", upper)
+        object.__setattr__(
+            self,
+            "attribution_top",
+            _positive_int(self.attribution_top, "attribution_top"),
+        )
+        object.__setattr__(
+            self,
+            "diagnostic_top",
+            _positive_int(self.diagnostic_top, "diagnostic_top"),
+        )
+
+    def audit(self, report: NamedLinearFeasibilityReport) -> "NamedLinearClaimAudit":
+        """Audit this claim against a named-linear feasibility report."""
+
+        return audit_named_linear_claim(report, self)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "target": self.target,
+            "scenario": self.scenario,
+            "lower_at_least": self.lower_at_least,
+            "upper_at_most": self.upper_at_most,
+            "label": self.label,
+            "description": self.description,
+            "attribution_top": self.attribution_top,
+            "diagnostic_top": self.diagnostic_top,
+        }
+
+    @property
+    def statement(self) -> str:
+        parts = []
+        if self.lower_at_least is not None:
+            parts.append(f"{self.target} >= {self.lower_at_least:g}")
+        if self.upper_at_most is not None:
+            parts.append(f"{self.target} <= {self.upper_at_most:g}")
+        return " and ".join(parts)
+
+
+@dataclass(frozen=True)
+class NamedLinearClaimAudit:
+    """Review artifact for a named-linear interval claim."""
+
+    claim: NamedLinearClaim
+    interval: NamedLinearInterval
+    verdict: str
+    support_margin: float | None
+    condition_rows: tuple[dict[str, Any], ...]
+    reasons: tuple[str, ...]
+    attribution: NamedLinearConstraintAttributionReport | None = None
+    endpoint_diagnostics: tuple[NamedLinearConstraintDiagnostic, ...] = ()
+    source_title: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "condition_rows", tuple(self.condition_rows))
+        object.__setattr__(self, "reasons", tuple(self.reasons))
+        object.__setattr__(
+            self,
+            "endpoint_diagnostics",
+            tuple(self.endpoint_diagnostics),
+        )
+
+    @property
+    def title(self) -> str:
+        return "Named Linear Claim Audit"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "source_title": self.source_title,
+            "claim": self.claim.as_dict(),
+            "statement": self.claim.statement,
+            "interval": self.interval.as_dict(),
+            "verdict": self.verdict,
+            "support_margin": self.support_margin,
+            "condition_rows": list(self.condition_rows),
+            "reasons": list(self.reasons),
+            "attribution": None
+            if self.attribution is None
+            else self.attribution.as_dict(),
+            "endpoint_diagnostics": [
+                row.as_dict() for row in self.endpoint_diagnostics
+            ],
+        }
+
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        return {
+            "claim_summary": (
+                {
+                    "title": self.title,
+                    "source_title": self.source_title,
+                    "target": self.claim.target,
+                    "scenario": self.claim.scenario,
+                    "statement": self.claim.statement,
+                    "verdict": self.verdict,
+                    "lower": self.interval.lower,
+                    "upper": self.interval.upper,
+                    "width": self.interval.width,
+                    "status": self.interval.status,
+                    "support_margin": self.support_margin,
+                },
+            ),
+            "claim_conditions": self.condition_rows,
+            "claim_reasons": tuple({"reason": reason} for reason in self.reasons),
+            "claim_attribution": ()
+            if self.attribution is None
+            else tuple(row.as_dict() for row in self.attribution.rows),
+            "claim_endpoint_diagnostics": tuple(
+                row.as_dict() for row in self.endpoint_diagnostics
+            ),
+        }
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import tables_to_dataframes
+
+        return tables_to_dataframes(self.to_tables())
+
+    def to_markdown(self) -> str:
+        lines = [
+            f"# {self.title}",
+            "",
+            f"- Verdict: **{self.verdict}**",
+            f"- Claim: `{_escape_markdown(self.claim.statement)}`",
+            f"- Target: `{_escape_markdown(self.claim.target)}`",
+            f"- Scenario: `{_escape_markdown(self.claim.scenario)}`",
+            "- Feasible interval: "
+            f"[{_format_optional(self.interval.lower, '')}, "
+            f"{_format_optional(self.interval.upper, '')}]",
+        ]
+        if self.support_margin is not None:
+            lines.append(
+                f"- Margin to failure: {_format_optional(self.support_margin, '')}"
+            )
+        if self.claim.description:
+            lines.extend(["", self.claim.description])
+        lines.extend(["", "## Condition Checks", ""])
+        lines.extend(_claim_condition_table(self.condition_rows))
+        lines.extend(["", "## Reasons", ""])
+        lines.extend(f"- {reason}" for reason in self.reasons)
+        if self.attribution is not None:
+            lines.extend(["", "## Constraint Attribution", ""])
+            lines.extend(_attribution_table(self.attribution.rows))
+        lines.extend(["", "## Endpoint Binding / Dual Diagnostics", ""])
+        lines.extend(_diagnostic_rows_table(self.endpoint_diagnostics))
+        lines.extend(
+            [
+                "",
+                "## Limitations",
+                "",
+                "- This is a feasibility claim audit, not a point estimate or "
+                "confidence interval.",
+                "- The verdict is conditional on the supplied variables, linear "
+                "constraints, target expression, and active scenario.",
+            ]
+        )
+        return "\n".join(lines)
+
+
 def named_linear_variable(
     name: str,
     *,
@@ -838,6 +1042,29 @@ def named_linear_feasibility_problem(
     )
 
 
+def named_linear_claim(
+    *,
+    target: str,
+    scenario: str,
+    lower_at_least: float | None = None,
+    upper_at_most: float | None = None,
+    label: str | None = None,
+    description: str | None = None,
+    attribution_top: int = 5,
+    diagnostic_top: int = 8,
+) -> NamedLinearClaim:
+    return NamedLinearClaim(
+        target=target,
+        scenario=scenario,
+        lower_at_least=lower_at_least,
+        upper_at_most=upper_at_most,
+        label=label,
+        description=description,
+        attribution_top=attribution_top,
+        diagnostic_top=diagnostic_top,
+    )
+
+
 def solve_named_linear_feasibility(
     problem: NamedLinearFeasibilityProblem | Mapping[str, Any],
 ) -> NamedLinearFeasibilityReport:
@@ -880,6 +1107,43 @@ def solve_named_linear_feasibility(
                 )
             )
     return NamedLinearFeasibilityReport(problem=problem, intervals=tuple(intervals))
+
+
+def audit_named_linear_claim(
+    report: NamedLinearFeasibilityReport,
+    claim: NamedLinearClaim | Mapping[str, Any],
+) -> NamedLinearClaimAudit:
+    """Audit whether a named-linear interval report supports a bound claim."""
+
+    if not isinstance(claim, NamedLinearClaim):
+        claim = NamedLinearClaim(**dict(claim))
+    interval = report.interval(target=claim.target, scenario=claim.scenario)
+    condition_rows = tuple(_claim_condition_rows(claim, interval))
+    verdict = _claim_verdict(interval, condition_rows)
+    support_margin = _claim_support_margin(verdict, condition_rows)
+    attribution = None
+    if interval.status == "bounded":
+        attribution = report.attribute_constraints(
+            target=claim.target,
+            scenario=claim.scenario,
+            top=claim.attribution_top,
+        )
+    endpoint_diagnostics = _claim_endpoint_diagnostics(
+        claim,
+        interval,
+        top=claim.diagnostic_top,
+    )
+    return NamedLinearClaimAudit(
+        claim=claim,
+        interval=interval,
+        verdict=verdict,
+        support_margin=support_margin,
+        condition_rows=condition_rows,
+        reasons=tuple(_claim_reasons(verdict, interval, condition_rows)),
+        attribution=attribution,
+        endpoint_diagnostics=endpoint_diagnostics,
+        source_title=report.title,
+    )
 
 
 def attribute_named_linear_constraints(
@@ -1381,10 +1645,158 @@ def _attribution_rank_value(row: NamedLinearConstraintAttribution) -> float:
     return float("-inf")
 
 
+def _claim_condition_rows(
+    claim: NamedLinearClaim,
+    interval: NamedLinearInterval,
+) -> list[dict[str, Any]]:
+    rows = []
+    if claim.lower_at_least is not None:
+        threshold = claim.lower_at_least
+        status = "inconclusive"
+        margin = None
+        if interval.status == "bounded":
+            if interval.lower is not None and interval.lower >= threshold:
+                status = "pass"
+                margin = interval.lower - threshold
+            elif interval.upper is not None and interval.upper < threshold:
+                status = "fail"
+                margin = interval.upper - threshold
+            elif interval.lower is not None:
+                margin = interval.lower - threshold
+        rows.append(
+            {
+                "condition": f"{claim.target} >= {threshold:g}",
+                "type": "lower_at_least",
+                "threshold": threshold,
+                "status": status,
+                "margin": margin,
+                "certifying_endpoint": "lower",
+                "endpoint_value": interval.lower,
+                "opposite_endpoint_value": interval.upper,
+            }
+        )
+    if claim.upper_at_most is not None:
+        threshold = claim.upper_at_most
+        status = "inconclusive"
+        margin = None
+        if interval.status == "bounded":
+            if interval.upper is not None and interval.upper <= threshold:
+                status = "pass"
+                margin = threshold - interval.upper
+            elif interval.lower is not None and interval.lower > threshold:
+                status = "fail"
+                margin = threshold - interval.lower
+            elif interval.upper is not None:
+                margin = threshold - interval.upper
+        rows.append(
+            {
+                "condition": f"{claim.target} <= {threshold:g}",
+                "type": "upper_at_most",
+                "threshold": threshold,
+                "status": status,
+                "margin": margin,
+                "certifying_endpoint": "upper",
+                "endpoint_value": interval.upper,
+                "opposite_endpoint_value": interval.lower,
+            }
+        )
+    return rows
+
+
+def _claim_verdict(
+    interval: NamedLinearInterval,
+    condition_rows: Sequence[Mapping[str, Any]],
+) -> str:
+    if interval.status != "bounded":
+        return "inconclusive"
+    statuses = {str(row["status"]) for row in condition_rows}
+    if "fail" in statuses:
+        return "fail"
+    if statuses == {"pass"}:
+        return "pass"
+    return "inconclusive"
+
+
+def _claim_support_margin(
+    verdict: str,
+    condition_rows: Sequence[Mapping[str, Any]],
+) -> float | None:
+    if verdict != "pass":
+        return None
+    margins = [row["margin"] for row in condition_rows if row["margin"] is not None]
+    if not margins:
+        return None
+    return float(min(margins))
+
+
+def _claim_reasons(
+    verdict: str,
+    interval: NamedLinearInterval,
+    condition_rows: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    if interval.status != "bounded":
+        return [
+            "The active scenario did not produce a bounded feasible interval, "
+            "so the claim cannot be certified."
+        ]
+    if verdict == "pass":
+        return ["The full feasible interval satisfies every asserted claim bound."]
+    if verdict == "fail":
+        return [
+            f"Condition `{row['condition']}` is contradicted by the full feasible "
+            "interval."
+            for row in condition_rows
+            if row["status"] == "fail"
+        ]
+    return [
+        f"Condition `{row['condition']}` is not certified because the feasible "
+        "interval crosses the asserted threshold."
+        for row in condition_rows
+        if row["status"] == "inconclusive"
+    ]
+
+
+def _claim_endpoint_diagnostics(
+    claim: NamedLinearClaim,
+    interval: NamedLinearInterval,
+    *,
+    top: int,
+) -> tuple[NamedLinearConstraintDiagnostic, ...]:
+    endpoints = []
+    if claim.lower_at_least is not None:
+        endpoints.append(interval.lower_endpoint)
+    if claim.upper_at_most is not None:
+        endpoints.append(interval.upper_endpoint)
+    diagnostics = [
+        diagnostic
+        for endpoint in endpoints
+        for diagnostic in endpoint.constraint_diagnostics
+        if diagnostic.binding
+        or (diagnostic.dual_magnitude is not None and diagnostic.dual_magnitude > 1e-9)
+    ]
+    diagnostics.sort(
+        key=lambda row: (
+            -(row.dual_magnitude or 0.0),
+            not row.binding,
+            row.endpoint,
+            row.constraint,
+            row.side,
+        )
+    )
+    return tuple(diagnostics[:top])
+
+
 def _finite_float(value: float, name: str) -> float:
     number = float(value)
     if not isfinite(number):
         raise ValueError(f"{name} must be finite")
+    return number
+
+
+def _positive_int(value: int, name: str) -> int:
+    number = int(value)
+    if number <= 0:
+        raise ValueError(f"{name} must be positive")
     return number
 
 
@@ -1498,6 +1910,57 @@ def _dual_diagnostic_table(
     return lines
 
 
+def _claim_condition_table(rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    lines = [
+        "| Condition | Status | Endpoint | Endpoint value | Margin |",
+        "| --- | --- | --- | ---: | ---: |",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _escape_markdown(str(row["condition"])),
+                    str(row["status"]),
+                    str(row["certifying_endpoint"]),
+                    _format_optional(row["endpoint_value"], ""),
+                    _format_optional(row["margin"], ""),
+                ]
+            )
+            + " |"
+        )
+    return lines
+
+
+def _diagnostic_rows_table(
+    rows: Sequence[NamedLinearConstraintDiagnostic],
+) -> list[str]:
+    lines = [
+        "| Endpoint | Constraint | Side | Binding | Slack | Target marginal | Dual magnitude |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: |",
+    ]
+    if not rows:
+        lines.append("| n/a | none | n/a | n/a | n/a | n/a | n/a |")
+        return lines
+    for row in rows:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    row.endpoint,
+                    _escape_markdown(row.constraint),
+                    row.side,
+                    "yes" if row.binding else "no",
+                    _format_optional(row.slack, ""),
+                    _format_optional(row.target_marginal, ""),
+                    _format_optional(row.dual_magnitude, ""),
+                ]
+            )
+            + " |"
+        )
+    return lines
+
+
 def _attribution_table(
     rows: Sequence[NamedLinearConstraintAttribution],
 ) -> list[str]:
@@ -1557,15 +2020,19 @@ __all__ = [
     "NamedLinearFeasibilityProblem",
     "NamedLinearFeasibilityReport",
     "NamedLinearInterval",
+    "NamedLinearClaim",
+    "NamedLinearClaimAudit",
     "NamedLinearScenario",
     "NamedLinearTarget",
     "NamedLinearVariable",
+    "audit_named_linear_claim",
     "coerce_named_linear_constraint",
     "coerce_named_linear_expression",
     "coerce_named_linear_scenario",
     "coerce_named_linear_target",
     "coerce_named_linear_variable",
     "attribute_named_linear_constraints",
+    "named_linear_claim",
     "named_linear_constraint",
     "named_linear_expression",
     "named_linear_feasibility_problem",

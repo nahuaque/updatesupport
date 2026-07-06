@@ -5,6 +5,8 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 
 from .disclosure import (
+    DisclosureClaim,
+    DisclosureClaimAudit,
     DisclosureConstraint,
     DisclosureConstraintAttribution,
     DisclosureConstraintAttributionReport,
@@ -15,9 +17,11 @@ from .disclosure import (
     DisclosureTriangulationReport,
     DisclosureTriangulationSpec,
     DisclosureVariable,
+    audit_disclosure_claim,
     attribute_disclosure_constraints,
     containment_constraint,
     disclosure_constraint,
+    disclosure_claim,
     disclosure_target,
     disclosure_tier,
     disclosure_triangulation_spec,
@@ -62,14 +66,18 @@ except PackageNotFoundError:
 
 __all__ = [
     "__version__",
+    "audit_disclosure_claim",
     "attribute_disclosure_constraints",
     "containment_constraint",
     "default_rate",
+    "disclosure_claim",
     "disclosure_constraint",
     "disclosure_target",
     "disclosure_tier",
     "disclosure_triangulation_spec",
     "disclosure_variable",
+    "DisclosureClaim",
+    "DisclosureClaimAudit",
     "DisclosureConstraint",
     "DisclosureConstraintAttribution",
     "DisclosureConstraintAttributionReport",

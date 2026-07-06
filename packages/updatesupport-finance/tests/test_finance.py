@@ -672,6 +672,10 @@ class FinancePluginTests(unittest.TestCase):
             us.plugin_report_profile("finance", "disclosure_constraint_attribution"),
             usf.attribute_disclosure_constraints,
         )
+        self.assertIs(
+            us.plugin_report_profile("finance", "disclosure_claim"),
+            usf.audit_disclosure_claim,
+        )
         self.assertIs(us.plugin_compiler("finance", "portfolio"), usf.from_portfolio)
         self.assertIs(
             us.plugin_compiler("finance", "disclosure_triangulation"),
@@ -719,6 +723,7 @@ class FinancePluginTests(unittest.TestCase):
         spec = namespace["build_spec"]()
         report = namespace["build_report"]()
         attribution = namespace["build_attribution_report"](report)
+        claim_audit = namespace["build_claim_audit"](report)
         rows = namespace["width_reduction_rows"](report)
         markdown = namespace["render_markdown"](report)
         target_2022 = report.interval(
@@ -733,6 +738,8 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIsInstance(spec, us.NamedLinearFeasibilityProblem)
         self.assertIsInstance(report, us.NamedLinearFeasibilityReport)
         self.assertIsInstance(attribution, us.NamedLinearConstraintAttributionReport)
+        self.assertIsInstance(claim_audit, us.NamedLinearClaimAudit)
+        self.assertEqual(claim_audit.verdict, "pass")
         self.assertEqual(len(rows), 9)
         self.assertEqual(attribution.rows[0].group, "component_2024_anchor")
         self.assertGreater(attribution.rows[0].width_increase, 100.0)
@@ -743,6 +750,8 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIn("Generic Disclosure Triangulation Worked Example", markdown)
         self.assertIn("T2 + anchor disclosure", markdown)
         self.assertIn("Width Reduction By Tier", markdown)
+        self.assertIn("Disclosure Claim Audit", markdown)
+        self.assertIn("Verdict: **pass**", markdown)
         self.assertIn("Constraint Value Attribution", markdown)
         self.assertIn("Ranked Constraint Values", markdown)
         self.assertIn("Dual / Binding Constraint Diagnostics", markdown)

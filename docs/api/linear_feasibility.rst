@@ -14,9 +14,13 @@ a public/hidden cell recomposition problem.
    updatesupport.named_linear_constraint
    updatesupport.named_linear_target
    updatesupport.named_linear_scenario
+   updatesupport.named_linear_claim
+   updatesupport.audit_named_linear_claim
    updatesupport.attribute_named_linear_constraints
    updatesupport.NamedLinearFeasibilityProblem
    updatesupport.NamedLinearFeasibilityReport
+   updatesupport.NamedLinearClaim
+   updatesupport.NamedLinearClaimAudit
    updatesupport.NamedLinearInterval
    updatesupport.NamedLinearEndpoint
    updatesupport.NamedLinearConstraintAttribution

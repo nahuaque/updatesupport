@@ -169,8 +169,57 @@ class NamedLinearFeasibilityTests(unittest.TestCase):
         self.assertIsNotNone(anchor_lower.solver_marginal)
         self.assertIsNotNone(anchor_lower.target_marginal)
         self.assertGreater(anchor_lower.dual_magnitude, 0.0)
-        self.assertIn("current_anchor:lower", interval.lower_endpoint.binding_constraint_sides)
+        self.assertIn(
+            "current_anchor:lower",
+            interval.lower_endpoint.binding_constraint_sides,
+        )
         self.assertIn("Dual / Binding Constraint Diagnostics", report.to_markdown())
+
+    def test_named_linear_claim_audit_passes_when_interval_supports_bound(self):
+        report = us.solve_named_linear_feasibility(_example_problem())
+        claim = us.named_linear_claim(
+            target="previous_component",
+            scenario="T2 + anchor",
+            lower_at_least=50.0,
+        )
+
+        audit = claim.audit(report)
+
+        self.assertIsInstance(audit, us.NamedLinearClaimAudit)
+        self.assertEqual(audit.verdict, "pass")
+        self.assertAlmostEqual(audit.support_margin, 6.25)
+        self.assertEqual(audit.condition_rows[0]["status"], "pass")
+        self.assertIn("Claim: `previous_component >= 50`", audit.to_markdown())
+        self.assertIn("claim_summary", audit.to_tables())
+        self.assertIn("claim_attribution", audit.to_tables())
+        self.assertIn("claim_endpoint_diagnostics", audit.to_tables())
+
+    def test_named_linear_claim_audit_can_fail_or_be_inconclusive(self):
+        report = us.solve_named_linear_feasibility(_example_problem())
+
+        inconclusive = us.audit_named_linear_claim(
+            report,
+            us.named_linear_claim(
+                target="previous_component",
+                scenario="T2 + anchor",
+                lower_at_least=60.0,
+            ),
+        )
+        failed = us.audit_named_linear_claim(
+            report,
+            us.named_linear_claim(
+                target="previous_component",
+                scenario="T2 + anchor",
+                lower_at_least=110.0,
+            ),
+        )
+
+        self.assertEqual(inconclusive.verdict, "inconclusive")
+        self.assertIsNone(inconclusive.support_margin)
+        self.assertEqual(inconclusive.condition_rows[0]["status"], "inconclusive")
+        self.assertEqual(failed.verdict, "fail")
+        self.assertEqual(failed.condition_rows[0]["status"], "fail")
+        self.assertLess(failed.condition_rows[0]["margin"], 0.0)
 
     def test_constraint_attribution_ranks_interval_tightening(self):
         report = us.solve_named_linear_feasibility(_example_problem())

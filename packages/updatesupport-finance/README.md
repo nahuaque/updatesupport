@@ -271,6 +271,24 @@ at a time, re-solves the interval, and reports the resulting width increase.
 The underlying named-linear report also includes side-specific binding
 constraints and HiGHS marginal diagnostics for each solved endpoint.
 
+Use `disclosure_claim(...)` when the review question is an assertion rather
+than an interval:
+
+```python
+claim = usf.disclosure_claim(
+    target="component_previous",
+    tier="T2 + anchor disclosure",
+    lower_at_least=50.0,
+)
+
+audit = claim.audit(report)
+print(audit.to_markdown())
+```
+
+The audit returns `pass`, `fail`, or `inconclusive`, plus the feasible interval,
+margin to failure when certified, relevant attribution rows, endpoint dual
+diagnostics, and structured exports.
+
 A complete generic example is available in
 `examples/disclosure_triangulation.py`:
 
