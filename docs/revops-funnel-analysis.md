@@ -98,6 +98,65 @@ The same pattern applies to other funnel and go-to-market claims:
 - "Forecast-risk concentration is not driven by one hidden channel or rep-ramp
   subgroup."
 
+## Trend Stability
+
+RevOps teams often care more about movement than levels:
+
+> Did conversion actually improve this quarter?
+
+The no-download trend example audits that question:
+
+```bash
+uv run python examples/revops_funnel_trend_stability.py
+```
+
+It uses paired retained cells for a current and prior quarter. The supplied
+target is the hidden-cell trend:
+
+```text
+current-quarter SQL conversion - prior-quarter SQL conversion
+```
+
+The public report still cuts by segment and region, while retained cells include
+lead source, campaign type, industry, deal-size band, and rep ramp.
+
+The synthetic headline is:
+
+```text
+observed Q/Q SQL conversion lift: 1.21 percentage points
+hidden-composition interval: -1.88 to 4.88 percentage points
+```
+
+The observed trend is positive, but the interval crosses zero. Under the
+declared stress test, the improvement is not decision-invariant.
+
+This is the RevOps version of a Simpson's-paradox warning: a KPI trend can look
+positive at the reported level while retained subgroups inside the same public
+segments tell a less stable story. In the synthetic example, the compact repair
+is:
+
+```text
+base + rep_ramp_band
+```
+
+That is a natural operating recommendation: report or monitor the trend
+separately for ramping and tenured reps before treating the headline improvement
+as certified.
+
+Write trend review artifacts:
+
+```bash
+uv run python examples/revops_funnel_trend_stability.py \
+  --export-dir data/revops_funnel_trend_review
+```
+
+The trend example also includes a robust quarter comparison, so the report can
+say both:
+
+- the current quarter is the observed winner;
+- the current quarter is not the certified winner under hidden-composition
+  recomposition.
+
 The product wedge is not general dashboarding. It is a narrower audit:
 
 > Does this reported RevOps claim remain defensible after plausible retained

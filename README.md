@@ -459,6 +459,12 @@ Run the no-download RevOps funnel stability demo:
 uv run python examples/revops_funnel_stability.py
 ```
 
+Run the no-download RevOps funnel trend stability demo:
+
+```bash
+uv run python examples/revops_funnel_trend_stability.py
+```
+
 Write RevOps review artifacts as Markdown, JSON, and CSV tables:
 
 ```bash

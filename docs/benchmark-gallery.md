@@ -40,6 +40,10 @@ The generated `data/benchmark_gallery/index.md` links to each saved case study.
   health decision is not invariant when lead source, campaign type, industry,
   deal size, and rep ramp can shift inside fixed public segment buckets. The
   report includes a compact public-representation repair for the claim.
+- **RevOps funnel trend stability synthetic audit**: a no-download
+  revenue-operations trend example. It reports positive quarter-over-quarter
+  MQL-to-SQL lift, then shows that the improvement is not certified when hidden
+  pipeline composition can shift inside fixed public segment buckets.
 - **Folktables ACSIncome synthetic label-rate audit**: a no-download
   ACS-shaped label-rate example for testing the public/hidden reporting
   workflow. The report includes a public-representation frontier that asks

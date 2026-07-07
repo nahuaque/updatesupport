@@ -304,10 +304,17 @@ class FolktablesExampleTests(unittest.TestCase):
                 statuses["revops_funnel_stability_synthetic"],
                 "generated",
             )
+            self.assertEqual(
+                statuses["revops_funnel_trend_stability_synthetic"],
+                "generated",
+            )
             self.assertEqual(statuses["acic_2016_oracle"], "skipped")
             self.assertTrue((output_dir / "index.md").exists())
             self.assertTrue(
                 (output_dir / "revops_funnel_stability_synthetic.md").exists()
+            )
+            self.assertTrue(
+                (output_dir / "revops_funnel_trend_stability_synthetic.md").exists()
             )
             self.assertTrue(
                 (output_dir / "folktables_acs_income_synthetic.md").exists()
@@ -323,6 +330,7 @@ class FolktablesExampleTests(unittest.TestCase):
             self.assertIn("Selected Representation Explanation", folktables_report)
             self.assertIn("updatesupport Benchmark Gallery", index)
             self.assertIn("RevOps Funnel Stability Synthetic Audit", index)
+            self.assertIn("RevOps Funnel Trend Stability Synthetic Audit", index)
             self.assertIn("ACIC CSV not found", index)
 
 
