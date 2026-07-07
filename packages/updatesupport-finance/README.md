@@ -326,11 +326,17 @@ uv run --package updatesupport-finance python \
   packages/updatesupport-finance/examples/disclosure_triangulation.py
 ```
 
-The Exxon Mobil example demonstrates the same API on public SEC disclosures:
+The Exxon Mobil examples demonstrate the same API on public SEC disclosures:
 
 ```bash
 uv run --package updatesupport-finance python \
   packages/updatesupport-finance/examples/exxon_revenue_recognition_triangulation.py
+
+uv run --package updatesupport-finance python \
+  packages/updatesupport-finance/examples/exxon_capex_capacity_triangulation.py
+
+uv run --package updatesupport-finance python \
+  packages/updatesupport-finance/examples/exxon_debt_bridge_triangulation.py
 ```
 
 ## Analyst Workflow

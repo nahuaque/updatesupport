@@ -825,6 +825,140 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIn("Q1 2026 | 26,295 $M | 6,328 $M | 24.1%", panel_markdown)
         self.assertIn("Verdict: **inconclusive**", panel_markdown)
 
+    def test_exxon_debt_bridge_example_builds_report(self):
+        example_path = (
+            Path(__file__).resolve().parents[1]
+            / "examples"
+            / "exxon_debt_bridge_triangulation.py"
+        )
+        namespace = runpy.run_path(str(example_path), run_name="updatesupport_example")
+
+        spec = namespace["build_spec"]()
+        report = namespace["build_report"]()
+        attribution = namespace["build_attribution_report"](report)
+        claim_audit = namespace["build_claim_audit"](report)
+        pack = namespace["build_audit_pack"](report)
+        rows = namespace["width_reduction_rows"](report)
+        markdown = namespace["render_markdown"](report)
+        panel_markdown = namespace["render_panel_markdown"]()
+        pack_json = json.loads(pack.to_json())
+        full_bridge_tier = namespace["FULL_BRIDGE_TIER"]
+        residual = report.interval(
+            target="debt_bridge_residual",
+            scenario=full_bridge_tier,
+        )
+        residual_share = report.interval(
+            target="debt_bridge_residual_share_of_balance_sheet_change",
+            scenario=full_bridge_tier,
+        )
+        q1_report = namespace["build_report"]("q1_2026")
+        q1_residual = q1_report.interval(
+            target="debt_bridge_residual",
+            scenario=full_bridge_tier,
+        )
+        q1_claim_audit = namespace["build_claim_audit"](q1_report)
+
+        self.assertIsInstance(spec, us.NamedLinearFeasibilityProblem)
+        self.assertIsInstance(report, us.NamedLinearFeasibilityReport)
+        self.assertIsInstance(attribution, us.NamedLinearConstraintAttributionReport)
+        self.assertIsInstance(claim_audit, us.NamedLinearClaimAudit)
+        self.assertIsInstance(pack, usf.DisclosureAuditPack)
+        self.assertEqual(claim_audit.verdict, "pass")
+        self.assertEqual(q1_claim_audit.verdict, "fail")
+        self.assertEqual(len(rows), 10)
+        self.assertAlmostEqual(residual.lower, 1774.0)
+        self.assertAlmostEqual(residual.upper, 1774.0)
+        self.assertAlmostEqual(residual_share.lower, 100.0 * 1774.0 / 1827.0)
+        self.assertAlmostEqual(residual_share.upper, 100.0 * 1774.0 / 1827.0)
+        self.assertAlmostEqual(q1_residual.lower, -285.0)
+        self.assertAlmostEqual(q1_residual.upper, -285.0)
+        self.assertEqual(
+            pack_json["title"], "Exxon Mobil FY2025 Debt Bridge Disclosure Audit Pack"
+        )
+        self.assertIn("Exxon Mobil FY2025 Debt Bridge Disclosure Audit Pack", markdown)
+        self.assertIn("debt_bridge_residual >= 1000", markdown)
+        self.assertIn("Verdict: **pass**", markdown)
+        self.assertIn("Endpoint Diagnostics", markdown)
+        self.assertIn("Debt Bridge Disclosure Triangulation Panel", panel_markdown)
+        self.assertIn(
+            "FY2025 | +1,827 $M | +53 $M | +1,774 $M | 97.1% | pass",
+            panel_markdown,
+        )
+        self.assertIn(
+            "Q1 2026 | +4,124 $M | +4,409 $M | -285 $M | -6.9% | fail",
+            panel_markdown,
+        )
+
+    def test_exxon_capex_capacity_example_builds_report(self):
+        example_path = (
+            Path(__file__).resolve().parents[1]
+            / "examples"
+            / "exxon_capex_capacity_triangulation.py"
+        )
+        namespace = runpy.run_path(str(example_path), run_name="updatesupport_example")
+
+        spec = namespace["build_spec"]()
+        report = namespace["build_report"]()
+        attribution = namespace["build_attribution_report"](report)
+        claim_audit = namespace["build_claim_audit"](report)
+        pack = namespace["build_audit_pack"](report)
+        rows = namespace["width_reduction_rows"](report)
+        markdown = namespace["render_markdown"](report)
+        panel_markdown = namespace["render_panel_markdown"]()
+        pack_json = json.loads(pack.to_json())
+        capacity_tier = namespace["CAPACITY_TIER"]
+        upstream = report.interval(
+            target="cash_ppe_additions_upstream",
+            scenario=capacity_tier,
+        )
+        upstream_share = report.interval(
+            target="cash_ppe_additions_upstream_share",
+            scenario=capacity_tier,
+        )
+        q1_report = namespace["build_report"]("q1_2026")
+        q1_upstream = q1_report.interval(
+            target="cash_ppe_additions_upstream",
+            scenario=capacity_tier,
+        )
+        q1_upstream_share = q1_report.interval(
+            target="cash_ppe_additions_upstream_share",
+            scenario=capacity_tier,
+        )
+        q1_claim_audit = namespace["build_claim_audit"](q1_report)
+
+        self.assertIsInstance(spec, us.NamedLinearFeasibilityProblem)
+        self.assertIsInstance(report, us.NamedLinearFeasibilityReport)
+        self.assertIsInstance(attribution, us.NamedLinearConstraintAttributionReport)
+        self.assertIsInstance(claim_audit, us.NamedLinearClaimAudit)
+        self.assertIsInstance(pack, usf.DisclosureAuditPack)
+        self.assertEqual(claim_audit.verdict, "pass")
+        self.assertEqual(q1_claim_audit.verdict, "pass")
+        self.assertEqual(len(rows), 24)
+        self.assertAlmostEqual(upstream.lower, 22244.0)
+        self.assertAlmostEqual(upstream.upper, 25362.0)
+        self.assertAlmostEqual(upstream_share.lower, 100.0 * 22244.0 / 28358.0)
+        self.assertAlmostEqual(upstream_share.upper, 100.0 * 25362.0 / 28358.0)
+        self.assertAlmostEqual(q1_upstream.lower, 4876.0)
+        self.assertAlmostEqual(q1_upstream.upper, 5160.0)
+        self.assertAlmostEqual(q1_upstream_share.lower, 100.0 * 4876.0 / 6470.0)
+        self.assertAlmostEqual(q1_upstream_share.upper, 100.0 * 5160.0 / 6470.0)
+        self.assertEqual(
+            pack_json["title"], "Exxon Mobil FY2025 Capex Capacity Disclosure Audit Pack"
+        )
+        self.assertIn("Exxon Mobil FY2025 Capex Capacity Disclosure Audit Pack", markdown)
+        self.assertIn("cash_ppe_additions_upstream_share >= 75", markdown)
+        self.assertIn("Verdict: **pass**", markdown)
+        self.assertIn("Endpoint Diagnostics", markdown)
+        self.assertIn("Capex Capacity Disclosure Triangulation Panel", panel_markdown)
+        self.assertIn(
+            "FY2025 | 28,358 $M | 31,476 $M | 22,244 $M | 78.4% to 89.4% | pass",
+            panel_markdown,
+        )
+        self.assertIn(
+            "Q1 2026 | 6,470 $M | 6,754 $M | 4,876 $M | 75.4% to 79.8% | pass",
+            panel_markdown,
+        )
+
     def test_colab_demo_notebooks_are_valid_and_unexecuted(self):
         notebook_dir = Path(__file__).resolve().parents[1] / "examples" / "notebooks"
         notebooks = sorted(notebook_dir.glob("*.ipynb"))
