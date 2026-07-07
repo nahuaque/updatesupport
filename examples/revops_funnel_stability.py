@@ -18,6 +18,8 @@ Optionally write the Markdown report:
 from __future__ import annotations
 
 import argparse
+import csv
+import json
 import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -370,6 +372,27 @@ def build_frontier(
     )
 
 
+def build_review_artifacts(
+    rows: Sequence[Mapping[str, Any]] | None = None,
+    *,
+    include_frontier: bool = True,
+    frontier_ambiguity_limit: float = 0.03,
+) -> dict[str, Any]:
+    """Build the report objects a RevOps analyst would review or export."""
+
+    rows = synthetic_funnel_rows() if rows is None else rows
+    artifacts: dict[str, Any] = {
+        "public_report": build_public_report(rows),
+        "claim_audit": build_funnel_claim(rows),
+    }
+    if include_frontier:
+        artifacts["frontier"] = build_frontier(
+            rows,
+            ambiguity_limit=frontier_ambiguity_limit,
+        )
+    return artifacts
+
+
 def render_report(
     *,
     include_public_report: bool = True,
@@ -440,6 +463,61 @@ def render_report(
     return "\n".join(lines)
 
 
+def export_review_artifacts(
+    output_dir: Path,
+    *,
+    include_public_report: bool = True,
+    include_frontier: bool = True,
+    frontier_ambiguity_limit: float = 0.03,
+) -> tuple[Path, ...]:
+    """Write Markdown, JSON, and CSV artifacts for a RevOps review packet."""
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+
+    markdown = render_report(
+        include_public_report=include_public_report,
+        include_frontier=include_frontier,
+        frontier_ambiguity_limit=frontier_ambiguity_limit,
+    )
+    markdown_path = output_dir / "revops_funnel_stability.md"
+    markdown_path.write_text(markdown.rstrip() + "\n", encoding="utf-8")
+    written.append(markdown_path)
+
+    artifacts = build_review_artifacts(
+        include_frontier=include_frontier,
+        frontier_ambiguity_limit=frontier_ambiguity_limit,
+    )
+    tables_dir = output_dir / "tables"
+    tables_dir.mkdir(exist_ok=True)
+    for artifact_name, report in artifacts.items():
+        json_path = output_dir / f"{artifact_name}.json"
+        json_path.write_text(report.to_json() + "\n", encoding="utf-8")
+        written.append(json_path)
+        for table_name, rows in report.to_tables().items():
+            csv_path = tables_dir / f"{artifact_name}__{table_name}.csv"
+            _write_csv_table(csv_path, rows)
+            written.append(csv_path)
+    return tuple(written)
+
+
+def _write_csv_table(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
+    fieldnames = sorted({str(key) for row in rows for key in row})
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({name: _csv_cell(row.get(name)) for name in fieldnames})
+
+
+def _csv_cell(value: Any) -> Any:
+    if isinstance(value, str) or value is None:
+        return value
+    if isinstance(value, bool | int | float):
+        return value
+    return json.dumps(value, sort_keys=True)
+
+
 def _without_title(markdown: str) -> list[str]:
     lines = markdown.splitlines()
     if lines and lines[0].startswith("# "):
@@ -459,6 +537,11 @@ def parse_args() -> argparse.Namespace:
         "--output",
         type=Path,
         help="Optional Markdown output path.",
+    )
+    parser.add_argument(
+        "--export-dir",
+        type=Path,
+        help=("Optional directory for Markdown, JSON, and CSV review artifacts."),
     )
     parser.add_argument(
         "--no-public-report",
@@ -486,12 +569,21 @@ def main() -> None:
         include_frontier=not args.no_frontier,
         frontier_ambiguity_limit=args.frontier_ambiguity_limit,
     )
-    if args.output is None:
+    if args.output is None and args.export_dir is None:
         print(markdown)
         return
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(markdown + "\n", encoding="utf-8")
-    print(f"Wrote {args.output}")
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(markdown + "\n", encoding="utf-8")
+        print(f"Wrote {args.output}")
+    if args.export_dir is not None:
+        written = export_review_artifacts(
+            args.export_dir,
+            include_public_report=not args.no_public_report,
+            include_frontier=not args.no_frontier,
+            frontier_ambiguity_limit=args.frontier_ambiguity_limit,
+        )
+        print(f"Wrote {len(written)} review artifacts to {args.export_dir}")
 
 
 if __name__ == "__main__":

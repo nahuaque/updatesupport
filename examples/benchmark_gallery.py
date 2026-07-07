@@ -40,6 +40,8 @@ from examples.product_experiment_stability import (
     render_report as render_product_experiment_report,
 )
 from examples.product_experiment_stability import synthetic_experiment_rows
+from examples.revops_funnel_stability import render_report as render_revops_report
+from examples.revops_funnel_stability import synthetic_funnel_rows
 
 
 DEFAULT_OUTPUT_DIR = Path("data/benchmark_gallery")
@@ -97,6 +99,7 @@ def generate_benchmark_gallery(
 
     reports.append(_generate_ml_eval_report(output_dir))
     reports.append(_generate_product_experiment_report(output_dir))
+    reports.append(_generate_revops_report(output_dir))
     reports.append(_generate_folktables_label_report(output_dir))
     if include_real_folktables:
         reports.append(
@@ -158,6 +161,24 @@ def _generate_product_experiment_report(output_dir: Path) -> GalleryReport:
         status="generated",
         path=path,
         row_count=len(synthetic_experiment_rows()),
+    )
+
+
+def _generate_revops_report(output_dir: Path) -> GalleryReport:
+    markdown = render_revops_report()
+    path = output_dir / "revops_funnel_stability_synthetic.md"
+    _write_markdown(path, markdown)
+    return GalleryReport(
+        slug="revops_funnel_stability_synthetic",
+        title="RevOps Funnel Stability Synthetic Audit",
+        description=(
+            "No-download revenue-operations funnel example that audits whether "
+            "a reported MQL-to-SQL health claim survives hidden pipeline-mix "
+            "recomposition inside public segment buckets."
+        ),
+        status="generated",
+        path=path,
+        row_count=len(synthetic_funnel_rows()),
     )
 
 

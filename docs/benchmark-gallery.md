@@ -35,6 +35,11 @@ The generated `data/benchmark_gallery/index.md` links to each saved case study.
   example. It reports a positive treatment lift, then shows that the launch
   decision is not invariant when acquisition, tenure, geography, plan, and
   device mix can shift inside fixed public experiment buckets.
+- **RevOps funnel stability synthetic audit**: a no-download revenue-operations
+  example. It reports a healthy MQL-to-SQL conversion rate, then shows that the
+  health decision is not invariant when lead source, campaign type, industry,
+  deal size, and rep ramp can shift inside fixed public segment buckets. The
+  report includes a compact public-representation repair for the claim.
 - **Folktables ACSIncome synthetic label-rate audit**: a no-download
   ACS-shaped label-rate example for testing the public/hidden reporting
   workflow. The report includes a public-representation frontier that asks

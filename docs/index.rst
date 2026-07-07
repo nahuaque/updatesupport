@@ -136,6 +136,7 @@ stress-test family.
    causal-library-integration
    residopt-integration
    benchmark-gallery
+   revops-funnel-analysis
    extensions
    folktables-acs-income-interpretation
 

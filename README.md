@@ -459,6 +459,13 @@ Run the no-download RevOps funnel stability demo:
 uv run python examples/revops_funnel_stability.py
 ```
 
+Write RevOps review artifacts as Markdown, JSON, and CSV tables:
+
+```bash
+uv run python examples/revops_funnel_stability.py \
+  --export-dir data/revops_funnel_review
+```
+
 Run the real Folktables ACSIncome example:
 
 ```bash
@@ -533,6 +540,7 @@ uv run pytest
 
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)
 - [Benchmark gallery](docs/benchmark-gallery.md)
+- [RevOps funnel analysis](docs/revops-funnel-analysis.md)
 - [Folktables ACSIncome result interpretation](docs/folktables-acs-income-interpretation.md)
 
 ### Project

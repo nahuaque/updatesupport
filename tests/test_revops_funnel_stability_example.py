@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 import updatesupport as us
 from examples import revops_funnel_stability as example
@@ -49,6 +51,24 @@ class RevOpsFunnelStabilityExampleTests(unittest.TestCase):
         self.assertIn("Funnel Health Claim Audit", markdown)
         self.assertIn("Decision invariant: no", markdown)
         self.assertIn("base + deal_size_band, rep_ramp_band", markdown)
+
+    def test_synthetic_funnel_exports_review_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "revops_review"
+
+            written = example.export_review_artifacts(output_dir)
+
+            self.assertGreater(len(written), 6)
+            self.assertTrue((output_dir / "revops_funnel_stability.md").exists())
+            self.assertTrue((output_dir / "public_report.json").exists())
+            self.assertTrue((output_dir / "claim_audit.json").exists())
+            self.assertTrue((output_dir / "frontier.json").exists())
+            self.assertTrue(
+                (output_dir / "tables" / "claim_audit__summary.csv").exists()
+            )
+            self.assertTrue(
+                (output_dir / "tables" / "public_report__refinements.csv").exists()
+            )
 
 
 if __name__ == "__main__":
