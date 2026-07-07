@@ -191,6 +191,81 @@ def build_claim_audit(
     return claim.audit(report)
 
 
+def build_audit_pack(
+    report: us.NamedLinearFeasibilityReport | None = None,
+) -> usf.DisclosureAuditPack:
+    """Build the analyst-facing disclosure audit pack."""
+
+    if report is None:
+        report = build_report()
+    claim = usf.disclosure_claim(
+        target="outside_asc_energy_products_share",
+        tier=CAPACITY_TIER,
+        lower_at_least=20.0,
+        label="Energy Products outside-ASC share lower-bound claim",
+        description=(
+            "This claim passes if every feasible allocation puts at least 20% "
+            "of outside-ASC revenue in Energy Products."
+        ),
+        attribution_top=8,
+        diagnostic_top=8,
+    )
+    return usf.disclosure_audit_pack(
+        report,
+        claim=claim,
+        title="Exxon Mobil Q1 2026 Disclosure Audit Pack",
+        sources=[
+            {
+                "label": "Sales and other operating revenue",
+                "value": f"{COMPANY_SALES_AND_OTHER_OPERATING_REVENUE:,.0f} $M",
+                "url": FILING_URL,
+                "description": "Company-level sales and other operating revenue.",
+            },
+            {
+                "label": "Revenue from contracts with customers",
+                "value": f"{ASC606_TOTAL:,.0f} $M",
+                "url": REVENUE_RECOGNITION_SOURCE_URL,
+                "description": "Company-level ASC 606 revenue disclosure.",
+            },
+            {
+                "label": "Revenue outside the scope of ASC 606",
+                "value": f"{OUTSIDE_ASC_TOTAL:,.0f} $M",
+                "url": REVENUE_RECOGNITION_SOURCE_URL,
+                "description": "Company-level outside-ASC revenue disclosure.",
+            },
+            {
+                "label": "Operating-segment x geography sales cells",
+                "value": f"{OPERATING_SEGMENT_SALES:,.0f} $M",
+                "url": SEGMENT_SOURCE_URL,
+                "description": "Sales capacities by operating segment and geography.",
+            },
+            {
+                "label": "U.S. / non-U.S. sales totals",
+                "value": f"{sum(GEOGRAPHY_SALES.values()):,.0f} $M",
+                "url": GEOGRAPHY_SOURCE_URL,
+                "description": "Separate broad geography sales disclosure.",
+            },
+        ],
+        assumptions=[
+            "All modeled outside-ASC allocations are nonnegative.",
+            "Outside-ASC revenue assigned to a disclosed cell cannot exceed "
+            "that cell's total sales and other operating revenue.",
+            "The small difference between company-level sales and operating-"
+            "segment x geography sales is modeled as reconciling capacity.",
+            "Values are in USD millions and are taken from Exxon Mobil's "
+            "rendered SEC XBRL pages for the three months ended March 31, 2026.",
+        ],
+        reviewer_notes=[
+            "Energy Products outside-ASC revenue: 6,328 $M to 26,295 $M.",
+            "Energy Products share of outside-ASC revenue: 24.1% to 100.0%.",
+            "The exact segment allocation remains unidentified; this is a "
+            "filing-implied feasibility bound, not a point estimate.",
+        ],
+        attribution_top=8,
+        diagnostic_top=8,
+    )
+
+
 def width_reduction_rows(
     report: us.NamedLinearFeasibilityReport,
     *,
@@ -231,81 +306,7 @@ def render_markdown(report: us.NamedLinearFeasibilityReport | None = None) -> st
 
     if report is None:
         report = build_report()
-    energy = report.interval(
-        target="outside_asc_energy_products",
-        scenario=CAPACITY_TIER,
-    )
-    energy_share = report.interval(
-        target="outside_asc_energy_products_share",
-        scenario=CAPACITY_TIER,
-    )
-    lines = [
-        "# Exxon Mobil Q1 2026 Revenue Recognition Triangulation",
-        "",
-        "This example uses Exxon Mobil's Q1 2026 10-Q to ask a disclosure "
-        "triangulation question:",
-        "",
-        "> The company reports total revenue outside the scope of ASC 606, but "
-        "not its segment allocation. Given the disclosed segment and geography "
-        "sales cells, how much of that outside-ASC revenue must be Energy "
-        "Products revenue?",
-        "",
-        "## Scraped SEC Inputs",
-        "",
-        "| Input | Value | Source |",
-        "| --- | ---: | --- |",
-        "| Sales and other operating revenue | "
-        f"{COMPANY_SALES_AND_OTHER_OPERATING_REVENUE:,.0f} $M | "
-        f"[Q1 2026 10-Q]({FILING_URL}) |",
-        "| Revenue from contracts with customers | "
-        f"{ASC606_TOTAL:,.0f} $M | "
-        f"[Revenue recognition table]({REVENUE_RECOGNITION_SOURCE_URL}) |",
-        "| Revenue outside the scope of ASC 606 | "
-        f"{OUTSIDE_ASC_TOTAL:,.0f} $M | "
-        f"[Revenue recognition table]({REVENUE_RECOGNITION_SOURCE_URL}) |",
-        "| Operating-segment x geography sales cells | "
-        f"{OPERATING_SEGMENT_SALES:,.0f} $M | "
-        f"[Segment table]({SEGMENT_SOURCE_URL}) |",
-        "| U.S. / non-U.S. sales totals | "
-        f"{sum(GEOGRAPHY_SALES.values()):,.0f} $M | "
-        f"[Geography table]({GEOGRAPHY_SOURCE_URL}) |",
-        "",
-        "## Main Readout",
-        "",
-        "The company-level outside-ASC amount is fixed at "
-        f"{OUTSIDE_ASC_TOTAL:,.0f} $M. Without segment/geography capacities, it "
-        "could be assigned to any segment. Once the disclosed sales capacities "
-        "are enforced, Energy Products is forced to absorb the residual that "
-        "all other disclosed cells cannot absorb.",
-        "",
-        f"- Energy Products outside-ASC revenue: "
-        f"{energy.lower:,.0f} $M to {energy.upper:,.0f} $M.",
-        f"- Energy Products share of outside-ASC revenue: "
-        f"{energy_share.scaled_lower:.1f}% to {energy_share.scaled_upper:.1f}%.",
-        "- This is a feasibility bound, not a point estimate. The filing does "
-        "not identify the exact segment allocation.",
-        "",
-        "## Width Reduction By Tier",
-        "",
-    ]
-    lines.extend(_width_reduction_table(_headline_rows(width_reduction_rows(report))))
-    lines.extend(
-        [
-            "",
-            "## Disclosure Claim Audit",
-            "",
-            build_claim_audit(report).to_markdown(),
-            "",
-            "## Constraint Value Attribution",
-            "",
-            build_attribution_report(report).to_markdown(),
-            "",
-            "## Solver Report",
-            "",
-            report.to_markdown(),
-        ]
-    )
-    return "\n".join(lines)
+    return build_audit_pack(report).to_markdown()
 
 
 def _constraints(

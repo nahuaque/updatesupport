@@ -6,6 +6,7 @@ import updatesupport as us
 
 from .disclosure import (
     audit_disclosure_claim,
+    disclosure_audit_pack,
     disclosure_triangulation_spec,
     triangulate_disclosure,
 )
@@ -49,6 +50,7 @@ plugin = us.UpdateSupportPlugin(
         "regional_concentration_shift": q_regional_concentration_shift,
     },
     report_profiles={
+        "disclosure_audit_pack": disclosure_audit_pack,
         "disclosure_constraint_attribution": attribute_disclosure_constraints,
         "disclosure_claim": audit_disclosure_claim,
         "disclosure_triangulation": triangulate_disclosure,

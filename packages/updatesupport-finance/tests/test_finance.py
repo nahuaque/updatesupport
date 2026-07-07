@@ -669,6 +669,10 @@ class FinancePluginTests(unittest.TestCase):
             usf.triangulate_disclosure,
         )
         self.assertIs(
+            us.plugin_report_profile("finance", "disclosure_audit_pack"),
+            usf.disclosure_audit_pack,
+        )
+        self.assertIs(
             us.plugin_report_profile("finance", "disclosure_constraint_attribution"),
             usf.attribute_disclosure_constraints,
         )
@@ -770,8 +774,12 @@ class FinancePluginTests(unittest.TestCase):
         report = namespace["build_report"]()
         attribution = namespace["build_attribution_report"](report)
         claim_audit = namespace["build_claim_audit"](report)
+        pack = namespace["build_audit_pack"](report)
         rows = namespace["width_reduction_rows"](report)
         markdown = namespace["render_markdown"](report)
+        pack_tables = pack.to_tables()
+        pack_dataframes = pack.to_dataframes()
+        pack_json = json.loads(pack.to_json())
         capacity_tier = namespace["CAPACITY_TIER"]
         energy = report.interval(
             target="outside_asc_energy_products",
@@ -786,18 +794,29 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIsInstance(report, us.NamedLinearFeasibilityReport)
         self.assertIsInstance(attribution, us.NamedLinearConstraintAttributionReport)
         self.assertIsInstance(claim_audit, us.NamedLinearClaimAudit)
+        self.assertIsInstance(pack, usf.DisclosureAuditPack)
         self.assertEqual(claim_audit.verdict, "pass")
+        self.assertEqual(pack.claim_audit.verdict, "pass")
         self.assertEqual(len(rows), 24)
         self.assertAlmostEqual(energy.lower, 6328.0)
         self.assertAlmostEqual(energy.upper, 26295.0)
         self.assertAlmostEqual(energy_share.lower, 100.0 * 6328.0 / 26295.0)
         self.assertAlmostEqual(energy_share.upper, 100.0)
         self.assertEqual(attribution.rows[0].group, "outside_asc_total_q1_2026")
-        self.assertIn("Exxon Mobil Q1 2026 Revenue Recognition", markdown)
+        self.assertEqual(
+            pack_json["title"], "Exxon Mobil Q1 2026 Disclosure Audit Pack"
+        )
+        self.assertIn("disclosure_audit_summary", pack_tables)
+        self.assertIn("disclosure_audit_constraint_attribution", pack_tables)
+        self.assertIn("disclosure_audit_summary", pack_dataframes)
+        self.assertIn("DisclosureAuditPack", usf.__all__)
+        self.assertIn("disclosure_audit_pack", usf.__all__)
+        self.assertIn("Exxon Mobil Q1 2026 Disclosure Audit Pack", markdown)
         self.assertIn("Energy Products outside-ASC revenue: 6,328 $M", markdown)
-        self.assertIn("Revenue recognition table", markdown)
+        self.assertIn("Source Disclosures", markdown)
+        self.assertIn("Revenue from contracts with customers", markdown)
         self.assertIn("Verdict: **pass**", markdown)
-        self.assertIn("Constraint Value Attribution", markdown)
+        self.assertIn("Binding / Value Drivers", markdown)
 
     def test_colab_demo_notebooks_are_valid_and_unexecuted(self):
         notebook_dir = Path(__file__).resolve().parents[1] / "examples" / "notebooks"

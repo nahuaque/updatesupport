@@ -289,12 +289,48 @@ The audit returns `pass`, `fail`, or `inconclusive`, plus the feasible interval,
 margin to failure when certified, relevant attribution rows, endpoint dual
 diagnostics, and structured exports.
 
+For an analyst-facing artifact, use `disclosure_audit_pack(...)` to bundle the
+source disclosures, active constraints, headline interval, claim verdict,
+constraint attribution, endpoint diagnostics, assumptions, reviewer notes, and
+limitations:
+
+```python
+pack = usf.disclosure_audit_pack(
+    report,
+    claim=claim,
+    sources=[
+        {
+            "label": "Reported total",
+            "value": "200.0",
+            "url": "https://example.com/filing",
+            "description": "Source disclosure used as an equality constraint.",
+        }
+    ],
+    assumptions=[
+        "The undisclosed component is nonnegative.",
+        "The component cannot exceed the disclosed containing total.",
+    ],
+)
+
+print(pack.to_markdown())
+```
+
+The pack is the preferred review shape when the output needs to be attached to
+an analyst note, disclosure QA memo, model-review pack, or evidence archive.
+
 A complete generic example is available in
 `examples/disclosure_triangulation.py`:
 
 ```bash
 uv run --package updatesupport-finance python \
   packages/updatesupport-finance/examples/disclosure_triangulation.py
+```
+
+The Exxon Mobil example demonstrates the same API on public SEC disclosures:
+
+```bash
+uv run --package updatesupport-finance python \
+  packages/updatesupport-finance/examples/exxon_revenue_recognition_triangulation.py
 ```
 
 ## Analyst Workflow
