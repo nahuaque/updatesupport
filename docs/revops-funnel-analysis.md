@@ -86,6 +86,54 @@ These artifacts are intended to fit ordinary RevOps review workflows: attach the
 Markdown to a model or metric review, load CSVs into a spreadsheet, or ingest the
 JSON into a dashboard or evidence archive.
 
+## Bring Your Own CSV
+
+The synthetic examples are only meant to make the wedge visible. For analyst
+work, export retained funnel cells from your warehouse or CRM reporting layer and
+run the CSV recipe:
+
+```bash
+uv run python examples/revops_funnel_from_csv.py \
+  --input funnel_cells.csv \
+  --mode level \
+  --public quarter reported_segment region \
+  --hidden quarter reported_segment region lead_source campaign_type industry deal_size_band rep_ramp_band \
+  --target sql_conversion_rate \
+  --weight mql_count \
+  --threshold 0.18 \
+  --output-dir data/revops_review
+```
+
+The input should be one retained cell per row. For a level claim, the required
+columns are:
+
+- the declared public columns,
+- the hidden refinement columns,
+- a target column such as `sql_conversion_rate`,
+- a nonnegative weight column such as `mql_count`.
+
+For a trend claim, use paired current and prior metric columns in the same
+retained cell:
+
+```bash
+uv run python examples/revops_funnel_from_csv.py \
+  --input paired_funnel_cells.csv \
+  --mode trend \
+  --public reported_segment region \
+  --hidden reported_segment region lead_source campaign_type industry deal_size_band rep_ramp_band \
+  --current-target FY26Q2_sql_conversion_rate \
+  --prior-target FY26Q1_sql_conversion_rate \
+  --current-label FY26Q2 \
+  --prior-label FY26Q1 \
+  --weight comparison_weight \
+  --output-dir data/revops_trend_review
+```
+
+The trend recipe computes the current-minus-prior cell-level target, audits the
+nonnegative-trend claim, and includes a robust current-vs-prior comparison. This
+keeps the integration burden low: start from CSV or dataframe exports before
+building any Salesforce, HubSpot, or warehouse connector.
+
 ## Useful RevOps Claims
 
 The same pattern applies to other funnel and go-to-market claims:

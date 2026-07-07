@@ -472,6 +472,20 @@ uv run python examples/revops_funnel_stability.py \
   --export-dir data/revops_funnel_review
 ```
 
+Audit your own retained funnel-cell CSV:
+
+```bash
+uv run python examples/revops_funnel_from_csv.py \
+  --input funnel_cells.csv \
+  --mode level \
+  --public quarter reported_segment region \
+  --hidden quarter reported_segment region lead_source campaign_type industry deal_size_band rep_ramp_band \
+  --target sql_conversion_rate \
+  --weight mql_count \
+  --threshold 0.18 \
+  --output-dir data/revops_review
+```
+
 Run the real Folktables ACSIncome example:
 
 ```bash
