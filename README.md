@@ -220,7 +220,9 @@ The auditor separates the reported estimate, statistical uncertainty,
 hidden-composition ambiguity, public-refinement repair, counterexample witness,
 and limitations. `verdict.recommend_refinements()` returns claim-centered
 refinement rows: whether a candidate actually repairs the claim, whether it
-satisfies the ambiguity limit, and how much ambiguity it removes. See
+satisfies the ambiguity limit, and how much ambiguity it removes.
+`verdict.repair_plan(action_costs=...)` packages that evidence as a ranked
+action list for deciding what to publish differently. See
 [docs/reporting-claims.md](docs/reporting-claims.md).
 
 For model-assisted plausibility checks, fit a nonparametric public/hidden joint

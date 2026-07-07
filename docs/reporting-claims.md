@@ -127,6 +127,37 @@ annotate whether a refinement:
 This is the main consolidation step: refinement search is interpreted relative
 to the claim being reviewed, not as a detached optimizer output.
 
+## Claim Repair Plans
+
+Use `verdict.repair_plan(...)` when you want the refinement evidence packaged
+as an action list:
+
+```python
+plan = verdict.repair_plan(
+    action_costs={"OCC_MAJOR": 1.0, "WKHP_BAND": 0.5, "RAC1P": 2.0},
+    top=5,
+)
+
+print(plan.to_markdown())
+```
+
+The plan ranks candidate public-representation repairs by whether they certify
+the claim, then by supplied action cost, resulting public-cell count, and
+remaining ambiguity. It is useful when the report needs to answer the reviewer
+question, "What should we publish differently?"
+
+The function form audits first when given a claim spec, or reuses an existing
+audit without another solve:
+
+```python
+plan = us.plan_claim_repair(claim, rows_or_frame)
+same_plan = us.plan_claim_repair(verdict)
+```
+
+`ClaimRepairPlan` supports the same artifact shapes as other reports:
+`as_dict()`, `to_json()`, `to_tables()`, `to_dataframes()`, and
+`to_markdown()`.
+
 ## Exact Minimum Repairs
 
 By default, claim audit uses exhaustive certificate search because it is

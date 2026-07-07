@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 from .certificate import RepresentationStabilityCertificate
 from .breakdown import BreakdownPointReport
-from .claim import ClaimAudit
+from .claim import ClaimAudit, ClaimRepairPlan
 from .comparison import RobustComparisonReport
 from .frontier import (
     FrontierCandidateExplanation,
@@ -80,6 +80,9 @@ def report_tables(report: Any) -> ReportTables:
 
     if isinstance(report, ClaimAudit):
         return _claim_audit_tables(report)
+
+    if isinstance(report, ClaimRepairPlan):
+        return report.to_tables()
 
     if isinstance(report, HiddenCompositionUncertaintyReport):
         return _hidden_composition_uncertainty_tables(report)

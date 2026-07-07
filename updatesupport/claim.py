@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from math import isfinite
 from typing import Any, Mapping, Sequence
 
 from .certificate import (
@@ -345,6 +346,220 @@ class ClaimRefinementRecommendation:
 
 
 @dataclass(frozen=True)
+class ClaimRepairOption:
+    """One candidate public-representation repair for a claim."""
+
+    rank: int
+    columns: tuple[str, ...]
+    source: str
+    cost: float
+    before_ambiguity: float | None
+    after_ambiguity: float
+    reduction: float | None
+    reduction_percent: float | None
+    public_cells: int
+    satisfies_ambiguity_limit: bool | None = None
+    certifies_claim: bool = False
+    selected_repair: bool = False
+    decision_repair: bool = False
+    reason: str = ""
+
+    @property
+    def label(self) -> str:
+        return _column_label(self.columns)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "rank": self.rank,
+            "columns": self.columns,
+            "label": self.label,
+            "source": self.source,
+            "cost": self.cost,
+            "before_ambiguity": self.before_ambiguity,
+            "after_ambiguity": self.after_ambiguity,
+            "reduction": self.reduction,
+            "reduction_percent": self.reduction_percent,
+            "public_cells": self.public_cells,
+            "satisfies_ambiguity_limit": self.satisfies_ambiguity_limit,
+            "certifies_claim": self.certifies_claim,
+            "selected_repair": self.selected_repair,
+            "decision_repair": self.decision_repair,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class ClaimRepairPlan:
+    """Cost-aware consolidation of claim repair and refinement evidence."""
+
+    audit: "ClaimAudit"
+    options: tuple[ClaimRepairOption, ...]
+    action_costs: Mapping[str, float] = field(default_factory=dict)
+    title: str = "Claim Repair Plan"
+
+    @property
+    def recommended(self) -> ClaimRepairOption | None:
+        if self.audit.passed:
+            return None
+        for option in self.options:
+            if option.certifies_claim:
+                return option
+        return None
+
+    @property
+    def certifying_options(self) -> tuple[ClaimRepairOption, ...]:
+        return tuple(option for option in self.options if option.certifies_claim)
+
+    @property
+    def non_certifying_options(self) -> tuple[ClaimRepairOption, ...]:
+        return tuple(option for option in self.options if not option.certifies_claim)
+
+    @property
+    def status(self) -> str:
+        if self.audit.passed:
+            return "already_certified"
+        if self.recommended is not None:
+            return "repair_found"
+        if self.options:
+            return "no_certifying_repair"
+        return "no_repair_candidates"
+
+    @property
+    def recommended_label(self) -> str | None:
+        recommended = self.recommended
+        return None if recommended is None else recommended.label
+
+    def as_dict(self) -> dict[str, Any]:
+        recommended = self.recommended
+        return {
+            "title": self.title,
+            "status": self.status,
+            "claim_status": self.audit.status,
+            "claim": self.audit.claim.as_dict(),
+            "observed_value": self.audit.observed_value,
+            "lower": self.audit.interval.lower,
+            "upper": self.audit.interval.upper,
+            "ambiguity": self.audit.ambiguity,
+            "ambiguity_limit": self.audit.claim.ambiguity_limit,
+            "has_decision": self.audit.decision is not None,
+            "decision_invariant": None
+            if self.audit.decision is None
+            else self.audit.decision.invariant,
+            "recommended": None if recommended is None else recommended.as_dict(),
+            "options": [option.as_dict() for option in self.options],
+            "action_costs": dict(self.action_costs),
+        }
+
+    def to_json(self, **kwargs: Any) -> str:
+        from .exports import report_to_json
+
+        return report_to_json(self, **kwargs)
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        return _claim_repair_plan_tables(self)
+
+    def to_dataframes(self) -> dict[str, Any]:
+        from .exports import tables_to_dataframes
+
+        return tables_to_dataframes(self.to_tables())
+
+    def to_markdown(self) -> str:
+        recommended = self.recommended
+        lines = [
+            f"# {self.title}",
+            "",
+            "## Summary",
+            "",
+            f"- Claim: {self.audit.claim.estimate_name}",
+            f"- Claim status: **{self.audit.status.upper()}**",
+            f"- Plan status: `{self.status}`",
+            f"- Current ambiguity: {self.audit.ambiguity:.4f}",
+        ]
+        if self.audit.claim.ambiguity_limit is not None:
+            lines.append(f"- Ambiguity limit: {self.audit.claim.ambiguity_limit:.4f}")
+        if self.audit.decision is not None:
+            lines.extend(
+                [
+                    f"- Decision rule: {self.audit.decision.rule.name}",
+                    "- Decision invariant: "
+                    f"{'yes' if self.audit.decision.invariant else 'no'}",
+                ]
+            )
+        if self.audit.passed:
+            lines.append("- Recommended repair: none required")
+        elif recommended is None:
+            lines.append("- Recommended repair: none found")
+        else:
+            lines.extend(
+                [
+                    f"- Recommended repair: `{recommended.label}`",
+                    f"- Recommended repair cost: {recommended.cost:g}",
+                    f"- Ambiguity after repair: {recommended.after_ambiguity:.4f}",
+                    f"- Public cells after repair: {recommended.public_cells}",
+                    f"- Repair signal: {recommended.reason}",
+                ]
+            )
+
+        lines.extend(["", "## Interpretation", ""])
+        lines.append(_repair_plan_interpretation(self))
+
+        if self.options:
+            lines.extend(
+                [
+                    "",
+                    "## Candidate Repair Options",
+                    "",
+                    "| rank | refinement | cost | certifies | after | reduction | public cells | signal |",
+                    "| ---: | --- | ---: | :---: | ---: | ---: | ---: | --- |",
+                ]
+            )
+            for option in self.options:
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            str(option.rank),
+                            f"`{option.label}`",
+                            f"{option.cost:g}",
+                            "yes" if option.certifies_claim else "no",
+                            f"{option.after_ambiguity:.4f}",
+                            _format_optional_float(option.reduction),
+                            str(option.public_cells),
+                            _escape_table(option.reason),
+                        ]
+                    )
+                    + " |"
+                )
+        else:
+            lines.extend(
+                [
+                    "",
+                    "## Candidate Repair Options",
+                    "",
+                    "No candidate public-refinement actions were available.",
+                ]
+            )
+
+        lines.extend(
+            [
+                "",
+                "## Scope",
+                "",
+                "- This plan does not run a separate optimization subsystem; it "
+                "consolidates the claim audit, decision repair, certificate, "
+                "frontier, and refinement-recommendation outputs already "
+                "computed for the claim.",
+                "- Costs are analyst-supplied action costs for public refinements. "
+                "They are not inferred from the data.",
+                "- A certifying option means the existing claim audit evidence says "
+                "the repair satisfies the declared ambiguity or decision criterion. "
+                "Other refinements may still be useful diagnostics.",
+            ]
+        )
+        return "\n".join(lines)
+
+
+@dataclass(frozen=True)
 class ClaimScreeningResult:
     """Optional conservative pre-screen used before an exact claim audit."""
 
@@ -684,6 +899,22 @@ class ClaimAudit:
             raise ValueError("top must be non-negative")
         rows = self.refinement_recommendations
         return rows if top is None else rows[:top]
+
+    def repair_plan(
+        self,
+        *,
+        action_costs: Mapping[str, float] | None = None,
+        top: int | None = None,
+        title: str = "Claim Repair Plan",
+    ) -> ClaimRepairPlan:
+        """Return a cost-aware repair plan for this claim audit."""
+
+        return _claim_repair_plan(
+            self,
+            action_costs=action_costs,
+            top=top,
+            title=title,
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -1481,6 +1712,42 @@ def audit_claim(
             screening=screening,
         ),
         title=claim.title or "Claim Audit",
+    )
+
+
+def plan_claim_repair(
+    claim_or_audit: ClaimSpec | ClaimAudit | Mapping[str, Any],
+    data: Any | None = None,
+    *,
+    action_costs: Mapping[str, float] | None = None,
+    top: int | None = None,
+    title: str = "Claim Repair Plan",
+    **audit_overrides: Any,
+) -> ClaimRepairPlan:
+    """Build a cost-aware repair plan from a claim audit or claim spec.
+
+    This is a consolidation layer over existing claim evidence. If a
+    :class:`ClaimAudit` is supplied, no additional solve is run. If a
+    :class:`ClaimSpec` or mapping is supplied, ``data`` is audited first and the
+    repair plan is built from that audit.
+    """
+
+    if isinstance(claim_or_audit, ClaimAudit):
+        if data is not None:
+            raise ValueError("data must be None when planning from a ClaimAudit")
+        if audit_overrides:
+            raise ValueError(
+                "audit overrides cannot be used when planning from a ClaimAudit"
+            )
+        audit = claim_or_audit
+    else:
+        if data is None:
+            raise ValueError("data is required when planning from a claim spec")
+        audit = audit_claim(data, claim_or_audit, **audit_overrides)
+    return audit.repair_plan(
+        action_costs=action_costs,
+        top=top,
+        title=title,
     )
 
 
@@ -2305,6 +2572,176 @@ def _decision_repair_markdown(report: ClaimAudit) -> list[str]:
     return lines
 
 
+def _claim_repair_plan(
+    audit: ClaimAudit,
+    *,
+    action_costs: Mapping[str, float] | None,
+    top: int | None,
+    title: str,
+) -> ClaimRepairPlan:
+    if top is not None and top < 0:
+        raise ValueError("top must be non-negative")
+    costs = _normalize_action_costs(action_costs)
+    options = [
+        _repair_option_from_recommendation(
+            row,
+            audit=audit,
+            action_costs=costs,
+        )
+        for row in audit.refinement_recommendations
+    ]
+    options.sort(key=_repair_option_sort_key)
+    ranked = tuple(
+        replace(option, rank=index) for index, option in enumerate(options, start=1)
+    )
+    if top is not None:
+        ranked = ranked[:top]
+    return ClaimRepairPlan(
+        audit=audit,
+        options=ranked,
+        action_costs=costs,
+        title=title,
+    )
+
+
+def _repair_option_from_recommendation(
+    row: ClaimRefinementRecommendation,
+    *,
+    audit: ClaimAudit,
+    action_costs: Mapping[str, float],
+) -> ClaimRepairOption:
+    certifies = _recommendation_certifies_claim(row, audit)
+    return ClaimRepairOption(
+        rank=0,
+        columns=row.columns,
+        source=row.source,
+        cost=sum(action_costs.get(column, 1.0) for column in row.columns),
+        before_ambiguity=row.before_ambiguity,
+        after_ambiguity=row.after_ambiguity,
+        reduction=row.reduction,
+        reduction_percent=row.reduction_percent,
+        public_cells=row.public_cells,
+        satisfies_ambiguity_limit=row.meets_ambiguity_limit,
+        certifies_claim=certifies,
+        selected_repair=row.selected_repair,
+        decision_repair=row.decision_repair,
+        reason=row.reason,
+    )
+
+
+def _recommendation_certifies_claim(
+    row: ClaimRefinementRecommendation,
+    audit: ClaimAudit,
+) -> bool:
+    if row.selected_repair or row.decision_repair:
+        return True
+    if audit.decision is not None:
+        return False
+    return row.meets_ambiguity_limit is True
+
+
+def _repair_option_sort_key(option: ClaimRepairOption) -> tuple[Any, ...]:
+    return (
+        0 if option.certifies_claim else 1,
+        option.cost,
+        option.public_cells,
+        option.after_ambiguity,
+        len(option.columns),
+        option.label,
+    )
+
+
+def _normalize_action_costs(
+    action_costs: Mapping[str, float] | None,
+) -> dict[str, float]:
+    if action_costs is None:
+        return {}
+    normalized: dict[str, float] = {}
+    for column, cost in action_costs.items():
+        if not isinstance(column, str) or not column:
+            raise ValueError("action cost keys must be non-empty column names")
+        numeric_cost = float(cost)
+        if numeric_cost < 0 or not isfinite(numeric_cost):
+            raise ValueError("action costs must be finite non-negative numbers")
+        normalized[column] = numeric_cost
+    return normalized
+
+
+def _claim_repair_plan_tables(
+    plan: ClaimRepairPlan,
+) -> dict[str, tuple[dict[str, Any], ...]]:
+    recommended = plan.recommended
+    return {
+        "summary": (
+            {
+                "title": plan.title,
+                "status": plan.status,
+                "claim_status": plan.audit.status,
+                "estimate_name": plan.audit.claim.estimate_name,
+                "observed_value": plan.audit.observed_value,
+                "lower": plan.audit.interval.lower,
+                "upper": plan.audit.interval.upper,
+                "ambiguity": plan.audit.ambiguity,
+                "ambiguity_limit": plan.audit.claim.ambiguity_limit,
+                "has_decision": plan.audit.decision is not None,
+                "decision_invariant": None
+                if plan.audit.decision is None
+                else plan.audit.decision.invariant,
+                "recommended_label": None if recommended is None else recommended.label,
+                "recommended_cost": None if recommended is None else recommended.cost,
+                "recommended_after_ambiguity": None
+                if recommended is None
+                else recommended.after_ambiguity,
+                "recommended_public_cells": None
+                if recommended is None
+                else recommended.public_cells,
+                "option_count": len(plan.options),
+                "certifying_option_count": len(plan.certifying_options),
+            },
+        ),
+        "recommended": () if recommended is None else (recommended.as_dict(),),
+        "options": tuple(option.as_dict() for option in plan.options),
+        "certifying_options": tuple(
+            option.as_dict() for option in plan.certifying_options
+        ),
+        "non_certifying_options": tuple(
+            option.as_dict() for option in plan.non_certifying_options
+        ),
+        "action_costs": tuple(
+            {"column": column, "cost": cost}
+            for column, cost in sorted(plan.action_costs.items())
+        ),
+    }
+
+
+def _repair_plan_interpretation(plan: ClaimRepairPlan) -> str:
+    recommended = plan.recommended
+    if plan.audit.passed:
+        return (
+            "The claim is already certified under the declared public "
+            "representation and stress tests, so no public-representation "
+            "repair is required. The options below remain diagnostic "
+            "refinements, not required actions."
+        )
+    if recommended is None:
+        if not plan.options:
+            return (
+                "No candidate refinements were supplied, so the planner cannot "
+                "propose a public-representation repair."
+            )
+        return (
+            "The audit found candidate refinements, but none is certified by the "
+            "existing claim evidence. Treat the options as diagnostics or widen "
+            "the repair search before relying on the claim."
+        )
+    return (
+        f"The cheapest certifying repair under the supplied action costs is "
+        f"`{recommended.label}`. It lowers hidden-composition ambiguity from "
+        f"{plan.audit.ambiguity:.4f} to {recommended.after_ambiguity:.4f} "
+        "while satisfying the claim's declared repair criterion."
+    )
+
+
 def _claim_refinement_recommendations(
     report: ClaimAudit,
 ) -> tuple[ClaimRefinementRecommendation, ...]:
@@ -2462,8 +2899,7 @@ def _certificate_summary_markdown(
                 f"- Frontier screening backend: {screening.backend}",
                 "- Frontier screening endpoints certified: "
                 f"{screening.certified_count}/{screening.endpoint_count}",
-                "- Frontier exact fallbacks run: "
-                f"{screening.exact_solve_count}",
+                f"- Frontier exact fallbacks run: {screening.exact_solve_count}",
                 "- Frontier exact solves avoided: "
                 f"{screening.exact_solve_avoided_count}",
                 "- Frontier conservative endpoints used: "
@@ -2706,6 +3142,8 @@ __all__ = [
     "ClaimAudit",
     "ClaimNode",
     "ClaimNodeAudit",
+    "ClaimRepairOption",
+    "ClaimRepairPlan",
     "ClaimRefinementRecommendation",
     "ClaimScreeningResult",
     "ClaimSpec",
@@ -2719,5 +3157,6 @@ __all__ = [
     "audit_claim_tree",
     "claim",
     "claim_tree",
+    "plan_claim_repair",
     "threshold_decision",
 ]

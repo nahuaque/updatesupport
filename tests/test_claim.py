@@ -27,6 +27,9 @@ class ClaimSpecTests(unittest.TestCase):
         self.assertIn("audit_claim_tree", us.__all__)
         self.assertIn("ClaimSpec", us.__all__)
         self.assertIn("ClaimAudit", us.__all__)
+        self.assertIn("ClaimRepairPlan", us.__all__)
+        self.assertIn("ClaimRepairOption", us.__all__)
+        self.assertIn("plan_claim_repair", us.__all__)
         self.assertIn("ClaimScreeningResult", us.__all__)
         self.assertIn("ClaimTree", us.__all__)
         self.assertIn("ClaimTreeAudit", us.__all__)
@@ -62,6 +65,100 @@ class ClaimSpecTests(unittest.TestCase):
         )
         self.assertIn("claim_refinement_recommendations", tables)
         self.assertIn("claim-centered", report.to_markdown().lower())
+
+    def test_claim_repair_plan_consolidates_repair_evidence(self):
+        claim = us.claim(
+            "Repairable claim",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            ambiguity_limit=0.05,
+        )
+        report = claim.audit(_rows())
+        plan = report.repair_plan()
+        helper_plan = us.plan_claim_repair(report)
+        tables = us.report_tables(plan)
+        payload = json.loads(plan.to_json())
+        markdown = plan.to_markdown()
+
+        self.assertIsInstance(plan, us.ClaimRepairPlan)
+        self.assertIsInstance(plan.recommended, us.ClaimRepairOption)
+        self.assertEqual(plan.status, "repair_found")
+        self.assertEqual(plan.recommended.label, "driver")
+        self.assertTrue(plan.recommended.certifies_claim)
+        self.assertEqual(helper_plan.recommended.label, "driver")
+        self.assertEqual(tables["summary"][0]["recommended_label"], "driver")
+        self.assertIn("options", tables)
+        self.assertEqual(payload["recommended"]["label"], "driver")
+        self.assertIn("Candidate Repair Options", markdown)
+
+    def test_plan_claim_repair_audits_claim_spec_and_uses_action_costs(self):
+        rows = [
+            {
+                "segment": "A",
+                "driver": "low",
+                "driver_copy": "low",
+                "target": 0.0,
+                "weight": 30,
+            },
+            {
+                "segment": "A",
+                "driver": "high",
+                "driver_copy": "high",
+                "target": 1.0,
+                "weight": 30,
+            },
+            {
+                "segment": "B",
+                "driver": "flat",
+                "driver_copy": "flat",
+                "target": 0.5,
+                "weight": 40,
+            },
+        ]
+        claim = us.claim(
+            "Cost-aware repairable claim",
+            public=["segment"],
+            hidden=["segment", "driver", "driver_copy"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver", "driver_copy"],
+            ambiguity_limit=0.05,
+        )
+
+        plan = us.plan_claim_repair(
+            claim,
+            rows,
+            action_costs={"driver": 10.0, "driver_copy": 1.0},
+        )
+
+        self.assertEqual(plan.status, "repair_found")
+        self.assertEqual(plan.recommended.label, "driver_copy")
+        self.assertEqual(plan.recommended.cost, 1.0)
+        self.assertTrue(plan.recommended.certifies_claim)
+        self.assertEqual(plan.options[1].label, "driver")
+        self.assertEqual(plan.options[1].cost, 10.0)
+
+    def test_repair_plan_does_not_recommend_repair_for_passing_claim(self):
+        claim = us.claim(
+            "Already stable claim",
+            public=["segment", "driver"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            ambiguity_limit=0.05,
+        )
+        report = claim.audit(_rows())
+        plan = report.repair_plan()
+        tables = plan.to_tables()
+
+        self.assertTrue(report.passed)
+        self.assertEqual(plan.status, "already_certified")
+        self.assertIsNone(plan.recommended)
+        self.assertIsNone(tables["summary"][0]["recommended_label"])
 
     def test_grouped_problem_helpers_keep_low_level_workflow_available(self):
         grouped = us.from_dataframe(

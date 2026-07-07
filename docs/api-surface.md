@@ -24,6 +24,11 @@ The public user-facing surface is:
 - `us.audit_claim(...)`: functional equivalent of `ClaimSpec.audit(...)`.
 - `ClaimAudit`: the report object returned by an audit.
 - `ClaimAudit.recommend_refinements(...)`: claim-centered refinement ranking.
+- `ClaimAudit.repair_plan(...)`: cost-aware action list for stabilizing a
+  claim.
+- `us.plan_claim_repair(...)`: functional helper that audits a claim spec or
+  reuses an existing `ClaimAudit`.
+- `ClaimRepairPlan`: the structured repair-plan report object.
 - `us.claim_tree(...)`: organize related `ClaimSpec`s into a nested claim tree.
 - `us.audit_claim_tree(...)`: audit a nested claim tree in one call.
 - `ClaimTreeAudit`: the report object for hierarchical claim reviews.
@@ -33,8 +38,8 @@ The public user-facing surface is:
 
 The claim audit composes the lower-level machinery: primary interval evidence,
 counterexample witnesses, representation certificates, decision-invariant
-repairs, nested claim reports, model-assisted joint draws, structured exports,
-and limitations.
+repairs, repair plans, nested claim reports, model-assisted joint draws,
+structured exports, and limitations.
 
 The package `__all__` is curated around this surface. Some backend classes and
 diagnostic dataclasses are importable as direct attributes, but they are not

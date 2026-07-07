@@ -24,6 +24,8 @@ from .claim import (
     ClaimAudit,
     ClaimNode,
     ClaimNodeAudit,
+    ClaimRepairOption,
+    ClaimRepairPlan,
     ClaimRefinementRecommendation,
     ClaimScreeningResult,
     ClaimSpec,
@@ -37,6 +39,7 @@ from .claim import (
     audit_claim_tree,
     claim,
     claim_tree,
+    plan_claim_repair,
     threshold_decision,
 )
 from .comparison import (
@@ -253,6 +256,8 @@ __all__ = [
     "audit_claim_tree",
     "ClaimSpec",
     "ClaimAudit",
+    "ClaimRepairPlan",
+    "ClaimRepairOption",
     "ClaimNode",
     "ClaimNodeAudit",
     "ClaimTree",
@@ -262,6 +267,7 @@ __all__ = [
     "DecisionRule",
     "DecisionResult",
     "threshold_decision",
+    "plan_claim_repair",
     # Data compilation and structured outputs.
     "from_dataframe",
     "GroupedProblem",
