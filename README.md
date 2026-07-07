@@ -453,6 +453,12 @@ Run the no-download product experimentation / A/B testing stability demo:
 uv run python examples/product_experiment_stability.py
 ```
 
+Run the no-download RevOps funnel stability demo:
+
+```bash
+uv run python examples/revops_funnel_stability.py
+```
+
 Run the real Folktables ACSIncome example:
 
 ```bash
