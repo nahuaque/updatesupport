@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Any, Hashable, Mapping, Sequence
 
+from .artifacts import ReportArtifactMixin
 from .claim import DecisionResult, threshold_decision
 from .data import _iter_records, _record_value, _row_weight
 from .metrics import RowMetric, evaluate_target, target_name
@@ -95,7 +96,7 @@ class PairwiseComparisonResult:
 
 
 @dataclass(frozen=True)
-class RobustComparisonReport:
+class RobustComparisonReport(ReportArtifactMixin):
     """Robust comparison/ranking report for several alternatives."""
 
     title: str
@@ -149,13 +150,6 @@ class RobustComparisonReport:
             "pairwise_margins": [row.as_dict() for row in self.pairwise_results],
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        """Serialize the report to JSON."""
-
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         """Return named tables for structured export."""
 
@@ -184,13 +178,6 @@ class RobustComparisonReport:
             "items": tuple(row.as_dict() for row in self.item_results),
             "pairwise_margins": tuple(row.as_dict() for row in self.pairwise_results),
         }
-
-    def to_dataframes(self) -> dict[str, Any]:
-        """Return named pandas DataFrames for the report tables."""
-
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
 
     def to_markdown(self, *, max_pairwise_rows: int = 20) -> str:
         """Render an analyst-facing Markdown interpretation."""

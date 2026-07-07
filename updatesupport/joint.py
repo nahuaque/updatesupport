@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from math import sqrt
 from typing import Any, Hashable, Mapping, Sequence
 
+from .artifacts import ReportArtifactMixin
 from .data import TabularTarget, from_dataframe
 from .report import public_descent_report
 
@@ -459,7 +460,7 @@ class HiddenCompositionUncertaintyRow:
 
 
 @dataclass(frozen=True)
-class HiddenCompositionUncertaintyReport:
+class HiddenCompositionUncertaintyReport(ReportArtifactMixin):
     """Posterior/bootstrap uncertainty over hidden-composition audits."""
 
     joint_model: NonparametricJointDistribution
@@ -570,20 +571,10 @@ class HiddenCompositionUncertaintyReport:
             "rows": [row.as_dict() for row in self.rows],
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         from .exports import report_tables
 
         return report_tables(self)
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import report_dataframes
-
-        return report_dataframes(self)
 
     def to_markdown(self) -> str:
         lines = [

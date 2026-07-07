@@ -7,17 +7,17 @@ subspace to a residopt ellipsoidal support atom.
 
 from __future__ import annotations
 
-import json
-from itertools import combinations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
+from itertools import combinations
 from math import isclose
 from typing import Any, Hashable
 
 import numpy as np
 
+from .artifacts import ReportArtifactMixin
 from .data import GroupedProblem, TabularTarget, from_dataframe
 from .presets import QPreset
 from .problem import FiniteProblem
@@ -87,7 +87,7 @@ class ResidOptEndpointCertificate:
 
 
 @dataclass(frozen=True)
-class ResidOptEndpointReport:
+class ResidOptEndpointReport(ReportArtifactMixin):
     """Compiled endpoint interval returned by the experimental residopt backend."""
 
     title: str
@@ -203,16 +203,6 @@ class ResidOptEndpointReport:
             "notes": tuple({"note": note} for note in self.notes),
         }
 
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
-
-    def to_json(self, **kwargs: Any) -> str:
-        options = {"indent": 2, "sort_keys": True}
-        options.update(kwargs)
-        return json.dumps(_json_ready(self.as_dict()), **options)
-
     def to_markdown(self) -> str:
         lines = [
             f"# {_markdown_escape(self.title)}",
@@ -290,11 +280,19 @@ class ResidOptRefinementScreenCandidate:
 
     @property
     def final_lower(self) -> float | None:
-        return self.exact_lower if self.exact_lower is not None else self.conservative_lower
+        return (
+            self.exact_lower
+            if self.exact_lower is not None
+            else self.conservative_lower
+        )
 
     @property
     def final_upper(self) -> float | None:
-        return self.exact_upper if self.exact_upper is not None else self.conservative_upper
+        return (
+            self.exact_upper
+            if self.exact_upper is not None
+            else self.conservative_upper
+        )
 
     @property
     def final_ambiguity(self) -> float | None:
@@ -337,7 +335,7 @@ class ResidOptRefinementScreenCandidate:
 
 
 @dataclass(frozen=True)
-class ResidOptRefinementScreenReport:
+class ResidOptRefinementScreenReport(ReportArtifactMixin):
     """Cached residopt screen over candidate public refinements."""
 
     title: str
@@ -466,16 +464,6 @@ class ResidOptRefinementScreenReport:
             "candidates": tuple(row.as_dict() for row in self.candidates),
             "notes": tuple({"note": note} for note in self.notes),
         }
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
-
-    def to_json(self, **kwargs: Any) -> str:
-        options = {"indent": 2, "sort_keys": True}
-        options.update(kwargs)
-        return json.dumps(_json_ready(self.as_dict()), **options)
 
     def to_markdown(self) -> str:
         limit = (
@@ -730,9 +718,7 @@ class ResidOptRefinementScreenContext:
                     compiler_cache_hit=cache_hit,
                     compiled_templates_built=screen.compiled_templates_built,
                     support_solves=screen.support_solves,
-                    status=(
-                        "fallback_exact_pass" if exact_pass else "fallback_exact"
-                    ),
+                    status=("fallback_exact_pass" if exact_pass else "fallback_exact"),
                     reason=(
                         "The conservative residopt interval was inconclusive, "
                         "so the exact updatesupport endpoint was solved."
@@ -1064,9 +1050,7 @@ class ResidOptL2EndpointCompiler:
             hidden_columns=self.hidden_columns,
             lower_certificate=lower_compiled.certificate,
             upper_certificate=upper_compiled.certificate,
-            compiled_templates_built=(
-                self.compiled_template_count - compiled_before
-            ),
+            compiled_templates_built=(self.compiled_template_count - compiled_before),
             support_solves=self.support_solve_count - solves_before,
             notes=_RESIDOPT_L2_NOTES,
         )
@@ -1377,8 +1361,7 @@ def _sort_refinement_screen_rows(
 def _require_l2_grouped(grouped: GroupedProblem) -> QPreset:
     if grouped.q is None or grouped.q.name != "l2_budget":
         raise ValueError(
-            "ResidOpt refinement screening currently supports only "
-            "q_l2_budget(...)."
+            "ResidOpt refinement screening currently supports only q_l2_budget(...)."
         )
     if grouped.q.radius is None:
         raise ValueError("q_l2_budget radius is required for residopt screening")
@@ -1472,7 +1455,9 @@ def _coerce_direction(
     direction: Mapping[Hashable, float] | Sequence[float] | None,
 ) -> np.ndarray:
     if direction is None:
-        if not isinstance(problem.target_functional, LinearTarget | UncertainLinearTarget):
+        if not isinstance(
+            problem.target_functional, LinearTarget | UncertainLinearTarget
+        ):
             raise TypeError(
                 "residopt_l2_support_interval currently requires an explicit "
                 "direction for non-linear target contracts."

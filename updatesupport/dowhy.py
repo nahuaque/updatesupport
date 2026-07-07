@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+from .artifacts import ReportArtifactMixin
 from .data import GroupedProblem
 from .report import PublicDescentReport, audit_effects
 
@@ -12,7 +13,7 @@ DEFAULT_REFUTATION_TYPE = "UpdateSupport representation stability"
 
 
 @dataclass(frozen=True)
-class DoWhyRepresentationAudit:
+class DoWhyRepresentationAudit(ReportArtifactMixin):
     """Update-support audit packaged for a DoWhy causal workflow."""
 
     report: PublicDescentReport
@@ -63,11 +64,6 @@ class DoWhyRepresentationAudit:
             "report": self.report.as_dict(),
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         from .exports import report_tables
 
@@ -81,11 +77,6 @@ class DoWhyRepresentationAudit:
             },
         )
         return tables
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
 
 
 def audit_dowhy_effects(

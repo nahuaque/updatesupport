@@ -247,9 +247,7 @@ try:
 except PackageNotFoundError:
     __version__ = "0.0.0"
 
-__all__ = [
-    "__version__",
-    # Claim-first surface.
+_CLAIM_API = [
     "claim",
     "audit_claim",
     "claim_tree",
@@ -257,81 +255,38 @@ __all__ = [
     "ClaimSpec",
     "ClaimAudit",
     "ClaimRepairPlan",
-    "ClaimRepairOption",
-    "ClaimNode",
-    "ClaimNodeAudit",
     "ClaimTree",
     "ClaimTreeAudit",
-    "ClaimRefinementRecommendation",
-    "ClaimScreeningResult",
     "DecisionRule",
     "DecisionResult",
     "threshold_decision",
-    "plan_claim_repair",
-    # Data compilation and structured outputs.
+]
+
+_DATA_AND_EXPORT_API = [
     "from_dataframe",
     "GroupedProblem",
-    "DataDiagnostic",
-    "DataDiagnostics",
     "report_to_json",
     "report_tables",
     "report_dataframes",
     "tables_to_dataframes",
-    "named_linear_feasibility_problem",
-    "solve_named_linear_feasibility",
-    "named_linear_variable",
-    "named_linear_expression",
-    "named_linear_constraint",
-    "named_linear_target",
-    "named_linear_scenario",
-    "named_linear_claim",
-    "audit_named_linear_claim",
-    "attribute_named_linear_constraints",
-    "NamedLinearClaim",
-    "NamedLinearClaimAudit",
-    "NamedLinearVariable",
-    "NamedLinearExpression",
-    "NamedLinearConstraint",
-    "NamedLinearConstraintAttribution",
-    "NamedLinearConstraintAttributionReport",
-    "NamedLinearConstraintDiagnostic",
-    "NamedLinearTarget",
-    "NamedLinearScenario",
-    "NamedLinearFeasibilityProblem",
-    "NamedLinearEndpoint",
-    "NamedLinearInterval",
-    "NamedLinearFeasibilityReport",
-    "DEFAULT_LINEAR_FEASIBILITY_LIMITATIONS",
-    # Lower-level evidence reports.
+]
+
+_REPORTING_API = [
     "public_descent_report",
-    "PublicDescentReport",
     "witness_report",
-    "WitnessReport",
     "sensitivity_report",
-    "SensitivityReport",
     "recommend_refinements",
     "recommend_refinement_interactions",
     "recommend_refinements_sensitivity",
     "attribute_refinement_ambiguity",
-    "RefinementCandidate",
-    "InteractionRefinementReport",
-    "RefinementAttribution",
-    "RefinementAttributionReport",
-    "RefinementCoalitionEvaluation",
-    "RefinementSensitivityReport",
-    # Public representation design and claim repair.
     "certify_public_representation",
-    "RepresentationStabilityCertificate",
     "public_representation_frontier",
-    "PublicRepresentationFrontier",
-    "PublicRepresentationCandidate",
-    "FrontierScreeningSummary",
     "breakdown_point",
-    "BreakdownPointReport",
     "robust_comparison_report",
     "robust_ranking_report",
-    "RobustComparisonReport",
-    # Stress-test presets.
+]
+
+_PRESET_API = [
     "QPreset",
     "QSpec",
     "q_saturated",
@@ -346,44 +301,35 @@ __all__ = [
     "q_wasserstein",
     "q_fiber_support_floor",
     "q_intersection",
-    "SupportFunctionBackend",
-    "SupportFunctionResult",
-    "SupportFunctionIntervalResult",
-    "SupportFunctionTargetInterval",
-    "SupportFunctionReport",
-    "support_function_report",
-    "residopt_available",
-    "residopt_l2_support_interval",
-    "ResidOptAvailability",
-    "ResidOptEndpointCertificate",
-    "ResidOptEndpointReport",
-    "ResidOptL2EndpointCompiler",
-    "ResidOptRefinementScreenCandidate",
-    "ResidOptRefinementScreenContext",
-    "ResidOptRefinementScreenReport",
-    "residopt_refinement_screen",
-    # Model-assisted and estimator handoff helpers.
+]
+
+_INTEGRATION_API = [
     "fit_joint_distribution",
     "hidden_composition_uncertainty",
-    "NonparametricJointDistribution",
-    "HiddenCompositionUncertaintyReport",
     "audit_effects",
     "causal_reporting_stability",
-    "CausalReportingStabilitySuite",
     "adapt_dataframe_effects",
     "adapt_doubleml_effects",
     "adapt_dowhy_effects",
     "adapt_econml_effects",
-    "EstimatorAdapterResult",
-    # Serializable specs and plugin hooks.
+]
+
+_SPEC_AND_EXTENSION_API = [
     "AuditSpec",
     "AuditRun",
     "run_audit",
-    "PluginMetadata",
-    "PluginRegistry",
-    "UpdateSupportPlugin",
     "discover_plugins",
     "register_plugin",
     "unregister_plugin",
     "validate_plugin",
+]
+
+__all__ = [
+    "__version__",
+    *_CLAIM_API,
+    *_DATA_AND_EXPORT_API,
+    *_REPORTING_API,
+    *_PRESET_API,
+    *_INTEGRATION_API,
+    *_SPEC_AND_EXTENSION_API,
 ]

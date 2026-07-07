@@ -9,10 +9,10 @@ from typing import Any
 
 from scipy.optimize import linprog
 
+from .artifacts import ReportArtifactMixin
 
 DEFAULT_LINEAR_FEASIBILITY_LIMITATIONS = (
-    "Intervals are feasibility bounds, not point estimates or confidence "
-    "intervals.",
+    "Intervals are feasibility bounds, not point estimates or confidence intervals.",
     "Results are conditional on the supplied variables, linear constraints, "
     "target expressions, and active scenario definitions.",
     "A wide, infeasible, or unbounded interval is a property of the encoded "
@@ -461,7 +461,7 @@ class NamedLinearConstraintAttribution:
 
 
 @dataclass(frozen=True)
-class NamedLinearConstraintAttributionReport:
+class NamedLinearConstraintAttributionReport(ReportArtifactMixin):
     """Leave-one-group-out interval attribution for a named linear report."""
 
     source_report: "NamedLinearFeasibilityReport"
@@ -488,11 +488,6 @@ class NamedLinearConstraintAttributionReport:
             "rows": [row.as_dict() for row in self.rows],
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         return {
             "summary": (
@@ -509,11 +504,6 @@ class NamedLinearConstraintAttributionReport:
             ),
             "constraint_attribution": tuple(row.as_dict() for row in self.rows),
         }
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
 
     def to_markdown(self) -> str:
         lines = [
@@ -536,7 +526,7 @@ class NamedLinearConstraintAttributionReport:
 
 
 @dataclass(frozen=True)
-class NamedLinearFeasibilityReport:
+class NamedLinearFeasibilityReport(ReportArtifactMixin):
     """Interval report for a named linear feasibility problem."""
 
     problem: NamedLinearFeasibilityProblem
@@ -567,9 +557,7 @@ class NamedLinearFeasibilityReport:
         if baseline.width is not None and comparison.width is not None:
             reduction = baseline.width - comparison.width
             reduction_percent = (
-                None
-                if baseline.width <= 0.0
-                else 100.0 * reduction / baseline.width
+                None if baseline.width <= 0.0 else 100.0 * reduction / baseline.width
             )
         return {
             "target": target,
@@ -618,11 +606,6 @@ class NamedLinearFeasibilityReport:
             "problem": self.problem.as_dict(),
             "intervals": [row.as_dict() for row in self.intervals],
         }
-
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
 
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         constraint_lookup = {row.name: row for row in self.problem.constraints}
@@ -686,11 +669,6 @@ class NamedLinearFeasibilityReport:
                 {"limitation": limitation} for limitation in self.problem.limitations
             ),
         }
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
 
     def to_markdown(self) -> str:
         lines = [f"# {_escape_markdown(self.title)}", ""]
@@ -808,7 +786,7 @@ class NamedLinearClaim:
 
 
 @dataclass(frozen=True)
-class NamedLinearClaimAudit:
+class NamedLinearClaimAudit(ReportArtifactMixin):
     """Review artifact for a named-linear interval claim."""
 
     claim: NamedLinearClaim
@@ -853,11 +831,6 @@ class NamedLinearClaimAudit:
             ],
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         return {
             "claim_summary": (
@@ -884,11 +857,6 @@ class NamedLinearClaimAudit:
                 row.as_dict() for row in self.endpoint_diagnostics
             ),
         }
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
 
     def to_markdown(self) -> str:
         lines = [
@@ -1178,7 +1146,9 @@ def attribute_named_linear_constraints(
     rows: list[NamedLinearConstraintAttribution] = []
     active_names = tuple(scenario_row.constraints)
     for group, removed_names in group_map.items():
-        relaxed_names = tuple(name for name in active_names if name not in removed_names)
+        relaxed_names = tuple(
+            name for name in active_names if name not in removed_names
+        )
         relaxed_scenario = NamedLinearScenario(
             name=f"{scenario} without {group}",
             constraints=relaxed_names,
@@ -1214,9 +1184,7 @@ def attribute_named_linear_constraints(
                 constraints=tuple(removed_names),
                 constraint_count=len(removed_names),
                 kind=_common_value(row.kind for row in removed_constraints),
-                provenance=_common_value(
-                    row.provenance for row in removed_constraints
-                ),
+                provenance=_common_value(row.provenance for row in removed_constraints),
                 verified_count=sum(1 for row in removed_constraints if row.verified),
                 full_lower=baseline.lower,
                 full_upper=baseline.upper,

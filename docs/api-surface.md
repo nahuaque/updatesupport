@@ -26,8 +26,8 @@ The public user-facing surface is:
 - `ClaimAudit.recommend_refinements(...)`: claim-centered refinement ranking.
 - `ClaimAudit.repair_plan(...)`: cost-aware action list for stabilizing a
   claim.
-- `us.plan_claim_repair(...)`: functional helper that audits a claim spec or
-  reuses an existing `ClaimAudit`.
+- `us.plan_claim_repair(...)`: functional helper for scripts; the method form
+  `ClaimAudit.repair_plan(...)` is the preferred spelling once an audit exists.
 - `ClaimRepairPlan`: the structured repair-plan report object.
 - `us.claim_tree(...)`: organize related `ClaimSpec`s into a nested claim tree.
 - `us.audit_claim_tree(...)`: audit a nested claim tree in one call.
@@ -41,9 +41,13 @@ counterexample witnesses, representation certificates, decision-invariant
 repairs, repair plans, nested claim reports, model-assisted joint draws,
 structured exports, and limitations.
 
-The package `__all__` is curated around this surface. Some backend classes and
-diagnostic dataclasses are importable as direct attributes, but they are not
-part of the star-import surface.
+The package `__all__` is intentionally narrower than the set of direct
+attributes on `updatesupport`. It is the recommended star-import surface:
+claim-first workflow, common report functions, Q presets, structured exports,
+integration adapters, specs, and extension hooks. Diagnostic dataclasses,
+backend reports, residopt internals, support-function internals, and named
+linear feasibility objects remain importable directly or from their owning
+modules, but they are not advertised through `from updatesupport import *`.
 
 ## Advanced Evidence Tools
 

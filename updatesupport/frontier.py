@@ -7,6 +7,7 @@ from itertools import combinations
 from math import comb
 from typing import Any, Mapping, Sequence
 
+from .artifacts import ReportArtifactMixin
 from .data import TabularTarget, from_dataframe
 from .environments import CvxpyError
 from .presets import normalize_q_preset, q_description, q_name
@@ -111,9 +112,7 @@ class FrontierScenarioResult:
             "screening_certified": self.screening_certified,
             "screening_exact_solve_run": self.screening_exact_solve_run,
             "screening_exact_solve_avoided": self.screening_exact_solve_avoided,
-            "screening_conservative_ambiguity": (
-                self.screening_conservative_ambiguity
-            ),
+            "screening_conservative_ambiguity": (self.screening_conservative_ambiguity),
             "screening_exact_ambiguity": self.screening_exact_ambiguity,
         }
 
@@ -347,7 +346,7 @@ class FrontierCloseAlternative:
 
 
 @dataclass(frozen=True)
-class FrontierCandidateExplanation:
+class FrontierCandidateExplanation(ReportArtifactMixin):
     """Review-oriented explanation for one frontier candidate."""
 
     candidate: PublicRepresentationCandidate
@@ -424,24 +423,14 @@ class FrontierCandidateExplanation:
     ) -> str:
         return "\n".join(_candidate_explanation_markdown(self, heading=heading))
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         from .exports import report_tables
 
         return report_tables(self)
 
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import report_dataframes
-
-        return report_dataframes(self)
-
 
 @dataclass(frozen=True)
-class PublicRepresentationFrontier:
+class PublicRepresentationFrontier(ReportArtifactMixin):
     """Pareto frontier over public-cell complexity and transport stability."""
 
     candidates: tuple[PublicRepresentationCandidate, ...]
@@ -757,20 +746,10 @@ class PublicRepresentationFrontier:
         lines.extend(_scenario_table(self.frontier))
         return "\n".join(lines)
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         from .exports import report_tables
 
         return report_tables(self)
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import report_dataframes
-
-        return report_dataframes(self)
 
 
 def public_representation_frontier(
@@ -867,9 +846,7 @@ def public_representation_frontier(
         "residopt",
         "residopt_l2",
     }:
-        raise ValueError(
-            "screening_backend must be None, 'residopt', or 'residopt_l2'"
-        )
+        raise ValueError("screening_backend must be None, 'residopt', or 'residopt_l2'")
 
     base_public_tuple = tuple(base_public)
     hidden_tuple = tuple(hidden)
@@ -1292,8 +1269,12 @@ def _search_candidates(
     )
     if state.evaluation_limit_hit:
         stopping_reason = "max_evaluations reached"
-    screening = None if screening_state is None else screening_state.summary(
-        candidate_count=state.evaluated_count,
+    screening = (
+        None
+        if screening_state is None
+        else screening_state.summary(
+            candidate_count=state.evaluated_count,
+        )
     )
     if screening is not None and screening.conservative_endpoint_count:
         exact = False
@@ -1350,9 +1331,7 @@ def _build_frontier_screening_state(
     if screening_backend is None:
         return None
     if screening_backend not in {"residopt", "residopt_l2"}:
-        raise ValueError(
-            "screening_backend must be None, 'residopt', or 'residopt_l2'"
-        )
+        raise ValueError("screening_backend must be None, 'residopt', or 'residopt_l2'")
     for spec in scenario_specs:
         preset = normalize_q_preset(spec.q)
         if preset is None or preset.name != "l2_budget":
@@ -2416,7 +2395,9 @@ def _evaluate_candidate(
 
 
 def _screened_frontier_bound_type(screened: Any) -> str:
-    return "exact" if screened.exact_ambiguity is not None else "conservative_upper_bound"
+    return (
+        "exact" if screened.exact_ambiguity is not None else "conservative_upper_bound"
+    )
 
 
 def _dominates(

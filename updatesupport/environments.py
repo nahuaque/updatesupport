@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from math import isclose
 from typing import Any, Callable, Hashable, Mapping, Protocol, Sequence
 
+from .artifacts import ReportArtifactMixin
 from .partition import Partition
 from .results import (
     AdequacyResult,
@@ -235,7 +236,7 @@ class SupportFunctionTargetInterval:
 
 
 @dataclass(frozen=True)
-class SupportFunctionReport:
+class SupportFunctionReport(ReportArtifactMixin):
     """Multi-target support-function interval and dual diagnostic report."""
 
     title: str
@@ -325,16 +326,6 @@ class SupportFunctionReport:
             "targets": target_rows,
             "dual_diagnostics": dual_rows,
         }
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
-
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
 
     def to_markdown(
         self, *, top_duals: int = 10, min_dual_magnitude: float = 0.0

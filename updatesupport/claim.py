@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, replace
 from math import isfinite
 from typing import Any, Mapping, Sequence
 
+from .artifacts import ReportArtifactMixin
 from .certificate import (
     RepresentationStabilityCertificate,
     certify_public_representation,
@@ -389,7 +390,7 @@ class ClaimRepairOption:
 
 
 @dataclass(frozen=True)
-class ClaimRepairPlan:
+class ClaimRepairPlan(ReportArtifactMixin):
     """Cost-aware consolidation of claim repair and refinement evidence."""
 
     audit: "ClaimAudit"
@@ -450,18 +451,8 @@ class ClaimRepairPlan:
             "action_costs": dict(self.action_costs),
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         return _claim_repair_plan_tables(self)
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
 
     def to_markdown(self) -> str:
         recommended = self.recommended
@@ -813,7 +804,7 @@ class ClaimSpec:
 
 
 @dataclass(frozen=True)
-class ClaimAudit:
+class ClaimAudit(ReportArtifactMixin):
     """Review artifact that certifies, breaks, or repairs a reporting claim."""
 
     claim: ClaimSpec
@@ -948,20 +939,10 @@ class ClaimAudit:
             "limitations": self.limitations,
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         from .exports import report_tables
 
         return report_tables(self)
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import report_dataframes
-
-        return report_dataframes(self)
 
     def to_markdown(self) -> str:
         lines = [
@@ -1311,7 +1292,7 @@ class ClaimTree:
 
 
 @dataclass(frozen=True)
-class ClaimTreeAudit:
+class ClaimTreeAudit(ReportArtifactMixin):
     """Nested claim report for hierarchical or multi-level review workflows."""
 
     tree: ClaimTree
@@ -1409,11 +1390,6 @@ class ClaimTreeAudit:
             "worst_nodes": [node.as_dict() for node in self.worst_nodes()],
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         summary = (
             {
@@ -1467,11 +1443,6 @@ class ClaimTreeAudit:
             "limitations": limitation_rows,
             "worst_nodes": worst_rows,
         }
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
 
     def to_markdown(self) -> str:
         lines = [

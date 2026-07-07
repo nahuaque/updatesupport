@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Any, Callable, Mapping, Sequence
 
+from .artifacts import ReportArtifactMixin
 from .claim import DecisionResult, DecisionRule
 from .data import TabularStandardError, TabularTarget
 from .presets import (
@@ -82,7 +83,7 @@ class BreakdownCurvePoint:
 
 
 @dataclass(frozen=True)
-class BreakdownPointReport:
+class BreakdownPointReport(ReportArtifactMixin):
     """Report for the smallest stress radius that breaks a decision claim."""
 
     title: str
@@ -134,13 +135,6 @@ class BreakdownPointReport:
             "curve": [row.as_dict() for row in self.curve],
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        """Serialize the report to JSON."""
-
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         """Return named tables for structured export."""
 
@@ -169,13 +163,6 @@ class BreakdownPointReport:
             ),
             "curve": tuple(row.as_dict() for row in self.curve),
         }
-
-    def to_dataframes(self) -> dict[str, Any]:
-        """Return named pandas DataFrames for the report tables."""
-
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
 
     def to_markdown(self) -> str:
         """Render an analyst-facing Markdown interpretation."""

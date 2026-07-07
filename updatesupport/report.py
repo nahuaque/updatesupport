@@ -9,6 +9,7 @@ from typing import Any, Hashable, Mapping, Sequence
 
 import numpy as np
 
+from .artifacts import ReportArtifactMixin
 from .data import (
     DataDiagnostic,
     GroupedProblem,
@@ -157,7 +158,7 @@ class WitnessFiberShift:
 
 
 @dataclass(frozen=True)
-class WitnessReport:
+class WitnessReport(ReportArtifactMixin):
     """Adversarial lower-vs-upper hidden-composition witness report."""
 
     grouped: GroupedProblem
@@ -207,20 +208,10 @@ class WitnessReport:
             "fiber_shifts": [row.as_dict() for row in self.fibers],
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         from .exports import report_tables
 
         return report_tables(self)
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import report_dataframes
-
-        return report_dataframes(self)
 
     def to_markdown(self) -> str:
         lines = [
@@ -315,9 +306,7 @@ class RefinementCandidate:
             "screening_certified": self.screening_certified,
             "screening_exact_solve_run": self.screening_exact_solve_run,
             "screening_exact_solve_avoided": self.screening_exact_solve_avoided,
-            "screening_conservative_ambiguity": (
-                self.screening_conservative_ambiguity
-            ),
+            "screening_conservative_ambiguity": (self.screening_conservative_ambiguity),
             "screening_exact_ambiguity": self.screening_exact_ambiguity,
         }
 
@@ -414,7 +403,7 @@ class InteractionRefinementCandidate:
 
 
 @dataclass(frozen=True)
-class InteractionRefinementReport:
+class InteractionRefinementReport(ReportArtifactMixin):
     """Interaction-aware refinement search over small column sets."""
 
     candidates: tuple[InteractionRefinementCandidate, ...]
@@ -467,13 +456,6 @@ class InteractionRefinementReport:
             "singletons": [row.as_dict() for row in self.singletons],
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        """Serialize the report to JSON."""
-
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         """Return named tables for structured export."""
 
@@ -502,13 +484,6 @@ class InteractionRefinementReport:
             "interaction_candidates": tuple(row.as_dict() for row in self.candidates),
             "singletons": tuple(row.as_dict() for row in self.singletons),
         }
-
-    def to_dataframes(self) -> dict[str, Any]:
-        """Return named pandas DataFrames for the report tables."""
-
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
 
     def to_markdown(self) -> str:
         lines = [
@@ -687,7 +662,7 @@ class RefinementAttribution:
 
 
 @dataclass(frozen=True)
-class RefinementAttributionReport:
+class RefinementAttributionReport(ReportArtifactMixin):
     """Shapley-style attribution of ambiguity reduction across refinements."""
 
     attributions: tuple[RefinementAttribution, ...]
@@ -755,13 +730,6 @@ class RefinementAttributionReport:
             "coalitions": [row.as_dict() for row in self.coalitions],
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        """Serialize the report to JSON."""
-
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         """Return named tables for structured export."""
 
@@ -795,13 +763,6 @@ class RefinementAttributionReport:
             "attributions": tuple(row.as_dict() for row in self.attributions),
             "coalitions": tuple(row.as_dict() for row in self.coalitions),
         }
-
-    def to_dataframes(self) -> dict[str, Any]:
-        """Return named pandas DataFrames for the report tables."""
-
-        from .exports import tables_to_dataframes
-
-        return tables_to_dataframes(self.to_tables())
 
     def to_markdown(self) -> str:
         lines = [
@@ -1032,7 +993,7 @@ class RefinementSensitivityScenario:
 
 
 @dataclass(frozen=True)
-class RefinementSensitivityReport:
+class RefinementSensitivityReport(ReportArtifactMixin):
     """Refinement recommendations aggregated over a sensitivity grid."""
 
     candidates: tuple[RefinementSensitivityCandidate, ...]
@@ -1058,20 +1019,10 @@ class RefinementSensitivityReport:
             "rows": [row.as_dict() for row in self.rows],
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         from .exports import report_tables
 
         return report_tables(self)
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import report_dataframes
-
-        return report_dataframes(self)
 
     def to_markdown(self) -> str:
         lines = [f"# {self.title}", ""]
@@ -1258,7 +1209,7 @@ class EstimatorUncertaintyAdjustment:
 
 
 @dataclass(frozen=True)
-class CausalReportingStabilitySuite:
+class CausalReportingStabilitySuite(ReportArtifactMixin):
     """One-stop report object for causal-effect reporting stability."""
 
     primary: "PublicDescentReport"
@@ -1293,20 +1244,10 @@ class CausalReportingStabilitySuite:
             },
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         from .exports import report_tables
 
         return report_tables(self)
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import report_dataframes
-
-        return report_dataframes(self)
 
     def to_markdown(self) -> str:
         lines = [
@@ -1440,7 +1381,7 @@ class CausalReportingStabilitySuite:
 
 
 @dataclass(frozen=True)
-class PublicDescentReport:
+class PublicDescentReport(ReportArtifactMixin):
     """Structured public-descent audit with Markdown rendering."""
 
     grouped: GroupedProblem
@@ -1499,20 +1440,10 @@ class PublicDescentReport:
     def as_dict(self) -> dict[str, Any]:
         return _public_descent_summary_dict(self)
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         from .exports import report_tables
 
         return report_tables(self)
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import report_dataframes
-
-        return report_dataframes(self)
 
     def witness_report(
         self,
@@ -2558,9 +2489,7 @@ def _recommend_refinements_internal(
         "residopt",
         "residopt_l2",
     }:
-        raise ValueError(
-            "screening_backend must be None, 'residopt', or 'residopt_l2'"
-        )
+        raise ValueError("screening_backend must be None, 'residopt', or 'residopt_l2'")
     candidate_refinements = _resolve_sequence_arg(
         candidate_refinements,
         candidate_columns,
@@ -3892,7 +3821,7 @@ class SensitivitySummary:
 
 
 @dataclass(frozen=True)
-class SensitivityReport:
+class SensitivityReport(ReportArtifactMixin):
     """Robustness grid over Q presets, hidden sets, and min-cell thresholds."""
 
     rows: tuple[SensitivityRow, ...]
@@ -3923,20 +3852,10 @@ class SensitivityReport:
             "rows": [row.as_dict() for row in self.rows],
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         from .exports import report_tables
 
         return report_tables(self)
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import report_dataframes
-
-        return report_dataframes(self)
 
     def to_markdown(self) -> str:
         lines = [f"# {self.title}", ""]

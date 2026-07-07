@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .artifacts import ReportArtifactMixin
 from .frontier import (
     PublicRepresentationCandidate,
     PublicRepresentationFrontier,
@@ -13,7 +14,7 @@ from .frontier import (
 
 
 @dataclass(frozen=True)
-class RepresentationStabilityCertificate:
+class RepresentationStabilityCertificate(ReportArtifactMixin):
     """Review-ready decision artifact for a public reporting representation."""
 
     frontier: PublicRepresentationFrontier
@@ -202,20 +203,10 @@ class RepresentationStabilityCertificate:
 
         return "\n".join(lines)
 
-    def to_json(self, **kwargs: Any) -> str:
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         from .exports import report_tables
 
         return report_tables(self)
-
-    def to_dataframes(self) -> dict[str, Any]:
-        from .exports import report_dataframes
-
-        return report_dataframes(self)
 
 
 def certify_public_representation(
@@ -437,12 +428,9 @@ def _search_guarantee(frontier: PublicRepresentationFrontier) -> str:
 
 
 def _certifiable_search_coverage(frontier: PublicRepresentationFrontier) -> bool:
-    return (
-        frontier.search_trace is not None
-        and (
-            frontier.search_trace.exact
-            or _conservative_screening_covers_exhaustive_search(frontier)
-        )
+    return frontier.search_trace is not None and (
+        frontier.search_trace.exact
+        or _conservative_screening_covers_exhaustive_search(frontier)
     )
 
 

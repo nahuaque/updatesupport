@@ -44,13 +44,16 @@ def _sample_rows():
 
 class ResidOptBackendTests(unittest.TestCase):
     def test_exports_are_available(self):
-        self.assertIn("residopt_available", us.__all__)
-        self.assertIn("residopt_l2_support_interval", us.__all__)
-        self.assertIn("ResidOptEndpointReport", us.__all__)
-        self.assertIn("ResidOptL2EndpointCompiler", us.__all__)
-        self.assertIn("residopt_refinement_screen", us.__all__)
-        self.assertIn("ResidOptRefinementScreenContext", us.__all__)
-        self.assertIn("ResidOptRefinementScreenReport", us.__all__)
+        self.assertTrue(hasattr(us, "residopt_available"))
+        self.assertTrue(hasattr(us, "residopt_l2_support_interval"))
+        self.assertTrue(hasattr(us, "ResidOptEndpointReport"))
+        self.assertTrue(hasattr(us, "ResidOptL2EndpointCompiler"))
+        self.assertTrue(hasattr(us, "residopt_refinement_screen"))
+        self.assertTrue(hasattr(us, "ResidOptRefinementScreenContext"))
+        self.assertTrue(hasattr(us, "ResidOptRefinementScreenReport"))
+        self.assertNotIn("residopt_l2_support_interval", us.__all__)
+        self.assertNotIn("ResidOptEndpointReport", us.__all__)
+        self.assertNotIn("residopt_refinement_screen", us.__all__)
 
     def test_availability_is_structured(self):
         availability = us.residopt_available()

@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from .artifacts import ReportArtifactMixin
 from .certificate import (
     RepresentationStabilityCertificate,
     certify_public_representation,
@@ -358,7 +359,7 @@ class AuditSpec:
 
 
 @dataclass(frozen=True)
-class AuditRun:
+class AuditRun(ReportArtifactMixin):
     """Executed audit, preserving both the spec and generated report."""
 
     spec: AuditSpec
@@ -379,26 +380,12 @@ class AuditRun:
 
         return self.as_dict()
 
-    def to_json(self, **kwargs: Any) -> str:
-        """Serialize the executed spec and structured report output to JSON."""
-
-        from .exports import report_to_json
-
-        return report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         """Return named list-of-dict tables for the executed audit."""
 
         from .exports import report_tables
 
         return report_tables(self)
-
-    def to_dataframes(self) -> dict[str, Any]:
-        """Return named pandas DataFrames for the executed audit."""
-
-        from .exports import report_dataframes
-
-        return report_dataframes(self)
 
 
 def run_audit(spec: AuditSpec | Mapping[str, Any], data: Any) -> AuditRun:
