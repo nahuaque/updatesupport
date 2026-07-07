@@ -902,9 +902,12 @@ class FinancePluginTests(unittest.TestCase):
         attribution = namespace["build_attribution_report"](report)
         claim_audit = namespace["build_claim_audit"](report)
         pack = namespace["build_audit_pack"](report)
+        frontier = namespace["build_frontier"]()
+        frontier_rows = namespace["frontier_rows"]()
         rows = namespace["width_reduction_rows"](report)
         markdown = namespace["render_markdown"](report)
         panel_markdown = namespace["render_panel_markdown"]()
+        frontier_markdown = namespace["render_frontier_markdown"](frontier)
         pack_json = json.loads(pack.to_json())
         capacity_tier = namespace["CAPACITY_TIER"]
         upstream = report.interval(
@@ -931,8 +934,18 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIsInstance(attribution, us.NamedLinearConstraintAttributionReport)
         self.assertIsInstance(claim_audit, us.NamedLinearClaimAudit)
         self.assertIsInstance(pack, usf.DisclosureAuditPack)
+        self.assertIsInstance(frontier, us.PublicRepresentationFrontier)
         self.assertEqual(claim_audit.verdict, "pass")
         self.assertEqual(q1_claim_audit.verdict, "pass")
+        self.assertEqual(len(frontier_rows), 9)
+        self.assertEqual(len(frontier.candidates), 4)
+        self.assertEqual(frontier.minimal_stable.added_columns, ("segment",))
+        self.assertAlmostEqual(frontier.baseline.max_ambiguity, 1.0)
+        self.assertAlmostEqual(
+            frontier.explain(["region"]).candidate.max_ambiguity,
+            0.9287393569703901,
+        )
+        self.assertAlmostEqual(frontier.explain(["segment"]).candidate.max_ambiguity, 0.0)
         self.assertEqual(len(rows), 24)
         self.assertAlmostEqual(upstream.lower, 22244.0)
         self.assertAlmostEqual(upstream.upper, 25362.0)
@@ -950,6 +963,7 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIn("Verdict: **pass**", markdown)
         self.assertIn("Endpoint Diagnostics", markdown)
         self.assertIn("Capex Capacity Disclosure Triangulation Panel", panel_markdown)
+        self.assertIn("Disclosure Refinement Frontier", panel_markdown)
         self.assertIn(
             "FY2025 | 28,358 $M | 31,476 $M | 22,244 $M | 78.4% to 89.4% | pass",
             panel_markdown,
@@ -958,6 +972,16 @@ class FinancePluginTests(unittest.TestCase):
             "Q1 2026 | 6,470 $M | 6,754 $M | 4,876 $M | 75.4% to 79.8% | pass",
             panel_markdown,
         )
+        self.assertIn(
+            "FY2025 | 100.0 pp | 92.9 pp | 0.0 pp | `base + segment`",
+            panel_markdown,
+        )
+        self.assertIn(
+            "Q1 2026 | 100.0 pp | 94.9 pp | 0.0 pp | `base + segment`",
+            panel_markdown,
+        )
+        self.assertIn("Disclosure Interpretation", frontier_markdown)
+        self.assertIn("Minimal stable representation: `base + segment`", frontier_markdown)
 
     def test_colab_demo_notebooks_are_valid_and_unexecuted(self):
         notebook_dir = Path(__file__).resolve().parents[1] / "examples" / "notebooks"

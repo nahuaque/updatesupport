@@ -338,6 +338,75 @@ def build_audit_pack(
     )
 
 
+def frontier_rows(
+    period: str | ExxonCapexPeriod = DEFAULT_PERIOD,
+) -> list[dict[str, Any]]:
+    """Build neutral hidden-cell rows for public-representation frontier search.
+
+    The exact cash allocation is unidentified, so the frontier uses a neutral
+    capacity-proportional allocation as its observed hidden mix. The frontier
+    then asks which public disclosure refinements make the Upstream-share
+    target stable under recomposition inside the public buckets.
+    """
+
+    period_row = _period(period)
+    rows: list[dict[str, Any]] = []
+    for (segment, region), capacity in period_row.segment_region_ppe_additions.items():
+        allocation = (
+            period_row.cash_ppe_additions
+            * capacity
+            / period_row.segment_note_ppe_additions
+        )
+        rows.append(
+            {
+                "period": period_row.label,
+                "segment": segment,
+                "region": region,
+                "disclosure_cell": f"{segment}:{region}",
+                "neutral_allocation": allocation,
+                "is_upstream": 1.0 if segment == "upstream" else 0.0,
+            }
+        )
+    rows.append(
+        {
+            "period": period_row.label,
+            "segment": "corporate",
+            "region": "unallocated",
+            "disclosure_cell": "corporate:unallocated",
+            "neutral_allocation": (
+                period_row.cash_ppe_additions
+                * period_row.corporate_ppe_additions
+                / period_row.segment_note_ppe_additions
+            ),
+            "is_upstream": 0.0,
+        }
+    )
+    return rows
+
+
+def build_frontier(
+    period: str | ExxonCapexPeriod = DEFAULT_PERIOD,
+    *,
+    q_presets: Iterable[Any] = ("saturated",),
+    ambiguity_limit: float = 0.05,
+) -> us.PublicRepresentationFrontier:
+    """Search disclosure refinements for stable Upstream-share reporting."""
+
+    period_row = _period(period)
+    return us.public_representation_frontier(
+        frontier_rows(period_row),
+        base_public=["period"],
+        hidden=["period", "segment", "region"],
+        target="is_upstream",
+        weight="neutral_allocation",
+        candidate_refinements=["region", "segment"],
+        q_presets=tuple(q_presets),
+        ambiguity_limit=ambiguity_limit,
+        min_cell_weight=0.0,
+        title=f"Exxon Mobil {period_row.label} Capex Disclosure Refinement Frontier",
+    )
+
+
 def width_reduction_rows(
     report: us.NamedLinearFeasibilityReport,
     *,
@@ -411,12 +480,41 @@ def render_panel_markdown(
             "capacity interpretation.",
         ]
     )
+    lines.extend(["", "## Disclosure Refinement Frontier", ""])
+    lines.extend(_frontier_summary_table(period_rows))
     for pack in packs:
         lines.extend(["", f"## {pack.audit_title}", ""])
         pack_lines = pack.to_markdown().splitlines()
         if pack_lines and pack_lines[0].startswith("# "):
             pack_lines = pack_lines[2:]
         lines.extend(pack_lines)
+    return "\n".join(lines)
+
+
+def render_frontier_markdown(
+    frontier: us.PublicRepresentationFrontier | None = None,
+    *,
+    period: str | ExxonCapexPeriod = DEFAULT_PERIOD,
+) -> str:
+    """Render a standalone disclosure-refinement frontier report."""
+
+    if frontier is None:
+        frontier = build_frontier(period)
+    lines = [
+        frontier.to_markdown(),
+        "",
+        "## Disclosure Interpretation",
+        "",
+        "The frontier treats the capacity-proportional allocation as a neutral "
+        "baseline because the exact cash PP&E allocation is not disclosed. "
+        "It then asks whether a coarser public report would still determine "
+        "the Upstream-share target under hidden recomposition.",
+        "",
+        "A segment refinement is the useful public disclosure: once segment is "
+        "public, the Upstream indicator is constant inside each public fiber. "
+        "Region alone does not settle the target because each region still "
+        "contains both Upstream and non-Upstream cells.",
+    ]
     return "\n".join(lines)
 
 
@@ -567,6 +665,48 @@ def _period_readout_table(
             + " |"
         )
     return lines
+
+
+def _frontier_summary_table(periods: Iterable[ExxonCapexPeriod]) -> list[str]:
+    lines = [
+        "| Period | Baseline ambiguity | Region-only ambiguity | Segment ambiguity | Minimal stable refinement |",
+        "| --- | ---: | ---: | ---: | --- |",
+    ]
+    for period in periods:
+        frontier = build_frontier(period)
+        baseline = frontier.baseline
+        region = frontier.explain(["region"]).candidate
+        segment = frontier.explain(["segment"]).candidate
+        minimal = frontier.minimal_stable
+        minimal_label = "none" if minimal is None else f"`{minimal.label}`"
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    period.label,
+                    _format_percentage_points(
+                        0.0 if baseline is None else baseline.max_ambiguity
+                    ),
+                    _format_percentage_points(region.max_ambiguity),
+                    _format_percentage_points(segment.max_ambiguity),
+                    minimal_label,
+                ]
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
+            "The frontier uses a neutral capacity-proportional allocation as "
+            "the observed hidden mix. It is a disclosure-design check, not a "
+            "replacement for the exact capacity LP above.",
+        ]
+    )
+    return lines
+
+
+def _format_percentage_points(value: float) -> str:
+    return f"{100.0 * value:.1f} pp"
 
 
 def main() -> None:

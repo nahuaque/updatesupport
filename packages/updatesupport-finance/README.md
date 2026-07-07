@@ -339,6 +339,10 @@ uv run --package updatesupport-finance python \
   packages/updatesupport-finance/examples/exxon_debt_bridge_triangulation.py
 ```
 
+The capex example also runs a public-representation frontier over candidate
+disclosure refinements, showing that segment disclosure stabilizes the
+Upstream-share claim while geography alone does not.
+
 ## Analyst Workflow
 
 1. Choose public buckets from the model report.
