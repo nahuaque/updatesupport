@@ -777,6 +777,7 @@ class FinancePluginTests(unittest.TestCase):
         pack = namespace["build_audit_pack"](report)
         rows = namespace["width_reduction_rows"](report)
         markdown = namespace["render_markdown"](report)
+        panel_markdown = namespace["render_panel_markdown"]()
         pack_tables = pack.to_tables()
         pack_dataframes = pack.to_dataframes()
         pack_json = json.loads(pack.to_json())
@@ -817,6 +818,12 @@ class FinancePluginTests(unittest.TestCase):
         self.assertIn("Revenue from contracts with customers", markdown)
         self.assertIn("Verdict: **pass**", markdown)
         self.assertIn("Binding / Value Drivers", markdown)
+        self.assertIn(
+            "Revenue Recognition Disclosure Triangulation Panel", panel_markdown
+        )
+        self.assertIn("FY2025 | 96,996 $M | 17,542 $M | 18.1%", panel_markdown)
+        self.assertIn("Q1 2026 | 26,295 $M | 6,328 $M | 24.1%", panel_markdown)
+        self.assertIn("Verdict: **inconclusive**", panel_markdown)
 
     def test_colab_demo_notebooks_are_valid_and_unexecuted(self):
         notebook_dir = Path(__file__).resolve().parents[1] / "examples" / "notebooks"
