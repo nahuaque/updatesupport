@@ -2,11 +2,11 @@
 
 Claims are the highest-level review artifact in `updatesupport`. Instead of
 choosing individual diagnostics up front, declare the aggregate claim you want
-to defend and call `.audit(...)`.
+to defend and call `.design(...)` or `.audit(...)`.
 
 `us.claim(...)` is the preferred constructor. `ClaimSpec` is the underlying
 dataclass when you want to instantiate or serialize the spec directly, and
-`ClaimAudit` is the report object returned by `.audit(...)`.
+`PublicReportDesign` is the report object returned by `.design(...)`.
 
 ```python
 import updatesupport as us
@@ -29,11 +29,11 @@ claim = us.claim(
     statistical_interval=(0.119, 0.128),
 )
 
-verdict = claim.audit(rows_or_frame)
-print(verdict.to_markdown())
+design = claim.design(rows_or_frame)
+print(design.to_markdown())
 ```
 
-The function form is still available when it is more convenient:
+The audit-only form is still available when you just need the claim verdict:
 
 ```python
 verdict = us.audit_claim(rows_or_frame, claim)
@@ -49,6 +49,33 @@ The auditor produces one report that separates:
 - a counterexample witness when the public representation is unstable,
 - a repair representation when candidate refinements can stabilize the claim,
 - claim-centered refinement recommendations and limitations.
+
+## Public Report Design
+
+Use `.design(...)` when the practical question is:
+
+> What public representation should we publish so the claim is defensible?
+
+```python
+design = claim.design(
+    rows_or_frame,
+    action_costs={"OCC_MAJOR": 1.0, "WKHP_BAND": 0.5, "RAC1P": 2.0},
+    include_attribution=True,
+)
+```
+
+`PublicReportDesign` bundles:
+
+- the current `ClaimAudit`,
+- the cost-aware `ClaimRepairPlan`,
+- the embedded representation certificate and frontier search, when available,
+- optional Shapley-style refinement attribution,
+- structured tables and Markdown.
+
+Use `us.design_public_report(claim, rows_or_frame)` when a functional style is
+more convenient. Use `.audit(...)` when you only need pass/fail/inconclusive
+evidence; use `.design(...)` when the report needs a recommended public
+representation.
 
 ## Verdict Semantics
 

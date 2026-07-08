@@ -28,6 +28,8 @@ class ClaimSpecTests(unittest.TestCase):
         self.assertIn("ClaimSpec", us.__all__)
         self.assertIn("ClaimAudit", us.__all__)
         self.assertIn("ClaimRepairPlan", us.__all__)
+        self.assertIn("PublicReportDesign", us.__all__)
+        self.assertIn("design_public_report", us.__all__)
         self.assertIn("ClaimTree", us.__all__)
         self.assertIn("ClaimTreeAudit", us.__all__)
         self.assertTrue(hasattr(us, "ClaimRepairOption"))
@@ -96,6 +98,71 @@ class ClaimSpecTests(unittest.TestCase):
         self.assertIn("options", tables)
         self.assertEqual(payload["recommended"]["label"], "driver")
         self.assertIn("Candidate Repair Options", markdown)
+
+    def test_claim_design_wraps_audit_repair_and_frontier(self):
+        claim = us.claim(
+            "Designable claim",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            ambiguity_limit=0.05,
+        )
+
+        design = claim.design(_rows())
+        helper_design = us.design_public_report(claim, _rows())
+        tables = design.to_tables()
+        payload = json.loads(design.to_json())
+        markdown = design.to_markdown()
+
+        self.assertIsInstance(design, us.PublicReportDesign)
+        self.assertEqual(design.status, "repair_available")
+        self.assertEqual(design.recommended_public, ("segment", "driver"))
+        self.assertIsInstance(design.audit, us.ClaimAudit)
+        self.assertIsInstance(design.repair_plan, us.ClaimRepairPlan)
+        self.assertIsNotNone(design.certificate)
+        self.assertIsNotNone(design.frontier)
+        self.assertEqual(helper_design.recommended_public, design.recommended_public)
+        self.assertEqual(tables["summary"][0]["recommended_label"], "segment + driver")
+        self.assertIn("repair_options", tables)
+        self.assertIn("frontier_candidates", tables)
+        self.assertEqual(payload["recommended_label"], "segment + driver")
+        self.assertIn("Public Report Design", markdown)
+
+    def test_claim_design_marks_passing_public_report_as_already_defensible(self):
+        claim = us.claim(
+            "Already defensible claim",
+            public=["segment", "driver"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            ambiguity_limit=0.05,
+        )
+
+        design = claim.design(_rows())
+
+        self.assertTrue(design.audit.passed)
+        self.assertEqual(design.status, "already_defensible")
+        self.assertEqual(design.recommended_public, ("segment", "driver"))
+        self.assertIsNone(design.recommended_option)
+
+    def test_claim_design_can_include_refinement_attribution(self):
+        claim = us.claim(
+            "Attribution design claim",
+            public=["segment"],
+            hidden=["segment", "driver"],
+            target="target",
+            weight="weight",
+            candidate_refinements=["driver"],
+            ambiguity_limit=0.05,
+        )
+
+        design = claim.design(_rows(), include_attribution=True)
+
+        self.assertIsNotNone(design.attribution)
+        self.assertIn("refinement_attributions", design.to_tables())
 
     def test_plan_claim_repair_audits_claim_spec_and_uses_action_costs(self):
         rows = [

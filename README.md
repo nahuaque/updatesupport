@@ -192,8 +192,9 @@ coarsened subgroup reporting.
 
 ### 1. Validate a Claim
 
-Use `us.claim(...)` when you want one review artifact that certifies the claim,
-breaks it with a hidden-composition witness, or proposes a stable repair.
+Use `us.claim(...)` when you want one workflow that certifies the claim,
+breaks it with a hidden-composition witness, or designs the smallest
+defensible public report.
 `ClaimSpec` is the underlying dataclass when you want to instantiate or
 serialize the spec directly, and `ClaimAudit` is the report object returned by
 `.audit(...)`.
@@ -212,17 +213,15 @@ claim = us.claim(
     statistical_interval=(0.119, 0.128),
 )
 
-verdict = claim.audit(rows_or_frame)
-print(verdict.to_markdown())
+design = claim.design(rows_or_frame)
+print(design.to_markdown())
 ```
 
-The auditor separates the reported estimate, statistical uncertainty,
+The design object separates the reported estimate, statistical uncertainty,
 hidden-composition ambiguity, public-refinement repair, counterexample witness,
-and limitations. `verdict.recommend_refinements()` returns claim-centered
-refinement rows: whether a candidate actually repairs the claim, whether it
-satisfies the ambiguity limit, and how much ambiguity it removes.
-`verdict.repair_plan(action_costs=...)` packages that evidence as a ranked
-action list for deciding what to publish differently. See
+frontier evidence, and limitations. Use `.audit(...)` when you only need the
+claim verdict; use `.design(...)` when the reviewer question is, "What should
+we publish differently?" See
 [docs/reporting-claims.md](docs/reporting-claims.md).
 
 For model-assisted plausibility checks, fit a nonparametric public/hidden joint

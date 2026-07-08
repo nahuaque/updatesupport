@@ -21,10 +21,12 @@ from .joint import (
 from .presets import QPreset
 from .report import (
     PublicDescentReport,
+    RefinementAttributionReport,
     RefinementCandidate,
     StatisticalUncertainty,
     WitnessReport,
     _repeatable_data,
+    attribute_refinement_ambiguity,
     public_fiber_diagnostics,
     public_descent_report,
 )
@@ -551,6 +553,244 @@ class ClaimRepairPlan(ReportArtifactMixin):
 
 
 @dataclass(frozen=True)
+class PublicReportDesign(ReportArtifactMixin):
+    """One-stop design artifact for the smallest defensible public report."""
+
+    audit: "ClaimAudit"
+    repair_plan: ClaimRepairPlan
+    certificate: RepresentationStabilityCertificate | None = None
+    frontier: Any | None = None
+    attribution: RefinementAttributionReport | None = None
+    title: str = "Public Report Design"
+
+    @property
+    def status(self) -> str:
+        if self.audit.passed:
+            return "already_defensible"
+        if self.repair_plan.recommended is not None:
+            return "repair_available"
+        if (
+            self.certificate is not None
+            and self.certificate.selected_candidate is not None
+        ):
+            return "representation_available"
+        if self.audit.failed:
+            return "no_defensible_representation_found"
+        return "inconclusive"
+
+    @property
+    def recommended_option(self) -> ClaimRepairOption | None:
+        return self.repair_plan.recommended
+
+    @property
+    def selected_candidate(self) -> PublicRepresentationCandidate | None:
+        if self.certificate is None:
+            return None
+        return self.certificate.selected_candidate
+
+    @property
+    def recommended_public(self) -> tuple[str, ...] | None:
+        if self.audit.passed:
+            return tuple(self.audit.claim.public)
+        recommended = self.repair_plan.recommended
+        if recommended is not None:
+            return (*self.audit.claim.public, *recommended.columns)
+        candidate = self.selected_candidate
+        if candidate is not None:
+            return (*self.audit.claim.public, *candidate.added_columns)
+        return None
+
+    @property
+    def recommended_label(self) -> str | None:
+        public = self.recommended_public
+        return None if public is None else " + ".join(public)
+
+    def as_dict(self) -> dict[str, Any]:
+        recommended = self.recommended_option
+        return {
+            "title": self.title,
+            "status": self.status,
+            "claim_status": self.audit.status,
+            "estimate_name": self.audit.claim.estimate_name,
+            "current_public": tuple(self.audit.claim.public),
+            "recommended_public": self.recommended_public,
+            "recommended_label": self.recommended_label,
+            "observed_value": self.audit.observed_value,
+            "lower": self.audit.interval.lower,
+            "upper": self.audit.interval.upper,
+            "ambiguity": self.audit.ambiguity,
+            "ambiguity_limit": self.audit.claim.ambiguity_limit,
+            "repair": None if recommended is None else recommended.as_dict(),
+            "certificate_status": None
+            if self.certificate is None
+            else self.certificate.status,
+            "frontier_minimal_stable": None
+            if self.frontier is None or self.frontier.minimal_stable is None
+            else self.frontier.minimal_stable.as_dict(),
+            "attribution": None
+            if self.attribution is None
+            else self.attribution.as_dict(),
+            "audit": self.audit.as_dict(),
+            "repair_plan": self.repair_plan.as_dict(),
+        }
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        recommended = self.recommended_option
+        tables: dict[str, tuple[dict[str, Any], ...]] = {
+            "summary": (
+                {
+                    "title": self.title,
+                    "status": self.status,
+                    "claim_status": self.audit.status,
+                    "estimate_name": self.audit.claim.estimate_name,
+                    "current_public": tuple(self.audit.claim.public),
+                    "recommended_public": self.recommended_public,
+                    "recommended_label": self.recommended_label,
+                    "observed_value": self.audit.observed_value,
+                    "lower": self.audit.interval.lower,
+                    "upper": self.audit.interval.upper,
+                    "ambiguity": self.audit.ambiguity,
+                    "ambiguity_limit": self.audit.claim.ambiguity_limit,
+                    "repair_label": None if recommended is None else recommended.label,
+                    "certificate_status": None
+                    if self.certificate is None
+                    else self.certificate.status,
+                    "frontier_candidate_count": None
+                    if self.frontier is None
+                    else len(self.frontier.candidates),
+                },
+            ),
+            "repair_options": tuple(
+                option.as_dict() for option in self.repair_plan.options
+            ),
+            "reasons": tuple({"reason": reason} for reason in self.audit.reasons),
+            "limitations": tuple(
+                {"limitation": limitation} for limitation in self.audit.limitations
+            ),
+        }
+        if self.frontier is not None:
+            tables["frontier"] = tuple(
+                candidate.as_dict() for candidate in self.frontier.frontier
+            )
+            tables["frontier_candidates"] = tuple(
+                candidate.as_dict() for candidate in self.frontier.candidates
+            )
+        if self.certificate is not None:
+            tables["certificate_reasons"] = tuple(
+                {"reason": reason} for reason in self.certificate.reasons
+            )
+            tables["certificate_limitations"] = tuple(
+                {"limitation": limitation}
+                for limitation in self.certificate.limitations
+            )
+        if self.attribution is not None:
+            tables["refinement_attributions"] = tuple(
+                row.as_dict() for row in self.attribution.attributions
+            )
+        return tables
+
+    def to_markdown(self) -> str:
+        lines = [
+            f"# {self.title}",
+            "",
+            "## Recommendation",
+            "",
+            f"- Claim: {self.audit.claim.estimate_name}",
+            f"- Design status: `{self.status}`",
+            f"- Current public representation: `{_column_label(self.audit.claim.public)}`",
+        ]
+        if self.recommended_public is None:
+            lines.append("- Recommended public representation: none found")
+        else:
+            lines.append(
+                "- Recommended public representation: "
+                f"`{_column_label(self.recommended_public)}`"
+            )
+        lines.extend(
+            [
+                f"- Current claim status: **{self.audit.status.upper()}**",
+                f"- Current ambiguity: {self.audit.ambiguity:.4f}",
+            ]
+        )
+        if self.audit.claim.ambiguity_limit is not None:
+            lines.append(f"- Ambiguity limit: {self.audit.claim.ambiguity_limit:.4f}")
+        if self.audit.decision is not None:
+            lines.append(
+                "- Decision invariant: "
+                f"{'yes' if self.audit.decision.invariant else 'no'}"
+            )
+
+        lines.extend(["", "## Interpretation", ""])
+        lines.append(_design_interpretation(self))
+
+        if self.repair_plan.options:
+            lines.extend(
+                [
+                    "",
+                    "## Candidate Repairs",
+                    "",
+                    "| rank | refinement | cost | certifies | after ambiguity | public cells | reason |",
+                    "| ---: | --- | ---: | :---: | ---: | ---: | --- |",
+                ]
+            )
+            for option in self.repair_plan.options[:10]:
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            str(option.rank),
+                            f"`{option.label}`",
+                            f"{option.cost:g}",
+                            "yes" if option.certifies_claim else "no",
+                            f"{option.after_ambiguity:.4f}",
+                            str(option.public_cells),
+                            _escape_table(option.reason),
+                        ]
+                    )
+                    + " |"
+                )
+
+        if self.frontier is not None and self.frontier.minimal_stable is not None:
+            minimal = self.frontier.minimal_stable
+            lines.extend(
+                [
+                    "",
+                    "## Minimal Stable Frontier Candidate",
+                    "",
+                    f"- Added columns: `{_column_label(minimal.added_columns)}`",
+                    f"- Public cells: {minimal.public_cells}",
+                    f"- Max ambiguity: {minimal.max_ambiguity:.4f}",
+                ]
+            )
+
+        if self.attribution is not None and self.attribution.attributions:
+            lines.extend(["", "## Refinement Attribution", ""])
+            lines.extend(
+                [
+                    "| refinement | Shapley value | share |",
+                    "| --- | ---: | ---: |",
+                ]
+            )
+            for row in self.attribution.attributions[:10]:
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            f"`{row.column}`",
+                            f"{row.shapley_value:.4f}",
+                            f"{row.shapley_share:.1%}",
+                        ]
+                    )
+                    + " |"
+                )
+
+        if self.audit.limitations:
+            lines.extend(["", "## Limitations", ""])
+            lines.extend(f"- {limitation}" for limitation in self.audit.limitations)
+        return "\n".join(lines)
+
+
+@dataclass(frozen=True)
 class ClaimScreeningResult:
     """Optional conservative pre-screen used before an exact claim audit."""
 
@@ -801,6 +1041,11 @@ class ClaimSpec:
         """Audit this claim against tabular data."""
 
         return audit_claim(data, self, **kwargs)
+
+    def design(self, data: Any, **kwargs: Any) -> "PublicReportDesign":
+        """Design the smallest defensible public report for this claim."""
+
+        return design_public_report(self, data, **kwargs)
 
 
 @dataclass(frozen=True)
@@ -1713,6 +1958,74 @@ def plan_claim_repair(
     return audit.repair_plan(
         action_costs=action_costs,
         top=top,
+        title=title,
+    )
+
+
+def design_public_report(
+    claim_or_audit: ClaimSpec | ClaimAudit | Mapping[str, Any],
+    data: Any | None = None,
+    *,
+    action_costs: Mapping[str, float] | None = None,
+    top: int | None = None,
+    include_attribution: bool = False,
+    attribution_max_exact_columns: int = 8,
+    attribution_permutations: int | None = None,
+    attribution_seed: int | None = None,
+    title: str = "Public Report Design",
+    **audit_overrides: Any,
+) -> PublicReportDesign:
+    """Design a defensible public representation for a declared claim.
+
+    This is the claim-first orchestration layer. It audits the claim, reuses the
+    embedded certificate/frontier search, packages a cost-aware repair plan, and
+    optionally adds Shapley-style refinement attribution.
+    """
+
+    if isinstance(claim_or_audit, ClaimAudit):
+        if audit_overrides:
+            raise ValueError(
+                "audit overrides cannot be used when designing from a ClaimAudit"
+            )
+        audit = claim_or_audit
+    else:
+        if data is None:
+            raise ValueError("data is required when designing from a claim spec")
+        audit = audit_claim(data, claim_or_audit, **audit_overrides)
+
+    repair = audit.repair_plan(
+        action_costs=action_costs,
+        top=top,
+        title=f"{audit.claim.estimate_name} Repair Plan",
+    )
+    certificate = audit.certificate
+    frontier = None if certificate is None else certificate.frontier
+    attribution = None
+    if include_attribution:
+        if data is None:
+            raise ValueError("data is required when include_attribution=True")
+        if audit.claim.candidate_refinements:
+            attribution = attribute_refinement_ambiguity(
+                data,
+                public=audit.claim.public,
+                hidden=audit.claim.hidden,
+                target=audit.claim.target,
+                weight=audit.claim.weight,
+                candidate_refinements=audit.claim.candidate_refinements,
+                min_cell_weight=audit.claim.min_cell_weight,
+                q=audit.claim.primary_q,
+                max_exact_columns=attribution_max_exact_columns,
+                n_permutations=attribution_permutations,
+                seed=attribution_seed,
+                title=f"{audit.claim.estimate_name} Refinement Attribution",
+            )
+
+    return PublicReportDesign(
+        audit=audit,
+        repair_plan=repair,
+        certificate=certificate,
+        frontier=frontier,
+        attribution=attribution,
         title=title,
     )
 
@@ -2708,6 +3021,42 @@ def _repair_plan_interpretation(plan: ClaimRepairPlan) -> str:
     )
 
 
+def _design_interpretation(design: PublicReportDesign) -> str:
+    if design.audit.passed:
+        return (
+            "The current public representation already supports the declared "
+            "claim under the chosen stress tests. No additional public columns "
+            "are required for this claim."
+        )
+    recommended = design.recommended_option
+    if recommended is not None:
+        return (
+            "The current public representation does not support the claim, but "
+            f"adding `{recommended.label}` produces a certifying repair under "
+            "the existing audit evidence. This is the recommended public-report "
+            "design under the supplied action costs."
+        )
+    if design.frontier is not None and design.frontier.minimal_stable is not None:
+        minimal = design.frontier.minimal_stable
+        return (
+            "The repair-plan ranking did not identify a preferred action, but "
+            "the frontier contains a stable representation. The minimal stable "
+            f"candidate adds `{_column_label(minimal.added_columns)}`."
+        )
+    if design.audit.failed:
+        return (
+            "The current public representation does not support the claim, and "
+            "no evaluated candidate refinement certifies it under the declared "
+            "limits. Broaden the candidate refinements, relax the reporting "
+            "constraints, or report the claim as unstable."
+        )
+    return (
+        "The design is inconclusive under the supplied claim settings. Add an "
+        "ambiguity limit, a decision rule, or candidate refinements to turn the "
+        "audit into an actionable public-report design."
+    )
+
+
 def _claim_refinement_recommendations(
     report: ClaimAudit,
 ) -> tuple[ClaimRefinementRecommendation, ...]:
@@ -3119,10 +3468,12 @@ __all__ = [
     "DecisionRule",
     "ModelAssistedDrawResult",
     "ModelAssistedStabilitySummary",
+    "PublicReportDesign",
     "audit_claim",
     "audit_claim_tree",
     "claim",
     "claim_tree",
+    "design_public_report",
     "plan_claim_repair",
     "threshold_decision",
 ]

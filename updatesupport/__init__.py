@@ -35,10 +35,12 @@ from .claim import (
     DecisionRule,
     ModelAssistedDrawResult,
     ModelAssistedStabilitySummary,
+    PublicReportDesign,
     audit_claim,
     audit_claim_tree,
     claim,
     claim_tree,
+    design_public_report,
     plan_claim_repair,
     threshold_decision,
 )
@@ -255,11 +257,13 @@ _CLAIM_API = [
     "ClaimSpec",
     "ClaimAudit",
     "ClaimRepairPlan",
+    "PublicReportDesign",
     "ClaimTree",
     "ClaimTreeAudit",
     "DecisionRule",
     "DecisionResult",
     "threshold_decision",
+    "design_public_report",
 ]
 
 _DATA_AND_EXPORT_API = [

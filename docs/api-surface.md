@@ -1,6 +1,7 @@
 # API Surface
 
-`updatesupport` is organized around claim audits. The main user path is small:
+`updatesupport` is organized around claim-first public report design. The main
+user path is small:
 
 ```python
 claim = us.claim(
@@ -12,7 +13,7 @@ claim = us.claim(
     ambiguity_limit=0.01,
 )
 
-audit = claim.audit(rows_or_frame)
+design = claim.design(rows_or_frame)
 ```
 
 ## Core API
@@ -20,6 +21,11 @@ audit = claim.audit(rows_or_frame)
 The public user-facing surface is:
 
 - `us.claim(...)`: build a `ClaimSpec`.
+- `ClaimSpec.design(...)`: audit the claim and design a defensible public
+  representation.
+- `us.design_public_report(...)`: functional equivalent of
+  `ClaimSpec.design(...)`.
+- `PublicReportDesign`: the report object returned by public-report design.
 - `ClaimSpec.audit(...)`: run the audit.
 - `us.audit_claim(...)`: functional equivalent of `ClaimSpec.audit(...)`.
 - `ClaimAudit`: the report object returned by an audit.
@@ -36,10 +42,11 @@ The public user-facing surface is:
 - `us.from_dataframe(...)`: compile rows when you need to inspect the finite
   problem before auditing.
 
-The claim audit composes the lower-level machinery: primary interval evidence,
-counterexample witnesses, representation certificates, decision-invariant
-repairs, repair plans, nested claim reports, model-assisted joint draws,
-structured exports, and limitations.
+Public-report design composes the lower-level machinery: claim audit evidence,
+counterexample witnesses, representation certificates, frontier search,
+decision-invariant repairs, repair plans, optional refinement attribution,
+nested claim reports, model-assisted joint draws, structured exports, and
+limitations.
 
 The package `__all__` is intentionally narrower than the set of direct
 attributes on `updatesupport`. It is the recommended star-import surface:
