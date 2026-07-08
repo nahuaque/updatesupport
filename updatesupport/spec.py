@@ -380,13 +380,6 @@ class AuditRun(ReportArtifactMixin):
 
         return self.as_dict()
 
-    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
-        """Return named list-of-dict tables for the executed audit."""
-
-        from .exports import report_tables
-
-        return report_tables(self)
-
 
 def run_audit(spec: AuditSpec | Mapping[str, Any], data: Any) -> AuditRun:
     """Execute a serializable AuditSpec against tabular data."""

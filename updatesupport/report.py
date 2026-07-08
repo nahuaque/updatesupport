@@ -208,11 +208,6 @@ class WitnessReport(ReportArtifactMixin):
             "fiber_shifts": [row.as_dict() for row in self.fibers],
         }
 
-    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
-        from .exports import report_tables
-
-        return report_tables(self)
-
     def to_markdown(self) -> str:
         lines = [
             f"# {self.title}",
@@ -1019,11 +1014,6 @@ class RefinementSensitivityReport(ReportArtifactMixin):
             "rows": [row.as_dict() for row in self.rows],
         }
 
-    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
-        from .exports import report_tables
-
-        return report_tables(self)
-
     def to_markdown(self) -> str:
         lines = [f"# {self.title}", ""]
         if self.row_count is not None:
@@ -1244,11 +1234,6 @@ class CausalReportingStabilitySuite(ReportArtifactMixin):
             },
         }
 
-    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
-        from .exports import report_tables
-
-        return report_tables(self)
-
     def to_markdown(self) -> str:
         lines = [
             f"# {self.title}",
@@ -1439,11 +1424,6 @@ class PublicDescentReport(ReportArtifactMixin):
 
     def as_dict(self) -> dict[str, Any]:
         return _public_descent_summary_dict(self)
-
-    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
-        from .exports import report_tables
-
-        return report_tables(self)
 
     def witness_report(
         self,
@@ -3851,11 +3831,6 @@ class SensitivityReport(ReportArtifactMixin):
             "summary": self.summary.as_dict(),
             "rows": [row.as_dict() for row in self.rows],
         }
-
-    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
-        from .exports import report_tables
-
-        return report_tables(self)
 
     def to_markdown(self) -> str:
         lines = [f"# {self.title}", ""]

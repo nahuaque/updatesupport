@@ -423,11 +423,6 @@ class FrontierCandidateExplanation(ReportArtifactMixin):
     ) -> str:
         return "\n".join(_candidate_explanation_markdown(self, heading=heading))
 
-    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
-        from .exports import report_tables
-
-        return report_tables(self)
-
 
 @dataclass(frozen=True)
 class PublicRepresentationFrontier(ReportArtifactMixin):
@@ -745,11 +740,6 @@ class PublicRepresentationFrontier(ReportArtifactMixin):
         lines.extend(["", "## Scenario Details", ""])
         lines.extend(_scenario_table(self.frontier))
         return "\n".join(lines)
-
-    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
-        from .exports import report_tables
-
-        return report_tables(self)
 
 
 def public_representation_frontier(

@@ -64,20 +64,6 @@ class DoWhyRepresentationAudit(ReportArtifactMixin):
             "report": self.report.as_dict(),
         }
 
-    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
-        from .exports import report_tables
-
-        tables = report_tables(self.report)
-        tables["dowhy_refutation"] = (
-            {
-                "refutation_type": self.refutation_type,
-                "estimated_effect": self.estimated_effect,
-                "new_effect": self.new_effect,
-                "ambiguity": self.ambiguity,
-            },
-        )
-        return tables
-
 
 def audit_dowhy_effects(
     data: Any | GroupedProblem,

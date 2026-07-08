@@ -571,11 +571,6 @@ class HiddenCompositionUncertaintyReport(ReportArtifactMixin):
             "rows": [row.as_dict() for row in self.rows],
         }
 
-    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
-        from .exports import report_tables
-
-        return report_tables(self)
-
     def to_markdown(self) -> str:
         lines = [
             f"# {self.title}",

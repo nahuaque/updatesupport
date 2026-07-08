@@ -203,11 +203,6 @@ class RepresentationStabilityCertificate(ReportArtifactMixin):
 
         return "\n".join(lines)
 
-    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
-        from .exports import report_tables
-
-        return report_tables(self)
-
 
 def certify_public_representation(
     data: Any,
