@@ -16,6 +16,12 @@ base_public + zero or more candidate_refinements
 
 That keeps the result explainable to an analyst or model reviewer.
 
+When the design question is whether to publish a grouped version of one
+retained categorical column, use `design_categorical_rollup(...)`. That API
+searches exact category partitions under saturated Q and returns a separate
+group-count/public-cell/ambiguity frontier. See
+[Categorical rollup design](categorical-rollup-design.md).
+
 ## Example
 
 ```python

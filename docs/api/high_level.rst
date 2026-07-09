@@ -8,6 +8,7 @@ Common entry points imported from ``updatesupport``:
    updatesupport.claim
    updatesupport.audit_claim
    updatesupport.calibrate_tv_radius
+   updatesupport.design_categorical_rollup
    updatesupport.claim_tree
    updatesupport.audit_claim_tree
    updatesupport.from_dataframe
@@ -36,6 +37,7 @@ Core result objects:
    updatesupport.ClaimSpec
    updatesupport.ClaimAudit
    updatesupport.HistoricalTVCalibrationReport
+   updatesupport.CategoricalRollupDesign
    updatesupport.ClaimNode
    updatesupport.ClaimNodeAudit
    updatesupport.ClaimTree

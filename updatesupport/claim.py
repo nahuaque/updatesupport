@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 if TYPE_CHECKING:
     from .calibration import HistoricalTVCalibrationReport
+    from .rollup import CategoricalRollupDesign
 
 from .artifacts import ReportArtifactMixin
 from .certificate import (
@@ -1060,6 +1061,17 @@ class ClaimSpec:
         from .calibration import calibrate_tv_radius
 
         return calibrate_tv_radius(data, self, **kwargs)
+
+    def design_categorical_rollup(
+        self,
+        data: Any,
+        **kwargs: Any,
+    ) -> "CategoricalRollupDesign":
+        """Design an exact one-column categorical rollup under saturated Q."""
+
+        from .rollup import design_categorical_rollup
+
+        return design_categorical_rollup(data, self, **kwargs)
 
 
 @dataclass(frozen=True)

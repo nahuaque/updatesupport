@@ -10,6 +10,9 @@ All notable changes to `updatesupport` are documented here.
   within-public recompositions, with public-law restandardization, rolling
   one-step backtests, support-drift diagnostics, structured exports, and direct
   calibrated claim audit/design handoffs.
+- Added exact one-column categorical rollup design under saturated Q, including
+  claim-aware selection, group-count and public-cell tradeoffs, Pareto exports,
+  Bell-number search guardrails, and transformed-data audit handoffs.
 
 ## 0.1.5 - 2026-07-09
 

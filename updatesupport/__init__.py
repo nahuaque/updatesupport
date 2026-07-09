@@ -245,6 +245,11 @@ from .results import (
     UncertainLinearConfidenceCoreResult,
     Witness,
 )
+from .rollup import (
+    CategoricalRollupCandidate,
+    CategoricalRollupDesign,
+    design_categorical_rollup,
+)
 from .spec import AuditRun, AuditSpec, QSpec, run_audit
 from .targets import (
     LinearTarget,
@@ -268,11 +273,13 @@ _CLAIM_API = [
     "claim",
     "audit_claim",
     "calibrate_tv_radius",
+    "design_categorical_rollup",
     "claim_tree",
     "audit_claim_tree",
     "ClaimSpec",
     "ClaimAudit",
     "HistoricalTVCalibrationReport",
+    "CategoricalRollupDesign",
     "ClaimRepairPlan",
     "PublicReportDesign",
     "ClaimTree",

@@ -35,6 +35,12 @@ The public user-facing surface is:
   `ClaimSpec.calibrate_tv(...)`.
 - `HistoricalTVCalibrationReport`: the calibration, rolling coverage evidence,
   calibrated Q preset, and current-period audit/design handoff.
+- `ClaimSpec.design_categorical_rollup(...)`: find an exact global grouping of
+  one retained categorical column under saturated Q.
+- `us.design_categorical_rollup(...)`: functional equivalent of the claim
+  method.
+- `CategoricalRollupDesign`: selected category mapping, group-count tradeoffs,
+  Pareto frontier, structured exports, and transformed-data audit handoff.
 - `ClaimAudit.recommend_refinements(...)`: claim-centered refinement ranking.
 - `ClaimAudit.repair_plan(...)`: cost-aware action list for stabilizing a
   claim.
@@ -81,6 +87,8 @@ Use these directly only when you intentionally want a lower-level artifact:
 - `breakdown_point(...)`: stress radius where a claim or decision stops passing.
 - `calibrate_tv_radius(...)`: historical TV-radius calibration and rolling
   one-step validation.
+- `design_categorical_rollup(...)`: exact restricted partition design for one
+  categorical refinement under saturated Q.
 - `robust_comparison_report(...)`: robust pairwise/ranking comparison evidence.
 
 These are implementation depth behind the claim workflow. They remain useful for

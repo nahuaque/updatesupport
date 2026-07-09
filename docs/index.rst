@@ -119,6 +119,7 @@ stress-test family.
    transport-presets
    historical-tv-calibration
    public-representation-frontier
+   categorical-rollup-design
    representation-stability-certificates
    reporting-claims
    audit-specs

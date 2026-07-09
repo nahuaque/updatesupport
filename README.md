@@ -321,6 +321,8 @@ when you need to inspect those pieces separately:
   claim stops passing.
 - `calibrate_tv_radius(...)` estimates a TV radius from consecutive historical
   recompositions and evaluates it with rolling one-step backtests.
+- `design_categorical_rollup(...)` finds an exact grouped version of one
+  retained categorical column under saturated Q.
 
 ```python
 sensitivity = us.sensitivity_report(
@@ -353,6 +355,27 @@ measured. Rolling rows use only earlier transitions and separately report
 radius coverage, target-interval coverage, and unsupported support drift. This
 workflow requires `updatesupport[cvxpy]`. See
 [docs/historical-tv-calibration.md](docs/historical-tv-calibration.md).
+
+When adding a full categorical column would create too many public buckets,
+search for the smallest useful rollup instead:
+
+```python
+rollup = claim.design_categorical_rollup(
+    rows_or_frame,
+    column="acquisition_channel",
+    max_groups=4,
+    bucket_budget=40,
+    output_column="acquisition_channel_group",
+)
+
+print(rollup.to_markdown())
+rollup_audit = rollup.audit(rows_or_frame)
+```
+
+The exact first slice searches all retained category partitions up to the group
+limit and reports the Pareto tradeoff between category-group count, realized
+public-cell count, and saturated ambiguity. See
+[docs/categorical-rollup-design.md](docs/categorical-rollup-design.md).
 
 See [docs/transport-presets.md](docs/transport-presets.md) for guidance on Q
 presets and [docs/representation-adequacy.md](docs/representation-adequacy.md)
@@ -578,6 +601,7 @@ uv run pytest
 - [Model-assisted joint analysis](docs/model-assisted-joint-analysis.md)
 - [Breakdown point analysis](docs/breakdown-point-analysis.md)
 - [Historical TV-radius calibration](docs/historical-tv-calibration.md)
+- [Categorical rollup design](docs/categorical-rollup-design.md)
 - [Robust comparison and ranking](docs/robust-comparison-ranking.md)
 - [Interaction-aware refinements](docs/interaction-aware-refinements.md)
 

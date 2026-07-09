@@ -14,6 +14,7 @@ module pages below document the core implementation areas directly.
    targets
    calibration
    frontier
+   rollup
    breakdown
    comparison
    adapters
