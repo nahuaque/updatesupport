@@ -19,6 +19,12 @@ from .breakdown import (
     BreakdownPointReport,
     breakdown_point,
 )
+from .calibration import (
+    HistoricalTVCalibrationReport,
+    HistoricalTVTransition,
+    RollingTVBacktest,
+    calibrate_tv_radius,
+)
 from .certificate import (
     RepresentationStabilityCertificate,
     certify_public_representation,
@@ -261,10 +267,12 @@ except PackageNotFoundError:
 _CLAIM_API = [
     "claim",
     "audit_claim",
+    "calibrate_tv_radius",
     "claim_tree",
     "audit_claim_tree",
     "ClaimSpec",
     "ClaimAudit",
+    "HistoricalTVCalibrationReport",
     "ClaimRepairPlan",
     "PublicReportDesign",
     "ClaimTree",

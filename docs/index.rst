@@ -117,6 +117,7 @@ stress-test family.
    mathematical-statistical-soundness
    theory-and-backends
    transport-presets
+   historical-tv-calibration
    public-representation-frontier
    representation-stability-certificates
    reporting-claims

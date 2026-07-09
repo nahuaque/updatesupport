@@ -656,6 +656,12 @@ Interpretation:
 There is no universal correct radius. Treat radii as sensitivity assumptions and
 report them explicitly.
 
+When comparable period-labelled history is available, use
+`calibrate_tv_radius(...)` or `ClaimSpec.calibrate_tv(...)` to estimate a TV
+radius from consecutive within-public recompositions and evaluate it with
+rolling one-step backtests. See
+[Historical TV-radius calibration](historical-tv-calibration.md).
+
 A practical workflow:
 
 1. Run `observed`, `bounded_shift(0.25)`, `bounded_shift(0.5)`, and `saturated`.

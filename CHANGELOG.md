@@ -4,6 +4,13 @@ All notable changes to `updatesupport` are documented here.
 
 ## Unreleased
 
+### Added
+
+- Added historical total-variation radius calibration from consecutive-period
+  within-public recompositions, with public-law restandardization, rolling
+  one-step backtests, support-drift diagnostics, structured exports, and direct
+  calibrated claim audit/design handoffs.
+
 ## 0.1.5 - 2026-07-09
 
 ### Added

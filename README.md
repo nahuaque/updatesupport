@@ -319,6 +319,8 @@ when you need to inspect those pieces separately:
   certificate.
 - `breakdown_point(...)` finds the stress radius where a decision or ambiguity
   claim stops passing.
+- `calibrate_tv_radius(...)` estimates a TV radius from consecutive historical
+  recompositions and evaluates it with rolling one-step backtests.
 
 ```python
 sensitivity = us.sensitivity_report(
@@ -330,6 +332,27 @@ sensitivity = us.sensitivity_report(
     q_presets=["saturated", us.q_bounded_shift(0.5), "observed"],
 )
 ```
+
+When period-labelled history is available, replace an arbitrary TV radius with
+an inspectable empirical calibration:
+
+```python
+calibration = claim.calibrate_tv(
+    historical_rows,
+    period="quarter",
+    coverage=0.90,
+    min_train_transitions=4,
+)
+
+print(calibration.to_markdown())
+current_audit = calibration.audit(current_period_rows)
+```
+
+The later hidden mix is restandardized to the earlier public law before TV is
+measured. Rolling rows use only earlier transitions and separately report
+radius coverage, target-interval coverage, and unsupported support drift. This
+workflow requires `updatesupport[cvxpy]`. See
+[docs/historical-tv-calibration.md](docs/historical-tv-calibration.md).
 
 See [docs/transport-presets.md](docs/transport-presets.md) for guidance on Q
 presets and [docs/representation-adequacy.md](docs/representation-adequacy.md)
@@ -554,6 +577,7 @@ uv run pytest
 - [Public representation frontier](docs/public-representation-frontier.md)
 - [Model-assisted joint analysis](docs/model-assisted-joint-analysis.md)
 - [Breakdown point analysis](docs/breakdown-point-analysis.md)
+- [Historical TV-radius calibration](docs/historical-tv-calibration.md)
 - [Robust comparison and ranking](docs/robust-comparison-ranking.md)
 - [Interaction-aware refinements](docs/interaction-aware-refinements.md)
 

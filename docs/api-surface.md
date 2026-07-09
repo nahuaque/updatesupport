@@ -29,6 +29,12 @@ The public user-facing surface is:
 - `ClaimSpec.audit(...)`: run the audit.
 - `us.audit_claim(...)`: functional equivalent of `ClaimSpec.audit(...)`.
 - `ClaimAudit`: the report object returned by an audit.
+- `ClaimSpec.calibrate_tv(...)`: calibrate a TV stress radius from historical
+  period transitions and run rolling one-step backtests.
+- `us.calibrate_tv_radius(...)`: functional equivalent of
+  `ClaimSpec.calibrate_tv(...)`.
+- `HistoricalTVCalibrationReport`: the calibration, rolling coverage evidence,
+  calibrated Q preset, and current-period audit/design handoff.
 - `ClaimAudit.recommend_refinements(...)`: claim-centered refinement ranking.
 - `ClaimAudit.repair_plan(...)`: cost-aware action list for stabilizing a
   claim.
@@ -73,6 +79,8 @@ Use these directly only when you intentionally want a lower-level artifact:
 - `public_representation_frontier(...)`: public-bucket design frontier.
 - `certify_public_representation(...)`: standalone representation certificate.
 - `breakdown_point(...)`: stress radius where a claim or decision stops passing.
+- `calibrate_tv_radius(...)`: historical TV-radius calibration and rolling
+  one-step validation.
 - `robust_comparison_report(...)`: robust pairwise/ranking comparison evidence.
 
 These are implementation depth behind the claim workflow. They remain useful for

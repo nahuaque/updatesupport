@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from math import isfinite
-from typing import Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
+
+if TYPE_CHECKING:
+    from .calibration import HistoricalTVCalibrationReport
 
 from .artifacts import ReportArtifactMixin
 from .certificate import (
@@ -1046,6 +1049,17 @@ class ClaimSpec:
         """Design the smallest defensible public report for this claim."""
 
         return design_public_report(self, data, **kwargs)
+
+    def calibrate_tv(
+        self,
+        data: Any,
+        **kwargs: Any,
+    ) -> "HistoricalTVCalibrationReport":
+        """Calibrate a TV stress radius from historical period transitions."""
+
+        from .calibration import calibrate_tv_radius
+
+        return calibrate_tv_radius(data, self, **kwargs)
 
 
 @dataclass(frozen=True)
