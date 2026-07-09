@@ -98,6 +98,13 @@ class ConformalAdapterResult:
             claim_or_spec = ClaimSpec.from_dict(claim_or_spec)
         return claim_or_spec.audit(self.rows, **kwargs)
 
+    def reporting_stability(self, **kwargs: Any):
+        """Audit useful conformal-derived targets from this adapter result."""
+
+        from .conformal import conformal_reporting_stability
+
+        return conformal_reporting_stability(self, **kwargs)
+
 
 def adapt_dataframe_effects(
     data: Any,

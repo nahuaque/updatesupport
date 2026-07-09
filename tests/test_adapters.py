@@ -222,6 +222,73 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(result.rows[1]["prediction_set"], ("approve", "review"))
         self.assertEqual(result.metadata["classes"], ("approve", "review", "reject"))
 
+    def test_conformal_regression_reporting_stability_discovers_targets(self):
+        result = us.adapt_conformal_regression(
+            _rows_without_effect(),
+            prediction=[0.2, 0.6, 0.8],
+            lower=[0.1, 0.4, 0.7],
+            upper=[0.3, 0.9, 0.95],
+            y_true=[0.25, 0.95, 0.75],
+            threshold=0.5,
+        )
+
+        report = result.reporting_stability(
+            public=["public"],
+            hidden=["public", "hidden"],
+            weight="weight",
+            candidate_refinements=["hidden"],
+            ambiguity_limits={
+                "interval_width": 0.1,
+                "crosses_threshold": 0.1,
+            },
+        )
+
+        self.assertIsInstance(report, us.ConformalReportingStabilityReport)
+        self.assertEqual(report.source, "conformal_regression")
+        self.assertEqual(report.target_count, 7)
+        self.assertIn("Conformal Reporting Stability", report.to_markdown())
+        tables = report.to_tables()
+        self.assertIn("targets", tables)
+        self.assertIn("refinement_recommendations", tables)
+        target_columns = {row["target"] for row in tables["targets"]}
+        self.assertIn("interval_width", target_columns)
+        self.assertIn("crosses_threshold", target_columns)
+
+    def test_conformal_reporting_stability_accepts_explicit_classification_targets(
+        self,
+    ):
+        result = us.adapt_conformal_classification(
+            _rows_without_effect(),
+            prediction_sets=[
+                {"approve"},
+                {"approve", "review"},
+                {"reject"},
+            ],
+            y_true=["approve", "reject", "reject"],
+            positive_label="approve",
+        )
+
+        report = us.conformal_reporting_stability(
+            result,
+            public=["public"],
+            hidden=["public", "hidden"],
+            weight="weight",
+            targets=[
+                "prediction_set_size",
+                {
+                    "column": "ambiguous_set",
+                    "label": "ambiguous set rate",
+                    "role": "manual_review",
+                    "target_description": "share of non-singleton prediction sets",
+                    "ambiguity_limit": 0.5,
+                },
+            ],
+        )
+
+        self.assertEqual(report.target_count, 2)
+        self.assertEqual(report.target_audits[1].spec.label, "ambiguous set rate")
+        self.assertIn("prediction_set_size", report.to_json())
+
 
 def _rows_without_effect():
     return [

@@ -16,6 +16,7 @@ module pages below document the core implementation areas directly.
    breakdown
    comparison
    adapters
+   conformal
    claims
    model_assisted
    linear_feasibility

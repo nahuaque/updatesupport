@@ -10,12 +10,50 @@ The handoff is:
 
 ```text
 model predictions -> conformal intervals or sets -> audit-ready row columns
-    -> updatesupport claim design
+    -> updatesupport conformal stability report
 ```
 
 `updatesupport` does not depend on MAPIE in core. Use MAPIE, another conformal
 library, or your own conformal procedure upstream, then pass its arrays or
 columns to the generic conformal adapters.
+
+## One-Call Stability Report
+
+After adapting the conformal outputs, call `.reporting_stability(...)` to audit
+the conformal-derived targets that are present:
+
+```python
+report = adapted.reporting_stability(
+    public=["region", "segment", "channel"],
+    hidden=[
+        "region",
+        "segment",
+        "channel",
+        "cohort",
+        "source_quality",
+        "rep_team",
+    ],
+    weight="account_weight",
+    candidate_refinements=["cohort", "source_quality", "rep_team"],
+    ambiguity_limits={
+        "interval_width": 0.03,
+        "crosses_threshold": 0.02,
+        "miscovered": 0.01,
+    },
+)
+
+print(report.to_markdown())
+```
+
+For conformal regression, the report discovers available targets such as mean
+prediction, lower and upper bounds, interval width, empirical coverage,
+miscoverage, and threshold crossing. For conformal classification, it discovers
+prediction-set size, ambiguous-set rate, coverage, miscoverage, and positive
+label containment when those columns are present.
+
+The report is an orchestration layer over ordinary `ClaimAudit` and
+`PublicReportDesign` outputs. Use the lower-level claim workflow when you want
+one very specific decision rule, repair budget, or target definition.
 
 ## Regression Intervals
 
@@ -56,7 +94,7 @@ adapted = us.adapt_conformal_regression(
 )
 ```
 
-Then design the public report:
+For a single target, you can still design the public report directly:
 
 ```python
 claim = us.claim(

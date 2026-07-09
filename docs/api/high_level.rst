@@ -19,6 +19,7 @@ Lower-level evidence and search entry points:
    updatesupport.public_descent_report
    updatesupport.audit_effects
    updatesupport.causal_reporting_stability
+   updatesupport.conformal_reporting_stability
    updatesupport.sensitivity_report
    updatesupport.recommend_refinements
    updatesupport.recommend_refinement_interactions
@@ -41,6 +42,7 @@ Core result objects:
    updatesupport.RefinementAttributionReport
    updatesupport.RefinementAttribution
    updatesupport.RefinementCoalitionEvaluation
+   updatesupport.ConformalReportingStabilityReport
    updatesupport.GroupedProblem
    updatesupport.PublicDescentReport
    updatesupport.PublicRepresentationFrontier

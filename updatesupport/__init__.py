@@ -54,6 +54,12 @@ from .comparison import (
     robust_comparison_report,
     robust_ranking_report,
 )
+from .conformal import (
+    ConformalReportingStabilityReport,
+    ConformalTargetAudit,
+    ConformalTargetSpec,
+    conformal_reporting_stability,
+)
 from .data import DataDiagnostic, DataDiagnostics, GroupedProblem, from_dataframe
 from .dowhy import (
     DoWhyRepresentationAudit,
@@ -321,6 +327,9 @@ _INTEGRATION_API = [
     "adapt_econml_effects",
     "adapt_conformal_regression",
     "adapt_conformal_classification",
+    "conformal_reporting_stability",
+    "ConformalTargetSpec",
+    "ConformalReportingStabilityReport",
 ]
 
 _SPEC_AND_EXTENSION_API = [
