@@ -36,6 +36,11 @@ The generated `data/benchmark_gallery/index.md` links to each saved case study.
   uncertainty quantities, then audits whether interval width, miscoverage, and
   threshold-crossing burden remain stable when hidden customer composition can
   shift inside fixed public buckets.
+- **Conformal classification reporting stability synthetic audit**: a
+  no-download prediction-set example. It reports aggregate prediction-set size,
+  ambiguous-set rate, coverage, miscoverage, and reject-label containment, then
+  audits whether those operational uncertainty burdens survive hidden
+  decision-mix recomposition.
 - **Product experimentation stability synthetic audit**: a no-download A/B-test
   example. It reports a positive treatment lift, then shows that the launch
   decision is not invariant when acquisition, tenure, geography, plan, and

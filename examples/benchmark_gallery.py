@@ -34,6 +34,10 @@ from examples.folktables_acs_causal import (
     render_causal_report,
     synthetic_causal_source_rows,
 )
+from examples.conformal_classification_stability import (
+    render_report as render_conformal_classification_report,
+)
+from examples.conformal_classification_stability import synthetic_classification_rows
 from examples.conformal_reporting_stability import (
     render_report as render_conformal_report,
 )
@@ -107,6 +111,7 @@ def generate_benchmark_gallery(
 
     reports.append(_generate_ml_eval_report(output_dir))
     reports.append(_generate_conformal_report(output_dir))
+    reports.append(_generate_conformal_classification_report(output_dir))
     reports.append(_generate_product_experiment_report(output_dir))
     reports.append(_generate_revops_report(output_dir))
     reports.append(_generate_revops_trend_report(output_dir))
@@ -171,6 +176,24 @@ def _generate_conformal_report(output_dir: Path) -> GalleryReport:
         status="generated",
         path=path,
         row_count=len(synthetic_conformal_audit_rows()),
+    )
+
+
+def _generate_conformal_classification_report(output_dir: Path) -> GalleryReport:
+    markdown = render_conformal_classification_report()
+    path = output_dir / "conformal_classification_stability_synthetic.md"
+    _write_markdown(path, markdown)
+    return GalleryReport(
+        slug="conformal_classification_stability_synthetic",
+        title="Conformal Classification Reporting Stability Synthetic Audit",
+        description=(
+            "No-download conformal classification example that audits whether "
+            "prediction-set size, ambiguous-set rate, and reject-label "
+            "containment survive hidden decision-mix recomposition."
+        ),
+        status="generated",
+        path=path,
+        row_count=len(synthetic_classification_rows()),
     )
 
 

@@ -62,6 +62,13 @@ uv run python examples/conformal_reporting_stability.py \
   --output data/conformal_reporting_stability.md
 ```
 
+There is also a conformal classification prediction-set example:
+
+```bash
+uv run python examples/conformal_classification_stability.py \
+  --output data/conformal_classification_stability.md
+```
+
 ## Regression Intervals
 
 For regression, conformal methods usually return a point prediction and a lower
