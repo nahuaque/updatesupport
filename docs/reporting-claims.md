@@ -281,6 +281,27 @@ for model review: the overall claim may be stable, but a regional, site-level,
 or subgroup claim may need a finer public representation before it can be
 reported defensibly.
 
+## Multi-Claim Shared Representations
+
+Use `claim_portfolio(...)` when several claims must use one common public
+segmentation. Unlike `ClaimTree`, which coordinates independent node audits, a
+portfolio searches one candidate representation and evaluates it against every
+claim's own target, Q grid, ambiguity limit, decision rule, hidden-set grid, and
+sparse-cell thresholds.
+
+```python
+portfolio = us.claim_portfolio(
+    conversion_claim,
+    uplift_claim,
+    risk_claim,
+    candidate_refinements=["channel", "tenure_band", "device"],
+)
+
+design = portfolio.design(rows, max_added_columns=2, bucket_budget=40)
+```
+
+See [Multi-claim shared representation design](shared-representation-design.md).
+
 ## Model-Assisted Joint Draws
 
 For plausibility analysis, fit a nonparametric joint distribution and pass it to

@@ -323,6 +323,8 @@ when you need to inspect those pieces separately:
   recompositions and evaluates it with rolling one-step backtests.
 - `design_categorical_rollup(...)` finds an exact grouped version of one
   retained categorical column under saturated Q.
+- `claim_portfolio(...)` searches for one public representation that supports
+  several claims under their respective stress tests.
 
 ```python
 sensitivity = us.sensitivity_report(
@@ -376,6 +378,30 @@ The exact first slice searches all retained category partitions up to the group
 limit and reports the Pareto tradeoff between category-group count, realized
 public-cell count, and saturated ambiguity. See
 [docs/categorical-rollup-design.md](docs/categorical-rollup-design.md).
+
+When several report metrics must use the same segmentation, design the schema
+jointly instead of repairing each claim independently:
+
+```python
+portfolio = us.claim_portfolio(
+    conversion_claim,
+    uplift_claim,
+    risk_claim,
+    candidate_refinements=["channel", "tenure_band", "device"],
+)
+
+shared = portfolio.design(
+    rows_or_frame,
+    max_added_columns=2,
+    bucket_budget=40,
+)
+
+print(shared.to_markdown())
+```
+
+Each claim keeps its own target, Q scenarios, ambiguity limit, and decision
+rule; the selected public columns are shared. See
+[docs/shared-representation-design.md](docs/shared-representation-design.md).
 
 See [docs/transport-presets.md](docs/transport-presets.md) for guidance on Q
 presets and [docs/representation-adequacy.md](docs/representation-adequacy.md)
@@ -602,6 +628,7 @@ uv run pytest
 - [Breakdown point analysis](docs/breakdown-point-analysis.md)
 - [Historical TV-radius calibration](docs/historical-tv-calibration.md)
 - [Categorical rollup design](docs/categorical-rollup-design.md)
+- [Multi-claim shared representation design](docs/shared-representation-design.md)
 - [Robust comparison and ranking](docs/robust-comparison-ranking.md)
 - [Interaction-aware refinements](docs/interaction-aware-refinements.md)
 

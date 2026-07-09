@@ -173,6 +173,15 @@ from .plugins import (
     unregister_plugin,
     validate_plugin,
 )
+from .portfolio import (
+    ClaimPortfolio,
+    PortfolioClaimCandidateResult,
+    PortfolioClaimScenarioResult,
+    SharedRepresentationCandidate,
+    SharedRepresentationDesign,
+    claim_portfolio,
+    design_shared_representation,
+)
 from .problem import FiniteProblem, TooManyPartitions
 from .presets import (
     CvxpyAdmissibleSetSpec,
@@ -274,12 +283,16 @@ _CLAIM_API = [
     "audit_claim",
     "calibrate_tv_radius",
     "design_categorical_rollup",
+    "claim_portfolio",
+    "design_shared_representation",
     "claim_tree",
     "audit_claim_tree",
     "ClaimSpec",
     "ClaimAudit",
     "HistoricalTVCalibrationReport",
     "CategoricalRollupDesign",
+    "ClaimPortfolio",
+    "SharedRepresentationDesign",
     "ClaimRepairPlan",
     "PublicReportDesign",
     "ClaimTree",

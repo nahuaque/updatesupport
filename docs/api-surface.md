@@ -41,6 +41,12 @@ The public user-facing surface is:
   method.
 - `CategoricalRollupDesign`: selected category mapping, group-count tradeoffs,
   Pareto frontier, structured exports, and transformed-data audit handoff.
+- `us.claim_portfolio(...)`: declare claims that must share one public schema.
+- `ClaimPortfolio.design(...)`: run exact shared representation search.
+- `us.design_shared_representation(...)`: functional equivalent of the
+  portfolio method.
+- `SharedRepresentationDesign`: selected common schema, per-claim outcomes,
+  shared frontier, best-effort diagnostics, and full claim-audit handoff.
 - `ClaimAudit.recommend_refinements(...)`: claim-centered refinement ranking.
 - `ClaimAudit.repair_plan(...)`: cost-aware action list for stabilizing a
   claim.
@@ -89,6 +95,8 @@ Use these directly only when you intentionally want a lower-level artifact:
   one-step validation.
 - `design_categorical_rollup(...)`: exact restricted partition design for one
   categorical refinement under saturated Q.
+- `design_shared_representation(...)`: exact common-schema search across
+  several claims with claim-specific targets and stress scenarios.
 - `robust_comparison_report(...)`: robust pairwise/ranking comparison evidence.
 
 These are implementation depth behind the claim workflow. They remain useful for

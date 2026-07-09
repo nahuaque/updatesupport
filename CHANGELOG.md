@@ -13,6 +13,10 @@ All notable changes to `updatesupport` are documented here.
 - Added exact one-column categorical rollup design under saturated Q, including
   claim-aware selection, group-count and public-cell tradeoffs, Pareto exports,
   Bell-number search guardrails, and transformed-data audit handoffs.
+- Added exact multi-claim shared representation search through claim portfolios,
+  with claim-specific scenario grids, shared schema constraints, portfolio
+  certification, best-effort diagnostics, Pareto exports, and selected-schema
+  claim audit handoffs.
 
 ## 0.1.5 - 2026-07-09
 

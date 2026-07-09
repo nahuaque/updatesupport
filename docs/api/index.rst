@@ -15,6 +15,7 @@ module pages below document the core implementation areas directly.
    calibration
    frontier
    rollup
+   portfolio
    breakdown
    comparison
    adapters

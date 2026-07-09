@@ -120,6 +120,7 @@ stress-test family.
    historical-tv-calibration
    public-representation-frontier
    categorical-rollup-design
+   shared-representation-design
    representation-stability-certificates
    reporting-claims
    audit-specs
