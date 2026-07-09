@@ -31,6 +31,11 @@ The generated `data/benchmark_gallery/index.md` links to each saved case study.
   model-comparison benchmark example. It reports a positive challenger-minus-
   baseline margin, then shows that the ranking is not invariant when hidden
   task composition shifts inside fixed public task buckets.
+- **Conformal prediction reporting stability synthetic audit**: a no-download
+  split-conformal regression example. It reports aggregate conformal-derived
+  uncertainty quantities, then audits whether interval width, miscoverage, and
+  threshold-crossing burden remain stable when hidden customer composition can
+  shift inside fixed public buckets.
 - **Product experimentation stability synthetic audit**: a no-download A/B-test
   example. It reports a positive treatment lift, then shows that the launch
   decision is not invariant when acquisition, tenure, geography, plan, and

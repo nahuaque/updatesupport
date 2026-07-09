@@ -55,6 +55,13 @@ The report is an orchestration layer over ordinary `ClaimAudit` and
 `PublicReportDesign` outputs. Use the lower-level claim workflow when you want
 one very specific decision rule, repair budget, or target definition.
 
+The repository includes a no-download worked example:
+
+```bash
+uv run python examples/conformal_reporting_stability.py \
+  --output data/conformal_reporting_stability.md
+```
+
 ## Regression Intervals
 
 For regression, conformal methods usually return a point prediction and a lower

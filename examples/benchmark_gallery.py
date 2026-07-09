@@ -34,6 +34,10 @@ from examples.folktables_acs_causal import (
     render_causal_report,
     synthetic_causal_source_rows,
 )
+from examples.conformal_reporting_stability import (
+    render_report as render_conformal_report,
+)
+from examples.conformal_reporting_stability import synthetic_conformal_audit_rows
 from examples.ml_eval_stability import render_report as render_ml_eval_report
 from examples.ml_eval_stability import synthetic_eval_rows
 from examples.product_experiment_stability import (
@@ -102,6 +106,7 @@ def generate_benchmark_gallery(
     reports: list[GalleryReport] = []
 
     reports.append(_generate_ml_eval_report(output_dir))
+    reports.append(_generate_conformal_report(output_dir))
     reports.append(_generate_product_experiment_report(output_dir))
     reports.append(_generate_revops_report(output_dir))
     reports.append(_generate_revops_trend_report(output_dir))
@@ -148,6 +153,24 @@ def _generate_ml_eval_report(output_dir: Path) -> GalleryReport:
         status="generated",
         path=path,
         row_count=len(synthetic_eval_rows()),
+    )
+
+
+def _generate_conformal_report(output_dir: Path) -> GalleryReport:
+    markdown = render_conformal_report()
+    path = output_dir / "conformal_reporting_stability_synthetic.md"
+    _write_markdown(path, markdown)
+    return GalleryReport(
+        slug="conformal_reporting_stability_synthetic",
+        title="Conformal Prediction Reporting Stability Synthetic Audit",
+        description=(
+            "No-download split-conformal regression example that audits whether "
+            "aggregate interval width, miscoverage, and threshold-crossing "
+            "burden survive hidden customer-mix recomposition."
+        ),
+        status="generated",
+        path=path,
+        row_count=len(synthetic_conformal_audit_rows()),
     )
 
 
