@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Mapping, Sequence
 if TYPE_CHECKING:
     from .breaking import MinimumClaimBreakingWitnessReport
     from .calibration import HistoricalTVCalibrationReport
+    from .calibrated_design import CalibratedPublicReportDesign
     from .rollup import CategoricalRollupDesign
 
 from .artifacts import ReportArtifactMixin
@@ -1062,6 +1063,23 @@ class ClaimSpec:
         from .calibration import calibrate_tv_radius
 
         return calibrate_tv_radius(data, self, **kwargs)
+
+    def design_calibrated(
+        self,
+        historical_data: Any,
+        current_data: Any,
+        **kwargs: Any,
+    ) -> "CalibratedPublicReportDesign":
+        """Design a public report under historically calibrated TV stress."""
+
+        from .calibrated_design import design_calibrated_public_report
+
+        return design_calibrated_public_report(
+            historical_data,
+            current_data,
+            self,
+            **kwargs,
+        )
 
     def design_categorical_rollup(
         self,

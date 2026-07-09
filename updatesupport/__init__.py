@@ -188,6 +188,11 @@ from .portfolio import (
     claim_portfolio,
     design_shared_representation,
 )
+from .calibrated_design import (
+    CalibratedClaimDesignResult,
+    CalibratedPublicReportDesign,
+    design_calibrated_public_report,
+)
 from .problem import FiniteProblem, TooManyPartitions
 from .presets import (
     CvxpyAdmissibleSetSpec,
@@ -291,6 +296,7 @@ _CLAIM_API = [
     "design_categorical_rollup",
     "claim_portfolio",
     "design_shared_representation",
+    "design_calibrated_public_report",
     "minimum_claim_breaking_witness",
     "claim_tree",
     "audit_claim_tree",
@@ -300,6 +306,7 @@ _CLAIM_API = [
     "CategoricalRollupDesign",
     "ClaimPortfolio",
     "SharedRepresentationDesign",
+    "CalibratedPublicReportDesign",
     "MinimumClaimBreakingWitnessReport",
     "ClaimRepairPlan",
     "PublicReportDesign",

@@ -319,6 +319,28 @@ design = portfolio.design(rows, max_added_columns=2, bucket_budget=40)
 
 See [Multi-claim shared representation design](shared-representation-design.md).
 
+## Calibrated Public-Report Design
+
+When period-labelled history is available, use `.design_calibrated(...)` to
+replace an arbitrary TV stress radius with an empirical historical calibration
+and carry that calibration through report design:
+
+```python
+design = portfolio.design_calibrated(
+    historical_rows,
+    current_rows,
+    period="quarter",
+    coverage=0.90,
+    rollup_column="channel",
+    max_added_columns=2,
+)
+```
+
+The combined report contains claim-specific rolling calibration evidence, an
+optional anchor-derived categorical rollup, one selected public schema, current
+claim audits, and minimum-TV breaking witnesses for threshold claims. See
+[Calibrated public-report design](calibrated-public-report-design.md).
+
 ## Model-Assisted Joint Draws
 
 For plausibility analysis, fit a nonparametric joint distribution and pass it to

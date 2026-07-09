@@ -47,6 +47,15 @@ The public user-facing surface is:
   portfolio method.
 - `SharedRepresentationDesign`: selected common schema, per-claim outcomes,
   shared frontier, best-effort diagnostics, and full claim-audit handoff.
+- `ClaimSpec.design_calibrated(...)`: calibrate historical TV stress and design
+  the current public representation for one claim.
+- `ClaimPortfolio.design_calibrated(...)`: apply the same workflow to one shared
+  public representation across several claims.
+- `us.design_calibrated_public_report(...)`: functional equivalent of the
+  calibrated claim and portfolio methods.
+- `CalibratedPublicReportDesign`: calibration backtests, optional categorical
+  rollup, selected schema, current audits, nearest breaking witnesses, and
+  structured exports.
 - `ClaimSpec.breaking_witness(...)`: find the closest fixed-public hidden-cell
   recomposition that fails the claim's threshold decision.
 - `ClaimAudit.breaking_witness(...)`: reuse an audit's compiled problem for the
@@ -107,6 +116,9 @@ Use these directly only when you intentionally want a lower-level artifact:
   categorical refinement under saturated Q.
 - `design_shared_representation(...)`: exact common-schema search across
   several claims with claim-specific targets and stress scenarios.
+- `design_calibrated_public_report(...)`: compose historical TV calibration,
+  optional one-column rollup, single/shared schema search, and direct threshold
+  breaking witnesses.
 - `robust_comparison_report(...)`: robust pairwise/ranking comparison evidence.
 
 These are implementation depth behind the claim workflow. They remain useful for

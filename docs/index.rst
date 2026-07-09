@@ -121,6 +121,7 @@ stress-test family.
    public-representation-frontier
    categorical-rollup-design
    shared-representation-design
+   calibrated-public-report-design
    minimum-claim-breaking-witness
    representation-stability-certificates
    reporting-claims

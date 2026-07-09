@@ -21,6 +21,10 @@ All notable changes to `updatesupport` are documented here.
   with exact TV/HiGHS solves, CVXPY-backed L2 and Mahalanobis geometries,
   margin-separated threshold semantics, within-fiber transfer ledgers, and
   structured report exports.
+- Added calibrated public-report design orchestration combining historical TV
+  calibration, optional exact categorical rollup, single- or multi-claim public
+  representation search, selected-schema audits, and nearest-breaking-distance
+  comparisons against the calibrated radius.
 
 ## 0.1.5 - 2026-07-09
 

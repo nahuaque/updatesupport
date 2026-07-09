@@ -322,6 +322,9 @@ when you need to inspect those pieces separately:
 - `claim.breaking_witness(...)` directly finds the minimum TV, L2, or
   Mahalanobis recomposition that flips a threshold claim while preserving the
   public law.
+- `claim.design_calibrated(...)` or `portfolio.design_calibrated(...)` combines
+  historical TV calibration, optional categorical rollup, public-schema search,
+  and nearest threshold-breaking witnesses in one review artifact.
 - `calibrate_tv_radius(...)` estimates a TV radius from consecutive historical
   recompositions and evaluates it with rolling one-step backtests.
 - `design_categorical_rollup(...)` finds an exact grouped version of one
@@ -633,6 +636,7 @@ uv run pytest
 - [Historical TV-radius calibration](docs/historical-tv-calibration.md)
 - [Categorical rollup design](docs/categorical-rollup-design.md)
 - [Multi-claim shared representation design](docs/shared-representation-design.md)
+- [Calibrated public-report design](docs/calibrated-public-report-design.md)
 - [Robust comparison and ranking](docs/robust-comparison-ranking.md)
 - [Interaction-aware refinements](docs/interaction-aware-refinements.md)
 

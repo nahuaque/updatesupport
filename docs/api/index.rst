@@ -16,6 +16,7 @@ module pages below document the core implementation areas directly.
    frontier
    rollup
    portfolio
+   calibrated_design
    breaking
    breakdown
    comparison

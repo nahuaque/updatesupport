@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from math import comb
-from typing import Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
+
+if TYPE_CHECKING:
+    from .calibrated_design import CalibratedPublicReportDesign
 
 from .artifacts import ReportArtifactMixin
 from .claim import ClaimAudit, ClaimSpec
@@ -58,6 +61,23 @@ class ClaimPortfolio:
         """Search for one public representation supporting every claim."""
 
         return design_shared_representation(data, self, **kwargs)
+
+    def design_calibrated(
+        self,
+        historical_data: Any,
+        current_data: Any,
+        **kwargs: Any,
+    ) -> "CalibratedPublicReportDesign":
+        """Design one shared report under historically calibrated TV stress."""
+
+        from .calibrated_design import design_calibrated_public_report
+
+        return design_calibrated_public_report(
+            historical_data,
+            current_data,
+            self,
+            **kwargs,
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
