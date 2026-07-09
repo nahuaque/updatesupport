@@ -560,6 +560,7 @@ uv run pytest
 ### Integrations And Case Studies
 
 - [Using `updatesupport` with causal inference libraries](docs/causal-library-integration.md)
+- [Conformal prediction and MAPIE integration](docs/conformal-mapie-integration.md)
 - [Benchmark gallery](docs/benchmark-gallery.md)
 - [RevOps funnel analysis](docs/revops-funnel-analysis.md)
 - [Folktables ACSIncome result interpretation](docs/folktables-acs-income-interpretation.md)

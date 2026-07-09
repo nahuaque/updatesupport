@@ -142,6 +142,86 @@ class AdapterTests(unittest.TestCase):
         self.assertAlmostEqual(result.metadata["coef"], 0.4)
         self.assertAlmostEqual(result.rows[2]["tau_hat"], 0.3)
 
+    def test_conformal_regression_adapter_adds_interval_targets(self):
+        result = us.adapt_conformal_regression(
+            _rows_without_effect(),
+            prediction=[0.2, 0.6, 0.8],
+            lower=[0.1, 0.4, 0.7],
+            upper=[0.3, 0.9, 0.95],
+            y_true=[0.25, 0.95, 0.75],
+            threshold=0.5,
+        )
+
+        self.assertIsInstance(result, us.ConformalAdapterResult)
+        self.assertEqual(result.source, "conformal_regression")
+        self.assertEqual(result.source_rows, 3)
+        self.assertAlmostEqual(result.rows[1]["interval_width"], 0.5)
+        self.assertFalse(result.rows[1]["covered"])
+        self.assertTrue(result.rows[1]["miscovered"])
+        self.assertTrue(result.rows[1]["crosses_threshold"])
+
+        claim = result.claim(
+            "Threshold-crossing burden is stable",
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="crosses_threshold",
+            weight="weight",
+            candidate_refinements=["hidden"],
+            ambiguity_limit=0.8,
+        )
+        design = result.design(claim)
+        self.assertIsInstance(design, us.PublicReportDesign)
+
+    def test_conformal_regression_adapter_accepts_interval_tensor(self):
+        result = us.adapt_conformal_regression(
+            _rows_without_effect(),
+            interval=[
+                [[0.1, 0.0], [0.3, 0.4]],
+                [[0.4, 0.2], [0.9, 1.0]],
+                [[0.7, 0.5], [0.95, 1.1]],
+            ],
+            interval_index=1,
+        )
+
+        self.assertAlmostEqual(result.rows[0]["y_lower"], 0.0)
+        self.assertAlmostEqual(result.rows[0]["y_upper"], 0.4)
+        self.assertIsNone(result.prediction_column)
+
+    def test_conformal_classification_adapter_accepts_literal_sets(self):
+        result = us.adapt_conformal_classification(
+            _rows_without_effect(),
+            prediction=["approve", "review", "reject"],
+            prediction_sets=[
+                {"approve"},
+                {"approve", "review"},
+                {"reject"},
+            ],
+            y_true=["approve", "reject", "reject"],
+            positive_label="approve",
+        )
+
+        self.assertEqual(result.rows[0]["prediction_set"], ("approve",))
+        self.assertEqual(result.rows[1]["prediction_set_size"], 2)
+        self.assertTrue(result.rows[1]["ambiguous_set"])
+        self.assertFalse(result.rows[1]["covered"])
+        self.assertTrue(result.rows[1]["contains_positive_label"])
+
+    def test_conformal_classification_adapter_accepts_class_masks(self):
+        result = us.adapt_conformal_classification(
+            _rows_without_effect(),
+            classes=["approve", "review", "reject"],
+            prediction_sets=[
+                [True, False, False],
+                [True, True, False],
+                [False, False, True],
+            ],
+            positive_label="approve",
+        )
+
+        self.assertEqual(result.rows[0]["prediction_set"], ("approve",))
+        self.assertEqual(result.rows[1]["prediction_set"], ("approve", "review"))
+        self.assertEqual(result.metadata["classes"], ("approve", "review", "reject"))
+
 
 def _rows_without_effect():
     return [

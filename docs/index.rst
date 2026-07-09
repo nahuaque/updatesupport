@@ -134,6 +134,7 @@ stress-test family.
    :hidden:
 
    causal-library-integration
+   conformal-mapie-integration
    residopt-integration
    benchmark-gallery
    revops-funnel-analysis

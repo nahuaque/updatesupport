@@ -5,7 +5,10 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from .adapters import (
+    ConformalAdapterResult,
     EstimatorAdapterResult,
+    adapt_conformal_classification,
+    adapt_conformal_regression,
     adapt_dataframe_effects,
     adapt_doubleml_effects,
     adapt_dowhy_effects,
@@ -316,6 +319,8 @@ _INTEGRATION_API = [
     "adapt_doubleml_effects",
     "adapt_dowhy_effects",
     "adapt_econml_effects",
+    "adapt_conformal_regression",
+    "adapt_conformal_classification",
 ]
 
 _SPEC_AND_EXTENSION_API = [
