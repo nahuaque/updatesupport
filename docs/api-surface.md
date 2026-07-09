@@ -47,6 +47,14 @@ The public user-facing surface is:
   portfolio method.
 - `SharedRepresentationDesign`: selected common schema, per-claim outcomes,
   shared frontier, best-effort diagnostics, and full claim-audit handoff.
+- `ClaimSpec.breaking_witness(...)`: find the closest fixed-public hidden-cell
+  recomposition that fails the claim's threshold decision.
+- `ClaimAudit.breaking_witness(...)`: reuse an audit's compiled problem for the
+  same inverse solve.
+- `us.minimum_claim_breaking_witness(...)`: functional equivalent of the claim
+  method.
+- `MinimumClaimBreakingWitnessReport`: minimum distance, decision-flipping cell
+  law, within-fiber transfer ledger, solver certificate, and exports.
 - `ClaimAudit.recommend_refinements(...)`: claim-centered refinement ranking.
 - `ClaimAudit.repair_plan(...)`: cost-aware action list for stabilizing a
   claim.
@@ -91,6 +99,8 @@ Use these directly only when you intentionally want a lower-level artifact:
 - `public_representation_frontier(...)`: public-bucket design frontier.
 - `certify_public_representation(...)`: standalone representation certificate.
 - `breakdown_point(...)`: stress radius where a claim or decision stops passing.
+- `minimum_claim_breaking_witness(...)`: direct inverse solve for the closest
+  threshold-flipping composition in TV, L2, or Mahalanobis geometry.
 - `calibrate_tv_radius(...)`: historical TV-radius calibration and rolling
   one-step validation.
 - `design_categorical_rollup(...)`: exact restricted partition design for one

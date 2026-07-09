@@ -19,6 +19,12 @@ from .breakdown import (
     BreakdownPointReport,
     breakdown_point,
 )
+from .breaking import (
+    ClaimBreakingCellShift,
+    ClaimBreakingTransfer,
+    MinimumClaimBreakingWitnessReport,
+    minimum_claim_breaking_witness,
+)
 from .calibration import (
     HistoricalTVCalibrationReport,
     HistoricalTVTransition,
@@ -285,6 +291,7 @@ _CLAIM_API = [
     "design_categorical_rollup",
     "claim_portfolio",
     "design_shared_representation",
+    "minimum_claim_breaking_witness",
     "claim_tree",
     "audit_claim_tree",
     "ClaimSpec",
@@ -293,6 +300,7 @@ _CLAIM_API = [
     "CategoricalRollupDesign",
     "ClaimPortfolio",
     "SharedRepresentationDesign",
+    "MinimumClaimBreakingWitnessReport",
     "ClaimRepairPlan",
     "PublicReportDesign",
     "ClaimTree",

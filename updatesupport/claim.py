@@ -7,6 +7,7 @@ from math import isfinite
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 if TYPE_CHECKING:
+    from .breaking import MinimumClaimBreakingWitnessReport
     from .calibration import HistoricalTVCalibrationReport
     from .rollup import CategoricalRollupDesign
 
@@ -1073,6 +1074,17 @@ class ClaimSpec:
 
         return design_categorical_rollup(data, self, **kwargs)
 
+    def breaking_witness(
+        self,
+        data: Any,
+        **kwargs: Any,
+    ) -> "MinimumClaimBreakingWitnessReport":
+        """Find the closest fixed-public recomposition that fails this claim."""
+
+        from .breaking import minimum_claim_breaking_witness
+
+        return minimum_claim_breaking_witness(data, self, **kwargs)
+
 
 @dataclass(frozen=True)
 class ClaimAudit(ReportArtifactMixin):
@@ -1177,6 +1189,13 @@ class ClaimAudit(ReportArtifactMixin):
             top=top,
             title=title,
         )
+
+    def breaking_witness(self, **kwargs: Any) -> "MinimumClaimBreakingWitnessReport":
+        """Find the closest decision-breaking recomposition for this audit."""
+
+        from .breaking import _minimum_claim_breaking_witness_from_audit
+
+        return _minimum_claim_breaking_witness_from_audit(self, **kwargs)
 
     def as_dict(self) -> dict[str, Any]:
         return {

@@ -319,6 +319,9 @@ when you need to inspect those pieces separately:
   certificate.
 - `breakdown_point(...)` finds the stress radius where a decision or ambiguity
   claim stops passing.
+- `claim.breaking_witness(...)` directly finds the minimum TV, L2, or
+  Mahalanobis recomposition that flips a threshold claim while preserving the
+  public law.
 - `calibrate_tv_radius(...)` estimates a TV radius from consecutive historical
   recompositions and evaluates it with rolling one-step backtests.
 - `design_categorical_rollup(...)` finds an exact grouped version of one
@@ -626,6 +629,7 @@ uv run pytest
 - [Public representation frontier](docs/public-representation-frontier.md)
 - [Model-assisted joint analysis](docs/model-assisted-joint-analysis.md)
 - [Breakdown point analysis](docs/breakdown-point-analysis.md)
+- [Minimum claim-breaking witnesses](docs/minimum-claim-breaking-witness.md)
 - [Historical TV-radius calibration](docs/historical-tv-calibration.md)
 - [Categorical rollup design](docs/categorical-rollup-design.md)
 - [Multi-claim shared representation design](docs/shared-representation-design.md)

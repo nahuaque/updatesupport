@@ -17,6 +17,10 @@ All notable changes to `updatesupport` are documented here.
   with claim-specific scenario grids, shared schema constraints, portfolio
   certification, best-effort diagnostics, Pareto exports, and selected-schema
   claim audit handoffs.
+- Added direct minimum claim-breaking witnesses under fixed public marginals,
+  with exact TV/HiGHS solves, CVXPY-backed L2 and Mahalanobis geometries,
+  margin-separated threshold semantics, within-fiber transfer ledgers, and
+  structured report exports.
 
 ## 0.1.5 - 2026-07-09
 

@@ -133,6 +133,23 @@ This is intentionally different from `ambiguity_limit`. A wide interval can
 still support a decision if it stays on one side of the threshold, and a narrow
 interval can fail decision invariance if it straddles the threshold.
 
+## Minimum Claim-Breaking Witness
+
+For a threshold claim, use `.breaking_witness(...)` to solve the inverse
+question directly:
+
+```python
+witness = claim.breaking_witness(rows_or_frame, distance="tv")
+same_witness = verdict.breaking_witness(distance="tv")
+```
+
+The result is the closest retained hidden-cell law that fails the decision while
+preserving every public-bucket mass. Its transfer ledger turns the optimizer
+into concrete within-fiber movements. TV gives minimum reassigned probability
+mass; optional CVXPY-backed L2 and Mahalanobis modes provide alternate
+geometries. See [Minimum claim-breaking witnesses](minimum-claim-breaking-witness.md)
+for threshold-margin semantics and scope limitations.
+
 ## Claim-Centered Refinements
 
 Use `verdict.recommend_refinements()` when you want the recommendation table in

@@ -11,6 +11,7 @@ Common entry points imported from ``updatesupport``:
    updatesupport.design_categorical_rollup
    updatesupport.claim_portfolio
    updatesupport.design_shared_representation
+   updatesupport.minimum_claim_breaking_witness
    updatesupport.claim_tree
    updatesupport.audit_claim_tree
    updatesupport.from_dataframe
@@ -42,6 +43,7 @@ Core result objects:
    updatesupport.CategoricalRollupDesign
    updatesupport.ClaimPortfolio
    updatesupport.SharedRepresentationDesign
+   updatesupport.MinimumClaimBreakingWitnessReport
    updatesupport.ClaimNode
    updatesupport.ClaimNodeAudit
    updatesupport.ClaimTree
