@@ -4,6 +4,40 @@ All notable changes to `updatesupport` are documented here.
 
 ## Unreleased
 
+## 0.1.5 - 2026-07-09
+
+### Added
+
+- Added claim-centered public report design and cost-aware repair planning,
+  including repair options, recommended public representations, and shared
+  report export mixins.
+- Added optional ResidOpt-backed endpoint and refinement screening for claims,
+  certificates, and frontier search, with docs for exact/conservative
+  screening semantics.
+- Added named linear feasibility and disclosure-triangulation tooling,
+  including named constraints, dual/binding diagnostics, claim audits,
+  constraint attribution, and finance disclosure examples.
+- Added RevOps funnel stability examples for direct, CSV, and trend workflows.
+- Added conformal prediction integration with regression/classification
+  adapters, multi-target reporting-stability reports, Sphinx API docs, and
+  benchmark examples.
+
+### Changed
+
+- Centralized structured artifact exports through a shared report mixin and
+  broadened top-level public API exports.
+- Expanded benchmark-gallery coverage across RevOps, conformal prediction,
+  causal/ACIC/Folktables, AI/ML evaluation, and product experimentation case
+  studies.
+- Updated finance plugin documentation and examples around disclosure
+  triangulation and analyst-facing feasibility reports.
+
+### Packaging and QA
+
+- Bumped `updatesupport` to `0.1.5` and `updatesupport-finance` to `0.1.4`.
+- Raised the core `finance` extra to `updatesupport-finance>=0.1.4` and the
+  finance plugin core dependency floor to `updatesupport>=0.1.5`.
+
 ## 0.1.4 - 2026-07-05
 
 ### Added

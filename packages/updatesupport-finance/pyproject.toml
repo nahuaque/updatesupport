@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "updatesupport-finance"
-version = "0.1.3"
+version = "0.1.4"
 description = "Financial model-risk extensions for updatesupport"
 readme = "README.md"
 license = "MIT"
@@ -28,7 +28,7 @@ classifiers = [
     "Topic :: Office/Business :: Financial",
 ]
 dependencies = [
-    "updatesupport>=0.1.4",
+    "updatesupport>=0.1.5",
 ]
 
 [project.urls]
