@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any, Hashable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Hashable, Mapping, Sequence
+
+if TYPE_CHECKING:
+    from .policy import FrozenPublicReportPolicy
 
 from .artifacts import ReportArtifactMixin
 from .breaking import MinimumClaimBreakingWitnessReport
@@ -164,6 +167,22 @@ class CalibratedPublicReportDesign(ReportArtifactMixin):
     @property
     def calibrated_radii(self) -> tuple[float, ...]:
         return tuple(row.calibrated_radius for row in self.claim_results)
+
+    def freeze(
+        self,
+        *,
+        require_certified: bool = True,
+        title: str = "Frozen Public-Report Policy",
+    ) -> FrozenPublicReportPolicy:
+        """Freeze this design for out-of-sample audit and backtesting."""
+
+        from .policy import FrozenPublicReportPolicy
+
+        return FrozenPublicReportPolicy.from_design(
+            self,
+            require_certified=require_certified,
+            title=title,
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {

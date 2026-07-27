@@ -45,6 +45,9 @@ Core result objects:
    updatesupport.ClaimPortfolio
    updatesupport.SharedRepresentationDesign
    updatesupport.CalibratedPublicReportDesign
+   updatesupport.FrozenPublicReportPolicy
+   updatesupport.FrozenPolicyAudit
+   updatesupport.FrozenPolicyBacktest
    updatesupport.MinimumClaimBreakingWitnessReport
    updatesupport.ClaimNode
    updatesupport.ClaimNodeAudit

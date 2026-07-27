@@ -67,6 +67,19 @@ design = claim.design_calibrated(
 )
 ```
 
+After approving the selected design, freeze it before evaluating holdout or
+future periods:
+
+```python
+policy = design.freeze()
+future_audit = policy.audit(next_period_rows)
+holdout = policy.backtest(holdout_rows, period="quarter")
+```
+
+The frozen policy retains the selected schema, calibrated radii, optional
+rollup mapping, and design-period support without recalibration or refinement
+search. See [Frozen public-report policies](frozen-public-report-policy.md).
+
 Calibrated TV audits use CVXPY when the calibrated radius is nonzero:
 
 ```bash

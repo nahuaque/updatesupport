@@ -188,6 +188,15 @@ from .portfolio import (
     claim_portfolio,
     design_shared_representation,
 )
+from .policy import (
+    FrozenClaimPolicy,
+    FrozenPolicyAudit,
+    FrozenPolicyBacktest,
+    FrozenPolicyClaimResult,
+    FrozenPublicReportPolicy,
+    FrozenSupportCell,
+    FrozenSupportDrift,
+)
 from .calibrated_design import (
     CalibratedClaimDesignResult,
     CalibratedPublicReportDesign,
@@ -307,6 +316,9 @@ _CLAIM_API = [
     "ClaimPortfolio",
     "SharedRepresentationDesign",
     "CalibratedPublicReportDesign",
+    "FrozenPublicReportPolicy",
+    "FrozenPolicyAudit",
+    "FrozenPolicyBacktest",
     "MinimumClaimBreakingWitnessReport",
     "ClaimRepairPlan",
     "PublicReportDesign",

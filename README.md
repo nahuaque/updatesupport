@@ -325,6 +325,9 @@ when you need to inspect those pieces separately:
 - `claim.design_calibrated(...)` or `portfolio.design_calibrated(...)` combines
   historical TV calibration, optional categorical rollup, public-schema search,
   and nearest threshold-breaking witnesses in one review artifact.
+- `calibrated_design.freeze()` turns the selected design into a fixed policy
+  that audits future batches and backtests ordered holdout periods without
+  recalibration or schema search.
 - `calibrate_tv_radius(...)` estimates a TV radius from consecutive historical
   recompositions and evaluates it with rolling one-step backtests.
 - `design_categorical_rollup(...)` finds an exact grouped version of one
@@ -637,6 +640,7 @@ uv run pytest
 - [Categorical rollup design](docs/categorical-rollup-design.md)
 - [Multi-claim shared representation design](docs/shared-representation-design.md)
 - [Calibrated public-report design](docs/calibrated-public-report-design.md)
+- [Frozen public-report policies](docs/frozen-public-report-policy.md)
 - [Robust comparison and ranking](docs/robust-comparison-ranking.md)
 - [Interaction-aware refinements](docs/interaction-aware-refinements.md)
 

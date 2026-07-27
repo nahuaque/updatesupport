@@ -95,14 +95,13 @@ def _claims() -> tuple[us.ClaimSpec, us.ClaimSpec, us.ClaimSpec]:
 
 
 class CalibratedPublicReportDesignTests(unittest.TestCase):
-    def test_combines_calibration_rollup_shared_design_and_breaking_witness(self):
+    def _portfolio_design(self):
         portfolio = us.claim_portfolio(
             _claims(),
             name="Calibrated KPI report",
             candidate_refinements=["channel", "tenure"],
         )
-
-        design = portfolio.design_calibrated(
+        return portfolio.design_calibrated(
             _historical_rows(),
             _current_rows(),
             period="period",
@@ -114,6 +113,9 @@ class CalibratedPublicReportDesignTests(unittest.TestCase):
             max_added_columns=2,
             threshold_margin=1e-8,
         )
+
+    def test_combines_calibration_rollup_shared_design_and_breaking_witness(self):
+        design = self._portfolio_design()
 
         self.assertIsInstance(design, us.CalibratedPublicReportDesign)
         self.assertEqual(design.status, "calibrated_design_found")
@@ -216,6 +218,129 @@ class CalibratedPublicReportDesignTests(unittest.TestCase):
                 rollup_claim_index=1,
                 rollup_column="channel",
             )
+
+    def test_freezes_and_audits_without_refitting(self):
+        policy = self._portfolio_design().freeze()
+
+        self.assertIsInstance(policy, us.FrozenPublicReportPolicy)
+        self.assertIn("FrozenPublicReportPolicy", us.__all__)
+        self.assertEqual(
+            policy.recommended_public,
+            ("segment", "channel_group", "tenure"),
+        )
+        self.assertEqual(len(policy.fingerprint), 16)
+        self.assertEqual(
+            policy.fingerprint, self._portfolio_design().freeze().fingerprint
+        )
+        self.assertTrue(
+            all(not claim.claim.candidate_refinements for claim in policy.claims)
+        )
+        policy_tables = policy.to_tables()
+        policy_payload = json.loads(policy.to_json())
+        self.assertIn("reference_support", policy_tables)
+        self.assertIn("rollup_mapping", policy_tables)
+        self.assertEqual(policy_payload["fingerprint"], policy.fingerprint)
+
+        audit = policy.audit(_current_rows(), period="P5")
+
+        self.assertIsInstance(audit, us.FrozenPolicyAudit)
+        self.assertEqual(audit.status, "pass")
+        self.assertTrue(audit.support_compatible)
+        self.assertEqual(audit.pass_count, 3)
+        self.assertEqual(audit.radius_breach_count, 0)
+        for result in audit.claim_results:
+            self.assertEqual(result.status, "pass")
+            self.assertAlmostEqual(result.drift.actual_tv_radius, 0.0)
+            self.assertTrue(result.drift.within_calibrated_radius)
+        self.assertIsNotNone(audit.claim_results[1].breaking_witness)
+
+        tables = audit.to_tables()
+        payload = json.loads(audit.to_json())
+        self.assertIn("support_drift", tables)
+        self.assertIn("breaking_witnesses", tables)
+        self.assertEqual(payload["status"], "pass")
+        self.assertIn("frozen design-period composition", audit.to_markdown())
+
+    def test_compatible_radius_breach_requires_review(self):
+        policy = self._portfolio_design().freeze()
+        shifted = _transfer(
+            dict(_BASE_MASS),
+            ("a", "new"),
+            ("b", "new"),
+            amount=0.08,
+        )
+
+        audit = policy.audit(
+            _rows_for_mass(shifted),
+            include_breaking_witness=False,
+        )
+
+        self.assertEqual(audit.status, "review")
+        self.assertTrue(audit.support_compatible)
+        self.assertEqual(audit.radius_breach_count, 3)
+        for result in audit.claim_results:
+            self.assertEqual(result.status, "review")
+            self.assertAlmostEqual(result.drift.actual_tv_radius, 0.08)
+            self.assertFalse(result.drift.within_calibrated_radius)
+
+    def test_unseen_rollup_category_is_inconclusive_not_an_exception(self):
+        policy = self._portfolio_design().freeze()
+        rows = _current_rows()
+        rows.append(
+            {
+                "segment": "all",
+                "channel": "d",
+                "tenure": "new",
+                "channel_metric": 0.4,
+                "tenure_metric": 0.0,
+                "weight": 10.0,
+            }
+        )
+
+        audit = policy.audit(rows)
+
+        self.assertEqual(audit.status, "inconclusive")
+        self.assertFalse(audit.support_compatible)
+        self.assertEqual(audit.unseen_rollup_categories, ("d",))
+        self.assertIn("Unseen categories", audit.transform_error)
+        self.assertTrue(all(row.audit is None for row in audit.claim_results))
+
+    def test_backtest_applies_one_fingerprint_to_ordered_holdouts(self):
+        policy = self._portfolio_design().freeze()
+        shifted = _transfer(
+            dict(_BASE_MASS),
+            ("a", "new"),
+            ("b", "new"),
+            amount=0.08,
+        )
+        rows = [
+            *_rows_for_mass(dict(_BASE_MASS), period="P5"),
+            *_rows_for_mass(shifted, period="P6"),
+        ]
+
+        backtest = policy.backtest(rows, period="period")
+
+        self.assertIsInstance(backtest, us.FrozenPolicyBacktest)
+        self.assertEqual(backtest.period_order, ("P5", "P6"))
+        self.assertEqual(backtest.pass_count, 1)
+        self.assertEqual(backtest.review_count, 1)
+        self.assertEqual(backtest.inconclusive_count, 0)
+        self.assertAlmostEqual(backtest.pass_rate, 0.5)
+        self.assertAlmostEqual(backtest.support_compatibility_rate, 1.0)
+        self.assertEqual(backtest.radius_breach_count, 3)
+        self.assertTrue(
+            all(
+                audit.policy_fingerprint == policy.fingerprint
+                for audit in backtest.audits
+            )
+        )
+
+        tables = backtest.to_tables()
+        payload = json.loads(backtest.to_json())
+        self.assertIn("claim_period_outcomes", tables)
+        self.assertEqual(len(tables["periods"]), 2)
+        self.assertEqual(payload["pass_rate"], 0.5)
+        self.assertIn("No radius, rollup, schema", backtest.to_markdown())
 
 
 if __name__ == "__main__":

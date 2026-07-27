@@ -77,6 +77,32 @@ more convenient. Use `.audit(...)` when you only need pass/fail/inconclusive
 evidence; use `.design(...)` when the report needs a recommended public
 representation.
 
+## Freeze A Calibrated Design
+
+When a calibrated design is approved, freeze it before evaluating holdout or
+future periods:
+
+```python
+design = portfolio.design_calibrated(
+    historical_rows,
+    design_period_rows,
+    period="quarter",
+)
+
+policy = design.freeze()
+current = policy.audit(next_quarter_rows, period="2026-Q3")
+holdout = policy.backtest(holdout_rows, period="quarter")
+```
+
+The frozen policy preserves the selected schema, optional rollup mapping,
+calibrated TV radii, claim thresholds, and design-period support. It does not
+re-run calibration or refinement search on evaluation rows. New retained
+support produces an inconclusive result; compatible radius or claim breaches
+produce a review result.
+
+See [Frozen public-report policies](frozen-public-report-policy.md) for verdict
+semantics, support-drift handling, and structured exports.
+
 ## Verdict Semantics
 
 The current public representation **passes** when its primary

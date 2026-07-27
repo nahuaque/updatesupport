@@ -56,6 +56,15 @@ The public user-facing surface is:
 - `CalibratedPublicReportDesign`: calibration backtests, optional categorical
   rollup, selected schema, current audits, nearest breaking witnesses, and
   structured exports.
+- `CalibratedPublicReportDesign.freeze(...)`: preserve the selected schema,
+  rollup mapping, calibrated claim presets, and design-period support as an
+  out-of-sample reporting policy.
+- `FrozenPublicReportPolicy.audit(...)`: evaluate one future batch without
+  recalibration or representation search.
+- `FrozenPublicReportPolicy.backtest(...)`: apply the same frozen contract to
+  ordered holdout periods.
+- `FrozenPolicyAudit` and `FrozenPolicyBacktest`: operational pass, review, or
+  inconclusive verdicts with support-drift and calibrated-radius diagnostics.
 - `ClaimSpec.breaking_witness(...)`: find the closest fixed-public hidden-cell
   recomposition that fails the claim's threshold decision.
 - `ClaimAudit.breaking_witness(...)`: reuse an audit's compiled problem for the

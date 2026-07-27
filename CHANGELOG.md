@@ -25,6 +25,10 @@ All notable changes to `updatesupport` are documented here.
   calibration, optional exact categorical rollup, single- or multi-claim public
   representation search, selected-schema audits, and nearest-breaking-distance
   comparisons against the calibrated radius.
+- Added frozen public-report policies for leakage-free future-batch audits and
+  ordered holdout backtests, including deterministic policy fingerprints,
+  design-period support contracts, realized TV-radius monitoring, support-drift
+  diagnostics, operational verdicts, and structured exports.
 
 ## 0.1.5 - 2026-07-09
 
