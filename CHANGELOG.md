@@ -6,6 +6,14 @@ All notable changes to `updatesupport` are documented here.
 
 ### Added
 
+- Added optional claim-level `max_dropped_weight_share` requirements, with
+  retained-weight evidence beside verdicts and in structured exports, and
+  coverage-aware repair, rollup, portfolio, and frozen-policy evaluation.
+- Added versioned frozen-policy save/load and dictionary/JSON round trips for
+  portable column-target contracts, including support and fingerprint
+  validation, preserved rollup mappings, and explicit rejection of unsupported
+  executable targets or schema versions.
+
 - Added historical total-variation radius calibration from consecutive-period
   within-public recompositions, with public-law restandardization, rolling
   one-step backtests, support-drift diagnostics, structured exports, and direct

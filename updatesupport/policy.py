@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass, replace
 from hashlib import sha256
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Hashable, Mapping, Sequence
 
 if TYPE_CHECKING:
@@ -213,6 +214,17 @@ class FrozenPolicyClaimResult:
             "within_calibrated_radius": self.drift.within_calibrated_radius,
             "support_status": self.drift.status,
             "claim_audit_status": None if self.audit is None else self.audit.status,
+            "retained_weight_share": (
+                None
+                if self.audit is None
+                else self.audit.coverage["retained_weight_share"]
+            ),
+            "max_dropped_weight_share": self.policy_claim.claim.max_dropped_weight_share,
+            "coverage_requirement_met": (
+                None
+                if self.audit is None
+                else self.audit.coverage["coverage_requirement_met"]
+            ),
             "observed_value": None if self.audit is None else self.audit.observed_value,
             "lower": None if self.audit is None else self.audit.interval.lower,
             "upper": None if self.audit is None else self.audit.interval.upper,
@@ -699,6 +711,52 @@ class FrozenPublicReportPolicy(ReportArtifactMixin):
         }
         encoded = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
         return sha256(encoded).hexdigest()[:16]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a versioned, reloadable policy with a validated portable contract.
+
+        Version 1 supports column targets, built-in Q presets with JSON-compatible
+        settings, and JSON scalar or tuple categories. ``as_dict()`` remains the
+        descriptive report export for policies containing custom Python objects.
+        """
+
+        from ._policy_io import policy_to_dict
+
+        return policy_to_dict(self)
+
+    def to_json(self, **kwargs: Any) -> str:
+        """Serialize the portable policy; executable Python targets are rejected."""
+
+        options = {"indent": 2, "sort_keys": True, **kwargs, "allow_nan": False}
+        return json.dumps(self.to_dict(), **options)
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> FrozenPublicReportPolicy:
+        """Restore a versioned policy and verify its contract and fingerprint."""
+
+        from ._policy_io import policy_from_dict
+
+        return policy_from_dict(payload)
+
+    @classmethod
+    def from_json(cls, text: str) -> FrozenPublicReportPolicy:
+        """Restore a policy without calibration, schema search, or solver calls."""
+
+        from ._policy_io import policy_from_json
+
+        return policy_from_json(text)
+
+    def save(self, path: str | Path) -> None:
+        """Write a portable policy as UTF-8 JSON."""
+
+        serialized = self.to_json()
+        Path(path).write_text(serialized + "\n", encoding="utf-8")
+
+    @classmethod
+    def load(cls, path: str | Path) -> FrozenPublicReportPolicy:
+        """Load and validate a UTF-8 policy JSON file."""
+
+        return cls.from_json(Path(path).read_text(encoding="utf-8"))
 
     def audit(
         self,

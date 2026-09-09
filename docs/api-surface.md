@@ -63,6 +63,9 @@ The public user-facing surface is:
   recalibration or representation search.
 - `FrozenPublicReportPolicy.backtest(...)`: apply the same frozen contract to
   ordered holdout periods.
+- `FrozenPublicReportPolicy.save(...)` and `.load(...)`: write and restore a
+  versioned, fingerprint-validated portable policy. `to_dict`/`from_dict` and
+  `to_json`/`from_json` support application-managed storage.
 - `FrozenPolicyAudit` and `FrozenPolicyBacktest`: operational pass, review, or
   inconclusive verdicts with support-drift and calibrated-radius diagnostics.
 - `ClaimSpec.breaking_witness(...)`: find the closest fixed-public hidden-cell
@@ -99,6 +102,12 @@ integration adapters, specs, and extension hooks. Diagnostic dataclasses,
 backend reports, residopt internals, support-function internals, and named
 linear feasibility objects remain importable directly or from their owning
 modules, but they are not advertised through `from updatesupport import *`.
+
+`ClaimSpec.max_dropped_weight_share` optionally requires sufficient retained
+input weight. `ClaimAudit.coverage` exposes that evidence and the requirement
+result; coverage failures produce an inconclusive verdict and prevent certifying
+refinement recommendations. The limit also applies to shared representation
+and rollup candidates and persists in frozen policies.
 
 ## Advanced Evidence Tools
 

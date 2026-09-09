@@ -261,6 +261,19 @@ class CalibratedPublicReportDesignTests(unittest.TestCase):
         self.assertEqual(payload["status"], "pass")
         self.assertIn("frozen design-period composition", audit.to_markdown())
 
+    def test_frozen_rollup_policy_round_trips_and_audits(self):
+        policy = self._portfolio_design().freeze()
+        restored = us.FrozenPublicReportPolicy.from_json(policy.to_json())
+        self.assertEqual(restored.fingerprint, policy.fingerprint)
+        self.assertEqual(
+            restored.rollup.selected_mapping, policy.rollup.selected_mapping
+        )
+        self.assertEqual(restored.as_dict(), policy.as_dict())
+        self.assertEqual(
+            restored.audit(_current_rows()).as_dict(),
+            policy.audit(_current_rows()).as_dict(),
+        )
+
     def test_compatible_radius_breach_requires_review(self):
         policy = self._portfolio_design().freeze()
         shifted = _transfer(

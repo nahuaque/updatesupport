@@ -425,6 +425,8 @@ class ClaimRepairPlan(ReportArtifactMixin):
 
     @property
     def status(self) -> str:
+        if not self.audit.coverage_sufficient:
+            return "inconclusive"
         if self.audit.passed:
             return "already_certified"
         if self.recommended is not None:
@@ -571,6 +573,8 @@ class PublicReportDesign(ReportArtifactMixin):
 
     @property
     def status(self) -> str:
+        if not self.audit.coverage_sufficient:
+            return "inconclusive"
         if self.audit.passed:
             return "already_defensible"
         if self.repair_plan.recommended is not None:
@@ -590,6 +594,8 @@ class PublicReportDesign(ReportArtifactMixin):
 
     @property
     def selected_candidate(self) -> PublicRepresentationCandidate | None:
+        if not self.audit.coverage_sufficient:
+            return None
         if self.certificate is None:
             return None
         return self.certificate.selected_candidate
@@ -879,6 +885,7 @@ class ClaimSpec:
     screening_backend: str | None = None
     refinement_screening_backend: str | None = None
     refinement_screening_exact_fallback: bool = True
+    max_dropped_weight_share: float | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.estimate_name, str) or not self.estimate_name:
@@ -913,6 +920,13 @@ class ClaimSpec:
             raise TypeError("weight must be a column name or None")
         if self.min_cell_weight < 0:
             raise ValueError("min_cell_weight must be non-negative")
+        if self.max_dropped_weight_share is not None:
+            limit = float(self.max_dropped_weight_share)
+            if not isfinite(limit) or not 0.0 <= limit <= 1.0:
+                raise ValueError(
+                    "max_dropped_weight_share must be finite and in [0, 1]"
+                )
+            object.__setattr__(self, "max_dropped_weight_share", limit)
         if self.min_cell_weights is not None:
             object.__setattr__(
                 self,
@@ -1011,6 +1025,7 @@ class ClaimSpec:
             if self.statistical_uncertainty is None
             else self.statistical_uncertainty.as_dict(),
             "min_cell_weight": self.min_cell_weight,
+            "max_dropped_weight_share": self.max_dropped_weight_share,
             "min_cell_weights": None
             if self.min_cell_weights is None
             else list(self.min_cell_weights),
@@ -1141,7 +1156,22 @@ class ClaimAudit(ReportArtifactMixin):
         return self.status == "inconclusive"
 
     @property
+    def coverage(self) -> dict[str, Any]:
+        """Retained-weight coverage of the primary and evaluated stress scenarios."""
+
+        return _claim_coverage(self.claim, self.primary, self.certificate)
+
+    @property
+    def coverage_sufficient(self) -> bool:
+        return (
+            self.claim.max_dropped_weight_share is None
+            or self.coverage["coverage_requirement_met"] is True
+        )
+
+    @property
     def repair_candidate(self) -> PublicRepresentationCandidate | None:
+        if not self.coverage_sufficient:
+            return None
         if self.decision_repair_candidate is not None:
             return self.decision_repair_candidate
         if self.certificate is None:
@@ -1222,6 +1252,7 @@ class ClaimAudit(ReportArtifactMixin):
             "passed": self.passed,
             "failed": self.failed,
             "inconclusive": self.inconclusive,
+            "coverage": self.coverage,
             "claim": self.claim.as_dict(),
             "primary": self.primary.as_dict(),
             "certificate": None
@@ -1263,6 +1294,22 @@ class ClaimAudit(ReportArtifactMixin):
         ]
         if self.claim.ambiguity_limit is not None:
             lines.append(f"- Ambiguity limit: {self.claim.ambiguity_limit:.4f}")
+        coverage = self.coverage
+        retained = coverage["retained_weight_share"]
+        lines.append(
+            "- Retained input weight: "
+            + ("unavailable" if retained is None else f"{retained:.1%}")
+        )
+        if self.claim.max_dropped_weight_share is not None:
+            worst = coverage["worst_dropped_weight_share"]
+            lines.extend(
+                [
+                    f"- Maximum allowed dropped weight: {self.claim.max_dropped_weight_share:.1%}",
+                    "- Worst evaluated dropped weight: "
+                    + ("unavailable" if worst is None else f"{worst:.1%}"),
+                    f"- Coverage requirement met: {'yes' if self.coverage_sufficient else 'no'}",
+                ]
+            )
         if self.claim.statistical_uncertainty is not None:
             lines.append(
                 "- Statistical uncertainty: "
@@ -1817,7 +1864,7 @@ def audit_claim(
     row_count: int | None = None
     screening: ClaimScreeningResult | None = None
     if claim.screening_backend is not None:
-        if joint_draws:
+        if joint_draws or claim.max_dropped_weight_share is not None:
             screening = ClaimScreeningResult(
                 backend=claim.screening_backend,
                 attempted=False,
@@ -1826,8 +1873,8 @@ def audit_claim(
                 fallback_required=True,
                 exact_solve_avoided=False,
                 reason=(
-                    "Endpoint screening is disabled when model-assisted joint "
-                    "draws are requested."
+                    "Endpoint screening is disabled when model-assisted draws "
+                    "or a retained-weight coverage requirement is requested."
                 ),
             )
         else:
@@ -1927,7 +1974,11 @@ def audit_claim(
             enforce_bucket_budget=claim.enforce_bucket_budget,
             include_base=claim.include_base,
             exact_required=claim.exact_required,
-            screening_backend=claim.refinement_screening_backend,
+            screening_backend=(
+                claim.refinement_screening_backend
+                if claim.max_dropped_weight_share is None
+                else None
+            ),
             screening_exact_fallback=claim.refinement_screening_exact_fallback,
             title=f"{claim.estimate_name} Representation Certificate",
         )
@@ -2278,6 +2329,38 @@ def _claim_tree_worst_markdown(nodes: Sequence[ClaimNodeAudit]) -> list[str]:
     return lines
 
 
+def _claim_coverage(
+    claim: ClaimSpec,
+    primary: PublicDescentReport,
+    certificate: RepresentationStabilityCertificate | None,
+) -> dict[str, Any]:
+    diagnostics = primary.grouped.diagnostics
+    primary_share = None if diagnostics is None else diagnostics.dropped_weight_share
+    shares = [primary_share]
+    if certificate is not None:
+        shares.extend(
+            scenario.dropped_weight_share
+            for candidate in certificate.frontier.candidates
+            for scenario in candidate.scenarios
+        )
+    known = [value for value in shares if value is not None]
+    worst = max(known) if known else None
+    limit = claim.max_dropped_weight_share
+    met = None
+    if limit is not None and worst is not None:
+        if worst > limit:
+            met = False
+        elif all(value is not None for value in shares):
+            met = True
+    return {
+        "retained_weight_share": None if primary_share is None else 1.0 - primary_share,
+        "dropped_weight_share": primary_share,
+        "worst_dropped_weight_share": worst,
+        "max_dropped_weight_share": limit,
+        "coverage_requirement_met": met,
+    }
+
+
 def _claim_status(
     claim: ClaimSpec,
     *,
@@ -2288,6 +2371,20 @@ def _claim_status(
     decision_repair_search_exact: bool | None,
 ) -> tuple[str, tuple[str, ...]]:
     reasons: list[str] = []
+    coverage = _claim_coverage(claim, primary, certificate)
+    if claim.max_dropped_weight_share is not None:
+        if coverage["coverage_requirement_met"] is False:
+            return "inconclusive", (
+                f"Sparse-cell filtering dropped up to {coverage['worst_dropped_weight_share']:.1%} "
+                f"of input weight, exceeding the declared {claim.max_dropped_weight_share:.1%} limit. "
+                "The interval describes retained support; public refinement alone "
+                "cannot restore the discarded population.",
+            )
+        if coverage["coverage_requirement_met"] is None:
+            return "inconclusive", (
+                "Retained-weight diagnostics are unavailable for one or more "
+                "evaluated scenarios, so the declared coverage requirement cannot be verified.",
+            )
     if decision is not None:
         if decision.invariant:
             reasons.append(
@@ -2437,6 +2534,11 @@ def _claim_limitations(
         "Model-assisted joint analysis, when supplied, is conditional on the "
         "fitted joint-cell model and should be read separately from adversarial "
         "Q-based hidden-composition ambiguity."
+    )
+    limitations.append(
+        "The estimate and interval describe retained support after sparse-cell "
+        "filtering. A max_dropped_weight_share requirement checks population "
+        "coverage separately from the lower-level representation certificate."
     )
     if claim.decision is not None:
         limitations.append(
@@ -2975,6 +3077,8 @@ def _recommendation_certifies_claim(
     row: ClaimRefinementRecommendation,
     audit: ClaimAudit,
 ) -> bool:
+    if not audit.coverage_sufficient:
+        return False
     if row.selected_repair or row.decision_repair:
         return True
     if audit.decision is not None:
@@ -3058,6 +3162,12 @@ def _claim_repair_plan_tables(
 
 def _repair_plan_interpretation(plan: ClaimRepairPlan) -> str:
     recommended = plan.recommended
+    if not plan.audit.coverage_sufficient:
+        return (
+            "The retained-weight coverage requirement is not satisfied. Review "
+            "the input population and sparse-cell filtering before relying on "
+            "the claim; adding public columns cannot restore discarded weight."
+        )
     if plan.audit.passed:
         return (
             "The claim is already certified under the declared public "
@@ -3085,6 +3195,8 @@ def _repair_plan_interpretation(plan: ClaimRepairPlan) -> str:
 
 
 def _design_interpretation(design: PublicReportDesign) -> str:
+    if not design.audit.coverage_sufficient:
+        return _repair_plan_interpretation(design.repair_plan)
     if design.audit.passed:
         return (
             "The current public representation already supports the declared "
@@ -3179,7 +3291,8 @@ def _one_column_claim_recommendation(
     columns = (row.column,)
     repair = report.repair_candidate
     decision_repair = (
-        report.decision_repair_candidate is not None
+        report.coverage_sufficient
+        and report.decision_repair_candidate is not None
         and report.decision_repair_candidate.added_columns == columns
     )
     selected_repair = repair is not None and repair.added_columns == columns

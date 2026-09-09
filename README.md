@@ -159,6 +159,12 @@ partial-identification / sensitivity interval for hidden composition. The audit
 returns one review artifact with the verdict, interval, witness, limitations,
 and claim-centered refinement recommendations.
 
+To require sufficient input coverage after sparse-cell filtering, add
+`max_dropped_weight_share=0.05` to the claim. More than 5% discarded weight
+produces an inconclusive verdict even if the retained-population interval is
+narrow. Retained weight is shown beside the verdict; see
+[data diagnostics](docs/data-diagnostics.md).
+
 ## Front-Door Demo
 
 Start with the Folktables ACSIncome case if you want the shortest path to the
@@ -328,6 +334,9 @@ when you need to inspect those pieces separately:
 - `calibrated_design.freeze()` turns the selected design into a fixed policy
   that audits future batches and backtests ordered holdout periods without
   recalibration or schema search.
+- `policy.save("policy.json")` and
+  `FrozenPublicReportPolicy.load("policy.json")` preserve a portable policy
+  across processes with schema and fingerprint validation.
 - `calibrate_tv_radius(...)` estimates a TV radius from consecutive historical
   recompositions and evaluates it with rolling one-step backtests.
 - `design_categorical_rollup(...)` finds an exact grouped version of one

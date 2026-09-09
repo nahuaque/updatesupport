@@ -120,6 +120,49 @@ an extra inverse solve for every threshold claim and period. Pass
 
 ## Structured Exports
 
+### Save And Restore The Reporting Contract
+
+Portable policies can be saved in one process and loaded in another:
+
+```python
+policy.save("quarterly-policy.json")
+
+restored = us.FrozenPublicReportPolicy.load("quarterly-policy.json")
+assert restored.fingerprint == policy.fingerprint
+future_audit = restored.audit(next_quarter_rows)
+```
+
+For storage in a database or another application, use `policy.to_dict()` and
+`FrozenPublicReportPolicy.from_dict(...)`, or `policy.to_json()` and
+`FrozenPublicReportPolicy.from_json(...)`.
+
+The saved format has an explicit `schema_version`. Loading reconstructs the
+claims, thresholds, optional retained-weight coverage limits, calibrated TV
+radii, rollup design and mapping, and reference support. It performs no fitting,
+representation search, or solver calls. Auditing the restored policy still
+requires the usual solver dependencies.
+
+Version 1 supports column-name targets, built-in Q presets with JSON-compatible
+settings, and categories made of ordinary JSON scalars or tuples of those
+scalars. Tuple categories retain their types on loading. Custom `RowMetric`
+or `ProcedureTarget` callables, arbitrary Python category objects, non-finite
+numbers, and non-string mapping keys are rejected by portable serialization.
+Materialize a custom target into a named input column before designing a policy
+that needs to be portable.
+
+The loader validates reference masses and support dimensions, calibrated
+radius consistency, rollup partitions, and the saved fingerprint. Unknown
+versions, duplicate JSON keys, missing or unknown fields, and inconsistent
+derived values are rejected. The fingerprint detects contract changes; it is
+not a signature authenticating the file's author.
+
+`policy.as_dict()` remains a descriptive report export, including for policies
+with custom Python targets. It is not the versioned persistence format. JSON
+policy exports made before this format was introduced have no schema version
+and cannot be loaded automatically.
+
+### Export Audit Tables
+
 The policy, audit, and backtest all support:
 
 ```python
@@ -140,6 +183,11 @@ Policy tables include the frozen claim contracts, reference support, and
 rollup mapping. Audit tables include claim outcomes, support drift, and
 breaking witnesses. Backtest tables include period summaries and flattened
 claim-period outcomes.
+
+If a claim declares `max_dropped_weight_share`, a coverage breach produces an
+inconclusive claim and policy audit. Claim outcome tables include retained
+weight share and the coverage requirement result. The detailed claim report
+also shows the worst discarded share across evaluated certificate scenarios.
 
 ## Scope
 

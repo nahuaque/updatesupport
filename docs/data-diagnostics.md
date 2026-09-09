@@ -66,6 +66,49 @@ Dropped hidden cells are more consequential. Raising `min_cell_weight` can make
 the state space less noisy, but it changes both the retained support and the
 observed public law used in the stress test.
 
+## Require Sufficient Retained Weight
+
+Claims can make coverage an explicit requirement:
+
+```python
+claim = us.claim(
+    "Reported rate is stable",
+    public=["segment"],
+    hidden=["segment", "channel"],
+    target="rate",
+    weight="count",
+    min_cell_weight=10,
+    ambiguity_limit=0.02,
+    max_dropped_weight_share=0.05,
+)
+audit = claim.audit(rows)
+```
+
+The claim is `inconclusive` if filtering discards more than 5% of input weight
+in the primary report or any evaluated certificate scenario. Equality is
+allowed. Without a weight column, this measures the share of rows discarded.
+The limit must be finite and between zero and one; `None` (the default) keeps
+the existing verdict behavior.
+
+This guard is separate from the ambiguity calculation: an interval can remain
+exact for the retained population while coverage is insufficient for the
+claim. A public refinement cannot restore discarded weight, so an insufficient
+coverage result also prevents certifying repair recommendations, rollup
+candidates, and shared representation candidates. The lower-level
+representation certificate continues to describe ambiguity on retained support.
+
+`audit.coverage` exposes the primary retained and dropped weight shares, the
+worst evaluated dropped share, the declared limit, and
+`coverage_requirement_met`. These fields appear in JSON and summary tables;
+Markdown shows retained input weight beside the verdict. With a coverage
+requirement, unavailable diagnostics produce an inconclusive verdict, and
+experimental endpoint screening is disabled so evaluated scenarios retain
+their coverage diagnostics. An input with no surviving cells still raises a
+data-validation error.
+
+The requirement is preserved when a calibrated design is frozen and saved.
+Each future audit checks coverage against the weight in that future batch.
+
 Missing category values are encoded as `NA` so the audit can proceed. If the
 amount of missingness is material, treat `NA` as an explicit category in the
 review rather than as harmless noise.

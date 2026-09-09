@@ -527,6 +527,7 @@ def _claim_audit_tables(report: ClaimAudit) -> ReportTables:
             {
                 "title": report.title,
                 "status": report.status,
+                **report.coverage,
                 "passed": report.passed,
                 "failed": report.failed,
                 "inconclusive": report.inconclusive,

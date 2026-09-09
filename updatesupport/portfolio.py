@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 from .artifacts import ReportArtifactMixin
 from .claim import ClaimAudit, ClaimSpec
-from .data import _iter_records
+from .data import _iter_records, from_dataframe
 from .frontier import (
     FrontierScenarioResult,
     PublicRepresentationCandidate,
@@ -104,6 +104,8 @@ class PortfolioClaimScenarioResult:
     decision_invariant: bool | None
     decision_certified: bool | None
     certifies_scenario: bool
+    dropped_weight_share: float | None = None
+    coverage_requirement_met: bool | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -119,6 +121,8 @@ class PortfolioClaimScenarioResult:
             "decision_invariant": self.decision_invariant,
             "decision_certified": self.decision_certified,
             "certifies_scenario": self.certifies_scenario,
+            "dropped_weight_share": self.dropped_weight_share,
+            "coverage_requirement_met": self.coverage_requirement_met,
         }
 
 
@@ -139,6 +143,8 @@ class PortfolioClaimCandidateResult:
     certifies_claim: bool
     normalized_ambiguity: float | None
     violation_score: float
+    primary_dropped_weight_share: float | None = None
+    coverage_requirement_met: bool | None = None
 
     @property
     def observed_min(self) -> float:
@@ -187,6 +193,8 @@ class PortfolioClaimCandidateResult:
             "certifies_claim": self.certifies_claim,
             "normalized_ambiguity": self.normalized_ambiguity,
             "violation_score": self.violation_score,
+            "primary_dropped_weight_share": self.primary_dropped_weight_share,
+            "coverage_requirement_met": self.coverage_requirement_met,
             "worst_scenario": self.worst_scenario,
             "scenarios": [row.as_dict() for row in self.scenarios],
         }
@@ -604,6 +612,21 @@ def design_shared_representation(
     if not records:
         raise ValueError("data must contain at least one row")
 
+    primary_dropped_shares = tuple(
+        None
+        if claim.max_dropped_weight_share is None
+        else from_dataframe(
+            records,
+            public=claim.public,
+            hidden=claim.hidden,
+            target=claim.target,
+            weight=claim.weight,
+            min_cell_weight=claim.min_cell_weight,
+            q="observed",
+        ).diagnostics.dropped_weight_share
+        for claim in claims
+    )
+
     frontiers = tuple(
         _claim_frontier(
             records,
@@ -628,6 +651,7 @@ def design_shared_representation(
         _shared_candidate(
             added_columns,
             claims=claims,
+            primary_dropped_shares=primary_dropped_shares,
             per_claim=tuple(mapping[added_columns] for mapping in candidate_maps),
             base_public=base_public,
             required_columns=required_columns,
@@ -721,6 +745,7 @@ def _shared_candidate(
     added_columns: tuple[str, ...],
     *,
     claims: tuple[ClaimSpec, ...],
+    primary_dropped_shares: tuple[float | None, ...],
     per_claim: tuple[PublicRepresentationCandidate, ...],
     base_public: tuple[str, ...],
     required_columns: tuple[str, ...],
@@ -732,6 +757,7 @@ def _shared_candidate(
             index,
             claim,
             candidate,
+            primary_dropped_share=primary_dropped_shares[index - 1],
             tolerance=tolerance,
         )
         for index, (claim, candidate) in enumerate(
@@ -759,6 +785,7 @@ def _claim_candidate_result(
     claim: ClaimSpec,
     candidate: PublicRepresentationCandidate,
     *,
+    primary_dropped_share: float | None,
     tolerance: float,
 ) -> PortfolioClaimCandidateResult:
     scenarios = tuple(
@@ -778,6 +805,14 @@ def _claim_candidate_result(
         else all(row.decision_certified for row in scenarios)
     )
     certifies_claim = all(row.certifies_scenario for row in scenarios)
+    coverage_met = None
+    if claim.max_dropped_weight_share is not None:
+        coverage_met = (
+            primary_dropped_share is not None
+            and primary_dropped_share <= claim.max_dropped_weight_share
+            and all(row.coverage_requirement_met is True for row in scenarios)
+        )
+        certifies_claim = certifies_claim and coverage_met
     normalized_ambiguity = _normalized_ambiguity(
         max_ambiguity,
         claim.ambiguity_limit,
@@ -800,7 +835,11 @@ def _claim_candidate_result(
         decision_certified=decision_certified,
         certifies_claim=certifies_claim,
         normalized_ambiguity=normalized_ambiguity,
-        violation_score=max(ambiguity_violation, decision_violation),
+        violation_score=max(
+            ambiguity_violation, decision_violation, float(coverage_met is False)
+        ),
+        primary_dropped_weight_share=primary_dropped_share,
+        coverage_requirement_met=coverage_met,
     )
 
 
@@ -828,8 +867,16 @@ def _claim_scenario_result(
             decision.invariant
             and decision.certified_decision == decision.observed_decision
         )
+    coverage_met = (
+        None
+        if claim.max_dropped_weight_share is None
+        else row.dropped_weight_share is not None
+        and row.dropped_weight_share <= claim.max_dropped_weight_share
+    )
     certifies_scenario = bool(
-        (ambiguity_limit_met is not False) and (decision_certified is not False)
+        (ambiguity_limit_met is not False)
+        and (decision_certified is not False)
+        and coverage_met is not False
     )
     return PortfolioClaimScenarioResult(
         scenario=row.scenario,
@@ -844,6 +891,8 @@ def _claim_scenario_result(
         decision_invariant=decision_invariant,
         decision_certified=decision_certified,
         certifies_scenario=certifies_scenario,
+        dropped_weight_share=row.dropped_weight_share,
+        coverage_requirement_met=coverage_met,
     )
 
 

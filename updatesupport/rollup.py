@@ -36,6 +36,8 @@ class CategoricalRollupCandidate:
     decision_invariant: bool | None
     decision_certified: bool | None
     certifies_claim: bool
+    dropped_weight_share: float | None = None
+    coverage_requirement_met: bool | None = None
 
     @property
     def group_count(self) -> int:
@@ -89,6 +91,8 @@ class CategoricalRollupCandidate:
             "decision_invariant": self.decision_invariant,
             "decision_certified": self.decision_certified,
             "certifies_claim": self.certifies_claim,
+            "dropped_weight_share": self.dropped_weight_share,
+            "coverage_requirement_met": self.coverage_requirement_met,
         }
 
 
@@ -560,14 +564,28 @@ def _evaluate_candidate(
             and decision.certified_decision == decision.observed_decision
         )
     has_requirement = claim.ambiguity_limit is not None or claim.decision is not None
+    dropped_share = (
+        None
+        if grouped.diagnostics is None
+        else grouped.diagnostics.dropped_weight_share
+    )
+    coverage_met = (
+        None
+        if claim.max_dropped_weight_share is None
+        else dropped_share is not None
+        and dropped_share <= claim.max_dropped_weight_share
+    )
     certifies_claim = bool(
         has_requirement
+        and coverage_met is not False
         and (meets_ambiguity_limit is not False)
         and (decision_certified is not False)
     )
     public_cells = len(aggregates)
     return CategoricalRollupCandidate(
         groups=groups,
+        dropped_weight_share=dropped_share,
+        coverage_requirement_met=coverage_met,
         public_cells=public_cells,
         hidden_cells=len(grouped.problem.states),
         observed_value=observed_value,

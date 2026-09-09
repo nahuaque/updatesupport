@@ -91,6 +91,7 @@ class FrontierScenarioResult:
     screening_exact_solve_avoided: bool = False
     screening_conservative_ambiguity: float | None = None
     screening_exact_ambiguity: float | None = None
+    dropped_weight_share: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -106,6 +107,7 @@ class FrontierScenarioResult:
             "ambiguity": self.ambiguity,
             "observed_value": self.observed_value,
             "public_adequate": self.public_adequate,
+            "dropped_weight_share": self.dropped_weight_share,
             "bound_type": self.bound_type,
             "screening_backend": self.screening_backend,
             "screening_status": self.screening_status,
@@ -2304,6 +2306,11 @@ def _evaluate_candidate(
                     ambiguity=interval.diameter,
                     observed_value=_observed_value(grouped),
                     public_adequate=grouped.problem.is_public_adequate(),
+                    dropped_weight_share=(
+                        None
+                        if grouped.diagnostics is None
+                        else grouped.diagnostics.dropped_weight_share
+                    ),
                 )
             )
             continue
