@@ -133,6 +133,10 @@ from .joint import (
     joint_draw_records,
 )
 from .linear_feasibility import (
+    NamedLinearAssignmentCheck,
+    NamedLinearConflictReport,
+    check_named_linear_assignment,
+    find_named_linear_conflict,
     DEFAULT_LINEAR_FEASIBILITY_LIMITATIONS,
     NamedLinearClaim,
     NamedLinearClaimAudit,

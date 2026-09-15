@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 from typing import Any
 
@@ -206,8 +206,15 @@ class NamedLinearFeasibilityProblem:
     title: str = "Named Linear Feasibility Report"
     description: str | None = None
     limitations: Sequence[str] = DEFAULT_LINEAR_FEASIBILITY_LIMITATIONS
+    feasibility_tolerance: float = 1e-7
 
     def __post_init__(self) -> None:
+        tolerance = _finite_float(self.feasibility_tolerance, "feasibility_tolerance")
+        if tolerance < 1e-10:
+            raise ValueError(
+                "feasibility_tolerance must be at least 1e-10 (HiGHS limit)"
+            )
+        object.__setattr__(self, "feasibility_tolerance", tolerance)
         variables = tuple(coerce_named_linear_variable(row) for row in self.variables)
         constraints = tuple(
             coerce_named_linear_constraint(row) for row in self.constraints
@@ -231,6 +238,9 @@ class NamedLinearFeasibilityProblem:
         if duplicate_constraints:
             raise ValueError(f"duplicate constraint names: {duplicate_constraints!r}")
         known_constraints = set(constraint_names)
+        duplicate_scenarios = _duplicates(row.name for row in scenarios)
+        if duplicate_scenarios:
+            raise ValueError(f"duplicate scenario names: {duplicate_scenarios!r}")
         target_names = [row.name for row in targets]
         duplicate_targets = _duplicates(target_names)
         if duplicate_targets:
@@ -275,6 +285,7 @@ class NamedLinearFeasibilityProblem:
             "targets": [row.as_dict() for row in self.targets],
             "scenarios": [row.as_dict() for row in self.scenarios],
             "limitations": list(self.limitations),
+            "feasibility_tolerance": self.feasibility_tolerance,
         }
 
 
@@ -317,6 +328,26 @@ class NamedLinearConstraintDiagnostic:
 
 
 @dataclass(frozen=True)
+class NamedLinearAssignmentCheck:
+    """Residual of one constraint or variable-bound side in original units."""
+
+    name: str
+    kind: str
+    side: str
+    value: float
+    bound: float
+    violation: float
+    tolerance: float
+
+    @property
+    def passed(self) -> bool:
+        return isfinite(self.value) and self.violation <= self.tolerance
+
+    def as_dict(self) -> dict[str, Any]:
+        return {**self.__dict__, "passed": self.passed}
+
+
+@dataclass(frozen=True)
 class NamedLinearEndpoint:
     """One endpoint solve for a target under a scenario."""
 
@@ -332,6 +363,7 @@ class NamedLinearEndpoint:
     constraint_diagnostics: tuple[NamedLinearConstraintDiagnostic, ...] = ()
     solver_status: int | None = None
     message: str | None = None
+    assignment_checks: tuple[NamedLinearAssignmentCheck, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "binding_constraints", tuple(self.binding_constraints))
@@ -364,6 +396,7 @@ class NamedLinearEndpoint:
             ],
             "solver_status": self.solver_status,
             "message": self.message,
+            "assignment_checks": [row.as_dict() for row in self.assignment_checks],
         }
 
 
@@ -665,6 +698,17 @@ class NamedLinearFeasibilityReport(ReportArtifactMixin):
                 for endpoint in (row.lower_endpoint, row.upper_endpoint)
                 for diagnostic in endpoint.constraint_diagnostics
             ),
+            "endpoint_assignment_checks": tuple(
+                {
+                    "scenario": row.scenario,
+                    "target": row.target,
+                    "endpoint": endpoint.sense,
+                    **check.as_dict(),
+                }
+                for row in self.intervals
+                for endpoint in (row.lower_endpoint, row.upper_endpoint)
+                for check in endpoint.assignment_checks
+            ),
             "limitations": tuple(
                 {"limitation": limitation} for limitation in self.problem.limitations
             ),
@@ -725,8 +769,15 @@ class NamedLinearClaim:
     description: str | None = None
     attribution_top: int = 5
     diagnostic_top: int = 8
+    absolute_tolerance: float = 1e-7
+    relative_tolerance: float = 1e-9
 
     def __post_init__(self) -> None:
+        for name in ("absolute_tolerance", "relative_tolerance"):
+            value = _finite_float(getattr(self, name), name)
+            if value < 0:
+                raise ValueError(f"{name} must be nonnegative")
+            object.__setattr__(self, name, value)
         if not self.target:
             raise ValueError("claim target cannot be empty")
         if not self.scenario:
@@ -773,6 +824,8 @@ class NamedLinearClaim:
             "description": self.description,
             "attribution_top": self.attribution_top,
             "diagnostic_top": self.diagnostic_top,
+            "absolute_tolerance": self.absolute_tolerance,
+            "relative_tolerance": self.relative_tolerance,
         }
 
     @property
@@ -998,6 +1051,7 @@ def named_linear_feasibility_problem(
     title: str = "Named Linear Feasibility Report",
     description: str | None = None,
     limitations: Sequence[str] = DEFAULT_LINEAR_FEASIBILITY_LIMITATIONS,
+    feasibility_tolerance: float = 1e-7,
 ) -> NamedLinearFeasibilityProblem:
     return NamedLinearFeasibilityProblem(
         variables=variables,
@@ -1007,6 +1061,7 @@ def named_linear_feasibility_problem(
         title=title,
         description=description,
         limitations=limitations,
+        feasibility_tolerance=feasibility_tolerance,
     )
 
 
@@ -1020,6 +1075,8 @@ def named_linear_claim(
     description: str | None = None,
     attribution_top: int = 5,
     diagnostic_top: int = 8,
+    absolute_tolerance: float = 1e-7,
+    relative_tolerance: float = 1e-9,
 ) -> NamedLinearClaim:
     return NamedLinearClaim(
         target=target,
@@ -1030,6 +1087,8 @@ def named_linear_claim(
         description=description,
         attribution_top=attribution_top,
         diagnostic_top=diagnostic_top,
+        absolute_tolerance=absolute_tolerance,
+        relative_tolerance=relative_tolerance,
     )
 
 
@@ -1285,6 +1344,184 @@ class _InequalityRow:
     bound: float
 
 
+@dataclass(frozen=True)
+class NamedLinearConflictReport(ReportArtifactMixin):
+    """A deletion-filter conflict, not necessarily the smallest conflict."""
+
+    scenario: str
+    status: str
+    members: tuple[NamedLinearConstraint, ...]
+    checks: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "scenario": self.scenario,
+            "status": self.status,
+            "members": [row.as_dict() for row in self.members],
+            "checks": self.checks,
+        }
+
+    def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
+        return {
+            "conflict_summary": (
+                {
+                    "scenario": self.scenario,
+                    "status": self.status,
+                    "checks": self.checks,
+                },
+            ),
+            "conflict_members": tuple(row.as_dict() for row in self.members),
+        }
+
+    def to_markdown(self) -> str:
+        lines = [
+            "# Constraint Conflict",
+            "",
+            f"- Scenario: {_escape_markdown(self.scenario)}",
+            f"- Status: {self.status}",
+            f"- Feasibility checks: {self.checks}",
+            "",
+            "An irreducible conflict cannot lose any single member and remain infeasible.",
+            "It is not necessarily the smallest conflict. Results use the problem's numerical tolerance.",
+            "",
+        ]
+        lines.extend(
+            f"- `{_escape_markdown(row.name)}`: {_escape_markdown(row.provenance or row.kind)}"
+            for row in self.members
+        )
+        return "\n".join(lines)
+
+
+def find_named_linear_conflict(
+    problem: NamedLinearFeasibilityProblem,
+    *,
+    scenario: str,
+    max_checks: int = 1000,
+) -> NamedLinearConflictReport:
+    """Find an irreducible infeasible subset, including variable-bound sides.
+
+    A constant feasibility objective avoids confusing an unbounded target with
+    an inconsistent problem. Exhausted budgets and numerical failures never
+    receive an irreducibility label.
+    """
+    max_checks = _positive_int(max_checks, "max_checks")
+    active = set(_scenario_by_name(problem, scenario).constraints)
+    candidates = [row for row in problem.constraints if row.name in active]
+    used = {row.name for row in problem.constraints} | set(problem.variable_names)
+
+    def unique(name: str) -> str:
+        while name in used:
+            name += "_"
+        used.add(name)
+        return name
+
+    for variable in problem.variables:
+        for side, value in (("lower", variable.lower), ("upper", variable.upper)):
+            if value is not None:
+                candidates.append(
+                    named_linear_constraint(
+                        unique(f"__bound_{variable.name}_{side}"),
+                        variable.name,
+                        **{side: value},
+                        kind="variable_bound",
+                        metadata={"variable": variable.name, "side": side},
+                    )
+                )
+    probe = named_linear_variable(unique("__feasibility_probe"), lower=0, upper=0)
+    target = named_linear_target(probe.name, probe.name)
+    variables = tuple(
+        replace(row, lower=None, upper=None) for row in problem.variables
+    ) + (probe,)
+
+    def status(members: Sequence[NamedLinearConstraint]) -> str:
+        trial = replace(
+            problem,
+            variables=variables,
+            constraints=members,
+            targets=(target,),
+            scenarios=(named_linear_scenario(scenario, [row.name for row in members]),),
+        )
+        return _solve_endpoint(
+            trial,
+            scenario=trial.scenarios[0],
+            constraints=members,
+            target=target,
+            sense="min",
+        ).status
+
+    initial = status(candidates)
+    checks = 1
+    if initial != "infeasible":
+        return NamedLinearConflictReport(
+            scenario, "feasible" if initial == "optimal" else "inconclusive", (), checks
+        )
+    remaining = list(candidates)
+    for candidate in candidates:
+        if checks >= max_checks:
+            return NamedLinearConflictReport(
+                scenario, "budget_exhausted", tuple(remaining), checks
+            )
+        trial = [row for row in remaining if row.name != candidate.name]
+        result = status(trial)
+        checks += 1
+        if result == "infeasible":
+            remaining = trial
+        elif result != "optimal":
+            return NamedLinearConflictReport(
+                scenario, "inconclusive", tuple(remaining), checks
+            )
+    return NamedLinearConflictReport(scenario, "irreducible", tuple(remaining), checks)
+
+
+def check_named_linear_assignment(
+    problem: NamedLinearFeasibilityProblem,
+    assignment: Mapping[str, float],
+    *,
+    scenario: str | NamedLinearScenario,
+) -> tuple[NamedLinearAssignmentCheck, ...]:
+    """Check all active constraints and variable bounds, including unused variables.
+
+    The absolute tolerance is recorded in the problem and applies in original
+    expression units. These are numerical checks, not exact-arithmetic proofs.
+    """
+    names = set(problem.variable_names)
+    if set(assignment) != names:
+        raise ValueError("assignment must contain exactly the problem variables")
+    values = {name: _finite_float(value, name) for name, value in assignment.items()}
+    scenario_row = (
+        _scenario_by_name(problem, scenario) if isinstance(scenario, str) else scenario
+    )
+    active = set(scenario_row.constraints)
+    if active - {row.name for row in problem.constraints}:
+        raise ValueError("scenario references unknown constraints")
+    rows = []
+    bounds = [
+        (row.name, "variable_bound", values[row.name], row.lower, row.upper)
+        for row in problem.variables
+    ] + [
+        (row.name, "constraint", row.expression.evaluate(values), row.lower, row.upper)
+        for row in problem.constraints
+        if row.name in active
+    ]
+    for name, kind, value, lower, upper in bounds:
+        for side, bound in (("lower", lower), ("upper", upper)):
+            if bound is None:
+                continue
+            violation = bound - value if side == "lower" else value - bound
+            rows.append(
+                NamedLinearAssignmentCheck(
+                    name=name,
+                    kind=kind,
+                    side=side,
+                    value=value,
+                    bound=bound,
+                    violation=max(0.0, violation),
+                    tolerance=problem.feasibility_tolerance,
+                )
+            )
+    return tuple(rows)
+
+
 def _solve_endpoint(
     problem: NamedLinearFeasibilityProblem,
     *,
@@ -1337,6 +1574,10 @@ def _solve_endpoint(
         b_ub=b_ub if b_ub else None,
         bounds=[(variable.lower, variable.upper) for variable in variables],
         method="highs",
+        options={
+            "primal_feasibility_tolerance": problem.feasibility_tolerance,
+            "dual_feasibility_tolerance": problem.feasibility_tolerance,
+        },
     )
     if not result.success:
         return NamedLinearEndpoint(
@@ -1352,6 +1593,30 @@ def _solve_endpoint(
         variable.name: float(result.x[index[variable.name]]) for variable in variables
     }
     value = target.expression.evaluate(assignment)
+    checks = (
+        ()
+        if any(not isfinite(v) for v in assignment.values())
+        else check_named_linear_assignment(
+            problem,
+            assignment,
+            scenario=scenario,
+        )
+    )
+    if (
+        not isfinite(value)
+        or any(not isfinite(v) for v in assignment.values())
+        or any(not row.passed for row in checks)
+    ):
+        return NamedLinearEndpoint(
+            scenario=scenario.name,
+            target=target.name,
+            sense=sense,
+            status="numerical_error",
+            assignment=assignment,
+            assignment_checks=checks,
+            solver_status=int(result.status),
+            message="Solver assignment failed residual checks in original units.",
+        )
     diagnostics = _constraint_diagnostics(
         scenario=scenario,
         target=target,
@@ -1359,6 +1624,7 @@ def _solve_endpoint(
         assignment=assignment,
         rows=inequality_rows,
         marginals=_inequality_marginals(result),
+        tol=problem.feasibility_tolerance,
     )
     return NamedLinearEndpoint(
         scenario=scenario.name,
@@ -1373,6 +1639,7 @@ def _solve_endpoint(
         constraint_diagnostics=diagnostics,
         solver_status=int(result.status),
         message=str(result.message),
+        assignment_checks=checks,
     )
 
 
@@ -1506,6 +1773,10 @@ def _interval_status(
 ) -> str:
     if lower.status == "optimal" and upper.status == "optimal":
         return "bounded"
+    if "numerical_error" in (lower.status, upper.status):
+        return "numerical_error"
+    if "failed" in (lower.status, upper.status):
+        return "failed"
     if lower.status == "infeasible" or upper.status == "infeasible":
         return "infeasible"
     if lower.status == "unbounded" or upper.status == "unbounded":
@@ -1524,7 +1795,7 @@ def _validate_expression_variables(
         raise ValueError(f"{owner} references unknown variables: {missing!r}")
 
 
-def _duplicates(values: Sequence[str]) -> list[str]:
+def _duplicates(values: Iterable[str]) -> list[str]:
     seen: set[str] = set()
     duplicates: list[str] = []
     for value in values:
@@ -1618,54 +1889,36 @@ def _claim_condition_rows(
     interval: NamedLinearInterval,
 ) -> list[dict[str, Any]]:
     rows = []
-    if claim.lower_at_least is not None:
-        threshold = claim.lower_at_least
+    for kind, threshold, endpoint, opposite, direction in (
+        ("lower_at_least", claim.lower_at_least, interval.lower, interval.upper, 1),
+        ("upper_at_most", claim.upper_at_most, interval.upper, interval.lower, -1),
+    ):
+        if threshold is None:
+            continue
+        tolerance = claim.absolute_tolerance + claim.relative_tolerance * abs(threshold)
         status = "inconclusive"
         margin = None
-        if interval.status == "bounded":
-            if interval.lower is not None and interval.lower >= threshold:
+        if interval.status in {"bounded", "unbounded"}:
+            margin = None if endpoint is None else direction * (endpoint - threshold)
+            opposing_margin = (
+                None if opposite is None else direction * (opposite - threshold)
+            )
+            if margin is not None and margin >= tolerance:
                 status = "pass"
-                margin = interval.lower - threshold
-            elif interval.upper is not None and interval.upper < threshold:
+            elif opposing_margin is not None and opposing_margin < -tolerance:
                 status = "fail"
-                margin = interval.upper - threshold
-            elif interval.lower is not None:
-                margin = interval.lower - threshold
+                margin = opposing_margin
         rows.append(
             {
-                "condition": f"{claim.target} >= {threshold:g}",
-                "type": "lower_at_least",
+                "condition": f"{claim.target} {'>=' if direction == 1 else '<='} {threshold:g}",
+                "type": kind,
                 "threshold": threshold,
                 "status": status,
                 "margin": margin,
-                "certifying_endpoint": "lower",
-                "endpoint_value": interval.lower,
-                "opposite_endpoint_value": interval.upper,
-            }
-        )
-    if claim.upper_at_most is not None:
-        threshold = claim.upper_at_most
-        status = "inconclusive"
-        margin = None
-        if interval.status == "bounded":
-            if interval.upper is not None and interval.upper <= threshold:
-                status = "pass"
-                margin = threshold - interval.upper
-            elif interval.lower is not None and interval.lower > threshold:
-                status = "fail"
-                margin = threshold - interval.lower
-            elif interval.upper is not None:
-                margin = threshold - interval.upper
-        rows.append(
-            {
-                "condition": f"{claim.target} <= {threshold:g}",
-                "type": "upper_at_most",
-                "threshold": threshold,
-                "status": status,
-                "margin": margin,
-                "certifying_endpoint": "upper",
-                "endpoint_value": interval.upper,
-                "opposite_endpoint_value": interval.lower,
+                "numerical_tolerance": tolerance,
+                "certifying_endpoint": "lower" if direction == 1 else "upper",
+                "endpoint_value": endpoint,
+                "opposite_endpoint_value": opposite,
             }
         )
     return rows
@@ -1675,7 +1928,7 @@ def _claim_verdict(
     interval: NamedLinearInterval,
     condition_rows: Sequence[Mapping[str, Any]],
 ) -> str:
-    if interval.status != "bounded":
+    if interval.status not in {"bounded", "unbounded"}:
         return "inconclusive"
     statuses = {str(row["status"]) for row in condition_rows}
     if "fail" in statuses:
@@ -1702,10 +1955,9 @@ def _claim_reasons(
     interval: NamedLinearInterval,
     condition_rows: Sequence[Mapping[str, Any]],
 ) -> list[str]:
-    if interval.status != "bounded":
+    if interval.status not in {"bounded", "unbounded"}:
         return [
-            "The active scenario did not produce a bounded feasible interval, "
-            "so the claim cannot be certified."
+            f"The active scenario has status {interval.status!r}; no claim is certified."
         ]
     if verdict == "pass":
         return ["The full feasible interval satisfies every asserted claim bound."]
@@ -1718,7 +1970,7 @@ def _claim_reasons(
         ]
     return [
         f"Condition `{row['condition']}` is not certified because the feasible "
-        "interval crosses the asserted threshold."
+        "bounds do not resolve it at the declared numerical tolerance."
         for row in condition_rows
         if row["status"] == "inconclusive"
     ]

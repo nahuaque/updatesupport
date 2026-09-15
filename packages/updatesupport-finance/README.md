@@ -345,6 +345,21 @@ Upstream-share claim while geography alone does not.
 
 ## Analyst Workflow
 
+For feed-backed disclosure analysis, the package also provides:
+
+- `DisclosureFact`, precision-aware fact constraints, and explicit evidence links;
+- compatibility, filing-version, availability, and derivation-lineage diagnostics;
+- claim-aware supporting/opposing allocation tables with residual checks;
+- rounded-amount, reconciliation, and signed stock-flow helpers;
+- source-linked irreducible conflict diagnosis;
+- versioned offline snapshots, replay, and structured before/after comparisons.
+
+See the [disclosure evidence guide](https://github.com/nahuaque/updatesupport/blob/main/docs/disclosure-evidence.md)
+and `examples/disclosure_evidence_workflow.py` for a complete offline example.
+Vendor retrieval and historical filing-version selection belong in the adapter.
+
+### Portfolio review
+
 1. Choose public buckets from the model report.
 2. Choose hidden refinements that are available internally but not shown in the
    public segmentation.

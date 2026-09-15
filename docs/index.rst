@@ -145,6 +145,7 @@ stress-test family.
    benchmark-gallery
    revops-funnel-analysis
    extensions
+   disclosure-evidence
    folktables-acs-income-interpretation
 
 .. toctree::

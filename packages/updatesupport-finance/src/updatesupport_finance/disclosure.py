@@ -8,8 +8,12 @@ from typing import Any
 
 import updatesupport as us
 
+from .allocations import DisclosureAllocationReport, disclosure_allocations
+from .evidence import DisclosureFact, validate_disclosure_evidence
+
 
 DisclosureVariable = us.NamedLinearVariable
+DisclosureConflictReport = us.NamedLinearConflictReport
 DisclosureExpression = us.NamedLinearExpression
 DisclosureConstraint = us.NamedLinearConstraint
 DisclosureConstraintAttribution = us.NamedLinearConstraintAttribution
@@ -57,11 +61,23 @@ class DisclosureAuditPack:
     reviewer_notes: Sequence[str] = ()
     diagnostic_top: int = 8
     limitations: Sequence[str] = DEFAULT_DISCLOSURE_AUDIT_LIMITATIONS
+    evidence: Sequence[DisclosureFact] = ()
+    allocations: DisclosureAllocationReport | None = None
 
     def __post_init__(self) -> None:
         # Validate target/tier eagerly so an audit pack cannot point at a
         # missing interval.
         self.report.interval(target=self.target, scenario=self.tier)
+        object.__setattr__(self, "evidence", tuple(self.evidence))
+        if self.evidence:
+            diagnostics = validate_disclosure_evidence(
+                self.evidence, problem=self.report.problem
+            )
+            if diagnostics:
+                raise ValueError(
+                    "invalid disclosure evidence: "
+                    + "; ".join(row.code for row in diagnostics)
+                )
         object.__setattr__(self, "sources", tuple(dict(row) for row in self.sources))
         object.__setattr__(
             self,
@@ -113,6 +129,10 @@ class DisclosureAuditPack:
             ],
             "limitations": list(self.limitations),
             "triangulation_report": self.report.as_dict(),
+            "evidence": [row.as_dict() for row in self.evidence],
+            "allocations": None
+            if self.allocations is None
+            else self.allocations.as_dict(),
         }
 
     def to_json(self, **kwargs: Any) -> str:
@@ -175,6 +195,11 @@ class DisclosureAuditPack:
             tables["disclosure_audit_constraint_attribution"] = tuple(
                 row.as_dict() for row in self.attribution.rows
             )
+        tables["disclosure_audit_evidence"] = tuple(
+            row.as_dict() for row in self.evidence
+        )
+        if self.allocations is not None:
+            tables.update(self.allocations.to_tables())
         return tables
 
     def to_dataframes(self) -> dict[str, Any]:
@@ -206,6 +231,21 @@ class DisclosureAuditPack:
         if self.sources:
             lines.extend(["", "## Source Disclosures", ""])
             lines.extend(_source_table(self.sources))
+        if self.evidence:
+            lines.extend(["", "## Structured Evidence", ""])
+            lines.extend(
+                _source_table(
+                    [
+                        {
+                            "label": f"{row.fact_id}: {row.concept}",
+                            "value": f"{row.base_value:.10g} {row.unit}",
+                            "url": row.source_url,
+                            "description": f"{row.period_start or 'instant'} to {row.period_end}; available {row.available_at}; source {row.source_id}",
+                        }
+                        for row in self.evidence
+                    ]
+                )
+            )
         lines.extend(["", "## Modeled Constraints", ""])
         lines.extend(_active_constraint_table(self.report, self.tier))
         if self.claim_audit is not None:
@@ -224,6 +264,8 @@ class DisclosureAuditPack:
         if self.assumptions:
             lines.extend(["", "## Assumptions", ""])
             lines.extend(f"- {row}" for row in self.assumptions)
+        if self.allocations is not None:
+            lines.extend(["", self.allocations.to_markdown()])
         if self.reviewer_notes:
             lines.extend(["", "## Reviewer Notes", ""])
             lines.extend(f"- {row}" for row in self.reviewer_notes)
@@ -484,6 +526,7 @@ def disclosure_triangulation_spec(
     title: str = "Disclosure Triangulation Report",
     description: str | None = None,
     limitations: Sequence[str] = us.DEFAULT_LINEAR_FEASIBILITY_LIMITATIONS,
+    feasibility_tolerance: float = 1e-7,
 ) -> DisclosureTriangulationSpec:
     """Build a generic disclosure-triangulation feasibility spec."""
 
@@ -495,6 +538,7 @@ def disclosure_triangulation_spec(
         title=title,
         description=description,
         limitations=limitations,
+        feasibility_tolerance=feasibility_tolerance,
     )
 
 
@@ -504,6 +548,16 @@ def triangulate_disclosure(
     """Solve a disclosure triangulation spec with the core named-linear solver."""
 
     return us.solve_named_linear_feasibility(spec)
+
+
+def find_disclosure_conflict(
+    spec: DisclosureTriangulationSpec,
+    *,
+    tier: str,
+    max_checks: int = 1000,
+) -> DisclosureConflictReport:
+    """Locate an irreducible conflict with disclosure provenance and bound sides."""
+    return us.find_named_linear_conflict(spec, scenario=tier, max_checks=max_checks)
 
 
 def attribute_disclosure_constraints(
@@ -537,6 +591,8 @@ def disclosure_claim(
     description: str | None = None,
     attribution_top: int = 5,
     diagnostic_top: int = 8,
+    absolute_tolerance: float = 1e-7,
+    relative_tolerance: float = 1e-9,
 ) -> DisclosureClaim:
     """Create a claim about a disclosure-triangulation target interval."""
 
@@ -549,6 +605,8 @@ def disclosure_claim(
         description=description,
         attribution_top=attribution_top,
         diagnostic_top=diagnostic_top,
+        absolute_tolerance=absolute_tolerance,
+        relative_tolerance=relative_tolerance,
     )
 
 
@@ -575,6 +633,8 @@ def disclosure_audit_pack(
     attribution_top: int | None = 8,
     diagnostic_top: int = 8,
     limitations: Sequence[str] = DEFAULT_DISCLOSURE_AUDIT_LIMITATIONS,
+    evidence: Sequence[DisclosureFact] = (),
+    include_allocations: bool = True,
 ) -> DisclosureAuditPack:
     """Build an analyst-facing disclosure audit pack.
 
@@ -614,6 +674,12 @@ def disclosure_audit_pack(
         reviewer_notes=reviewer_notes,
         diagnostic_top=diagnostic_top,
         limitations=limitations,
+        evidence=evidence,
+        allocations=disclosure_allocations(
+            report, target=target, tier=tier, claim=claim
+        )
+        if include_allocations
+        else None,
     )
 
 
@@ -772,8 +838,8 @@ def _active_constraint_table(
 
 def _claim_summary_table(claim_audit: DisclosureClaimAudit) -> list[str]:
     lines = [
-        "| Condition | Status | Endpoint | Endpoint value | Margin |",
-        "| --- | --- | --- | ---: | ---: |",
+        "| Condition | Status | Endpoint | Endpoint value | Margin | Numerical buffer |",
+        "| --- | --- | --- | ---: | ---: | ---: |",
     ]
     for row in claim_audit.condition_rows:
         lines.append(
@@ -787,6 +853,7 @@ def _claim_summary_table(claim_audit: DisclosureClaimAudit) -> list[str]:
                     ),
                     _format_optional(row.get("endpoint_value")),
                     _format_optional(row.get("margin")),
+                    f"{row.get('numerical_tolerance', 0):.6g}",
                 ]
             )
             + " |"
@@ -888,6 +955,8 @@ def _escape_markdown(value: str) -> str:
 
 
 __all__ = [
+    "DisclosureConflictReport",
+    "find_disclosure_conflict",
     "DEFAULT_DISCLOSURE_AUDIT_LIMITATIONS",
     "DisclosureAuditPack",
     "DisclosureClaim",

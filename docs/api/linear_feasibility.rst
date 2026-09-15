@@ -17,6 +17,10 @@ a public/hidden cell recomposition problem.
    updatesupport.named_linear_claim
    updatesupport.audit_named_linear_claim
    updatesupport.attribute_named_linear_constraints
+   updatesupport.check_named_linear_assignment
+   updatesupport.find_named_linear_conflict
+   updatesupport.NamedLinearAssignmentCheck
+   updatesupport.NamedLinearConflictReport
    updatesupport.NamedLinearFeasibilityProblem
    updatesupport.NamedLinearFeasibilityReport
    updatesupport.NamedLinearClaim

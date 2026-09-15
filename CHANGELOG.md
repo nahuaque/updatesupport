@@ -6,6 +6,16 @@ All notable changes to `updatesupport` are documented here.
 
 ### Added
 
+- Added vendor-neutral financial disclosure facts, precision-aware compilation,
+  evidence-context validation, and explicit source links on constraints.
+- Added claim-aware feasible allocation tables, financial reconciliation
+  helpers, and versioned disclosure snapshots with offline replay and run diffs.
+- Added named-linear assignment residual checks and irreducible conflict
+  diagnosis, including variable bounds and financial source provenance.
+- Named-linear claims now handle sufficient one-sided bounds and record an
+  explicit numerical decision buffer; failures and infeasibility remain distinct
+  from unresolved thresholds. Exact comparisons are available with zero buffers.
+
 - Added optional claim-level `max_dropped_weight_share` requirements, with
   retained-weight evidence beside verdicts and in structured exports, and
   coverage-aware repair, rollup, portfolio, and frozen-policy evaluation.

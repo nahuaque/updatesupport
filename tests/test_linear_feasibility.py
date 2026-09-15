@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import updatesupport as us
 
@@ -107,6 +109,165 @@ def _example_problem() -> us.NamedLinearFeasibilityProblem:
 
 
 class NamedLinearFeasibilityTests(unittest.TestCase):
+    def test_conflict_is_irreducible_and_includes_variable_bounds(self):
+        constraints = [
+            us.named_linear_constraint("reported", "x", lower=2, provenance="filing"),
+            us.named_linear_constraint("irrelevant", "y", lower=0),
+        ]
+        problem = us.named_linear_feasibility_problem(
+            variables=[us.named_linear_variable("x", upper=1), "y"],
+            constraints=constraints,
+            targets=[us.named_linear_target("x", "x")],
+            scenarios=[
+                us.named_linear_scenario("s", [row.name for row in constraints])
+            ],
+        )
+        report = us.find_named_linear_conflict(problem, scenario="s")
+        self.assertEqual(report.status, "irreducible")
+        self.assertEqual(len(report.members), 2)
+        self.assertEqual(
+            {row.kind for row in report.members}, {"linear", "variable_bound"}
+        )
+        self.assertNotIn("irrelevant", {row.name for row in report.members})
+        # Verify the advertised property independently using the public solver.
+        for omitted in report.members:
+            remaining = [row for row in report.members if row != omitted]
+            trial = us.named_linear_feasibility_problem(
+                variables=["x", "y"],
+                constraints=remaining,
+                targets=[us.named_linear_target("x", "x")],
+                scenarios=[
+                    us.named_linear_scenario("s", [row.name for row in remaining])
+                ],
+            )
+            self.assertNotEqual(
+                us.solve_named_linear_feasibility(trial)
+                .interval(target="x", scenario="s")
+                .status,
+                "infeasible",
+            )
+        limited = us.find_named_linear_conflict(problem, scenario="s", max_checks=1)
+        self.assertEqual(limited.status, "budget_exhausted")
+        self.assertIn("filing", report.to_markdown())
+
+    def test_unbounded_objective_is_not_a_conflict(self):
+        problem = us.named_linear_feasibility_problem(
+            variables=["x"],
+            constraints=[],
+            targets=[us.named_linear_target("x", "x")],
+            scenarios=[us.named_linear_scenario("s", [])],
+        )
+        self.assertEqual(
+            us.find_named_linear_conflict(problem, scenario="s").status, "feasible"
+        )
+
+    def test_one_sided_bounds_can_certify_or_refute_claims(self):
+        for lower, upper, supported, refuted in (
+            (10.0, None, {"lower_at_least": 5}, {"upper_at_most": 5}),
+            (None, -10.0, {"upper_at_most": -5}, {"lower_at_least": -5}),
+        ):
+            problem = us.named_linear_feasibility_problem(
+                variables=[us.named_linear_variable("x", lower=lower, upper=upper)],
+                constraints=[],
+                targets=[us.named_linear_target("x", "x")],
+                scenarios=[us.named_linear_scenario("s", [])],
+            )
+            report = us.solve_named_linear_feasibility(problem)
+            self.assertEqual(
+                report.interval(target="x", scenario="s").status, "unbounded"
+            )
+            self.assertEqual(
+                us.named_linear_claim(target="x", scenario="s", **supported)
+                .audit(report)
+                .verdict,
+                "pass",
+            )
+            self.assertEqual(
+                us.named_linear_claim(target="x", scenario="s", **refuted)
+                .audit(report)
+                .verdict,
+                "fail",
+            )
+
+    def test_threshold_roundoff_is_inconclusive_with_recorded_tolerance(self):
+        problem = us.named_linear_feasibility_problem(
+            variables=[us.named_linear_variable("x", lower=10.0 + 1e-8, upper=20)],
+            constraints=[],
+            targets=[us.named_linear_target("x", "x")],
+            scenarios=[us.named_linear_scenario("s", [])],
+        )
+        report = us.solve_named_linear_feasibility(problem)
+        claim = us.named_linear_claim(target="x", scenario="s", lower_at_least=10)
+        audit = claim.audit(report)
+        self.assertEqual(audit.verdict, "inconclusive")
+        self.assertGreater(audit.condition_rows[0]["numerical_tolerance"], 1e-8)
+        exact = us.named_linear_claim(
+            target="x",
+            scenario="s",
+            lower_at_least=10,
+            absolute_tolerance=0,
+            relative_tolerance=0,
+        )
+        self.assertEqual(exact.audit(report).verdict, "pass")
+
+    def test_successful_solver_assignment_must_pass_variable_bound_checks(self):
+        problem = us.named_linear_feasibility_problem(
+            variables=[us.named_linear_variable("x", lower=0, upper=1)],
+            constraints=[us.named_linear_constraint("loose", "x", upper=10)],
+            targets=[us.named_linear_target("x", "x")],
+            scenarios=[us.named_linear_scenario("s", ["loose"])],
+        )
+        fake = SimpleNamespace(success=True, x=[2.0], status=0, message="optimal")
+        with patch("updatesupport.linear_feasibility.linprog", return_value=fake):
+            report = us.solve_named_linear_feasibility(problem)
+        interval = report.interval(target="x", scenario="s")
+        self.assertEqual(interval.status, "numerical_error")
+        self.assertIsNone(interval.lower)
+        checks = interval.lower_endpoint.assignment_checks
+        failed = [row for row in checks if not row.passed]
+        self.assertEqual(
+            [(row.name, row.kind, row.side) for row in failed],
+            [("x", "variable_bound", "upper")],
+        )
+        self.assertEqual(
+            us.named_linear_claim(target="x", scenario="s", lower_at_least=-1)
+            .audit(report)
+            .verdict,
+            "inconclusive",
+        )
+        self.assertIn("endpoint_assignment_checks", report.to_tables())
+
+    def test_failed_endpoint_is_not_masked_by_unbounded_other_endpoint(self):
+        problem = us.named_linear_feasibility_problem(
+            variables=["x"],
+            constraints=[],
+            targets=[us.named_linear_target("x", "x")],
+            scenarios=[us.named_linear_scenario("s", [])],
+        )
+        with patch(
+            "updatesupport.linear_feasibility.linprog",
+            side_effect=[
+                SimpleNamespace(
+                    success=False, status=4, message="numerical difficulty"
+                ),
+                SimpleNamespace(success=False, status=3, message="unbounded"),
+            ],
+        ):
+            report = us.solve_named_linear_feasibility(problem)
+        self.assertEqual(report.interval(target="x", scenario="s").status, "failed")
+
+    def test_assignment_checks_cover_constraints_and_validate_keys(self):
+        problem = _example_problem()
+        assignment = {name: 0.0 for name in problem.variable_names}
+        checks = us.check_named_linear_assignment(
+            problem, assignment, scenario="T0 containment"
+        )
+        self.assertTrue(
+            any(row.kind == "constraint" and not row.passed for row in checks)
+        )
+        with self.assertRaisesRegex(ValueError, "exactly"):
+            us.check_named_linear_assignment(problem, {}, scenario="T0 containment")
+
     def test_solves_tiered_named_linear_intervals(self):
         report = us.solve_named_linear_feasibility(_example_problem())
 
@@ -282,9 +443,7 @@ class NamedLinearFeasibilityTests(unittest.TestCase):
                     )
                 ],
                 targets=[us.named_linear_target("x", "x")],
-                scenarios=[
-                    us.named_linear_scenario("scenario", ["bad_constraint"])
-                ],
+                scenarios=[us.named_linear_scenario("scenario", ["bad_constraint"])],
             )
 
     def test_unbounded_and_infeasible_statuses_are_reported(self):
@@ -301,9 +460,7 @@ class NamedLinearFeasibilityTests(unittest.TestCase):
         infeasible = us.solve_named_linear_feasibility(
             us.named_linear_feasibility_problem(
                 variables=[us.named_linear_variable("x", lower=0.0, upper=1.0)],
-                constraints=[
-                    us.named_linear_constraint("too_high", "x", lower=2.0)
-                ],
+                constraints=[us.named_linear_constraint("too_high", "x", lower=2.0)],
                 targets=[us.named_linear_target("x", "x")],
                 scenarios=[us.named_linear_scenario("closed", ["too_high"])],
             )
