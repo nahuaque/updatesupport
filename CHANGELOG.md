@@ -4,6 +4,8 @@ All notable changes to `updatesupport` are documented here.
 
 ## Unreleased
 
+## 0.1.6 - 2026-09-15
+
 ### Added
 
 - Added vendor-neutral financial disclosure facts, precision-aware compilation,
@@ -47,6 +49,14 @@ All notable changes to `updatesupport` are documented here.
   ordered holdout backtests, including deterministic policy fingerprints,
   design-period support contracts, realized TV-radius monitoring, support-drift
   diagnostics, operational verdicts, and structured exports.
+
+### Packaging and QA
+
+- Released `updatesupport` `0.1.6` and `updatesupport-finance` `0.1.5`.
+- Raised the core `finance` extra to `updatesupport-finance>=0.1.5` and the
+  finance plugin core dependency floor to `updatesupport>=0.1.6`.
+- Synchronized the finance plugin descriptor and Colab installation requirements
+  with the released package versions.
 
 ## 0.1.5 - 2026-07-09
 
