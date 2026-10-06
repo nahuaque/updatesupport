@@ -6,6 +6,16 @@ All notable changes to `updatesupport` are documented here.
 
 ### Added
 
+- Finance measurement contracts and completeness/freshness ledgers, with
+  source-preserving numerical normalization and shared-primitive cash bridges.
+- Rounded percentage allocation margins and share-threshold targets with
+  explicit, positive amount denominators.
+- Dated flow partitions, cumulative subtotals and explicitly selected timing
+  schedules, retaining measurement and source-cohort scope.
+- Structured evidence roles and constraint policies, named stress cases with
+  conflict diagnosis, and break-even decision-variable analyses.
+- Analyst decision briefs and snapshot comparison guards for target definitions,
+  measurement windows and anonymous cohorts; older snapshots still replay.
 - Finance portfolio universe/coverage ledgers and fixed-weight missing-data
   bounds, with provider-neutral holdings/fundamentals compilation, fiscal
   normalization diagnostics, explicit metric policies, and taxonomy provenance.

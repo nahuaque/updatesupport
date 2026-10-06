@@ -3,8 +3,42 @@
 Financial model-risk extensions for
 [`updatesupport`](https://pypi.org/project/updatesupport/).
 
-`updatesupport-finance` audits whether a public risk segmentation is stable
-enough to support a reported portfolio metric.
+`updatesupport-finance` audits what financial summaries and disclosures support.
+It bounds hidden allocations, tests claims against supplied evidence, and shows
+how conclusions depend on measurement definitions and assumptions. It also
+audits whether a public risk segmentation supports a reported portfolio metric.
+
+## Disclosure analysis for analysts
+
+The development workflow supports questions such as how much segment revenue
+must come from a disclosed customer group, whether cash measures treat advances
+consistently, and what funding is required under an explicitly chosen plan.
+
+1. Declare `MeasurementDefinition` and `DisclosureRequirement` contracts; use
+   `compile_disclosure_evidence` to quarantine missing, stale or incomplete inputs.
+   Numerical normalization preserves original facts and source precision.
+2. Compile amount and percentage disclosures with `allocation_table`,
+   `AllocationMargin` and `AllocationShareMargin`. `share_target` tests a threshold
+   with a positive, explicitly named denominator.
+3. Use `CashMeasure` and `cash_bridge_constraint` for declared cash definitions;
+   use `time_window_allocation` for dated flow partitions. Choose conversion
+   schedules explicitly; stocks and lifetime commitments are not annual flows.
+4. Label `ConstraintPolicy` groups as reported evidence, accounting relationships,
+   management expectations or analyst policies. Named `DisclosureStressCase`
+   replacements re-solve the complete model. `break_even_analysis` bounds a
+   decision variable under supplied conditions and reports infeasible cases.
+5. Save `capture_disclosure_snapshot(..., context=...)` with normalization maps
+   and a `DisclosureScope`. Create an `AnalystDecisionBrief` from audit packs,
+   arithmetic baselines, decision impacts and concrete missing evidence.
+   Comparison guards flag different windows and anonymous customer cohorts.
+
+These additions are unreleased; use the finance package from this checkout.
+See the [synthetic analyst example](examples/analyst_decision_workflow.py) and
+[workflow documentation](../../docs/disclosure-evidence.md). Source retrieval,
+accounting interpretation and the selection of policies remain explicit inputs.
+No provider credentials or proprietary captures are needed to use these APIs.
+
+## Segmentation and model review
 
 The core question is:
 
@@ -39,11 +73,11 @@ The package provides finance-oriented row metrics, Q preset aliases, portfolio
 compilation, and a model-risk report profile while keeping financial vocabulary
 out of the core `updatesupport` package.
 
-It also provides a thin disclosure-triangulation front end over the core
+It also provides a disclosure-triangulation front end over the core
 `updatesupport` named-linear feasibility solver. That surface is generic:
 unknown variables, linear constraints, target expressions, and tiered
 assumption sets are user supplied. The finance package only adds disclosure
-vocabulary, provenance fields, and convenience constructors.
+vocabulary, provenance, declared measurement contracts and modeling helpers.
 
 Conic concentration presets require the core CVXPY extra when solved:
 

@@ -52,6 +52,43 @@ from .snapshots import (
     capture_disclosure_snapshot,
     compare_disclosure_snapshots,
 )
+from .measurements import (
+    MeasurementDefinition,
+    MeasurementObservation,
+    DisclosureRequirement,
+    NormalizedDisclosureFact,
+    CompiledDisclosureEvidence,
+    normalize_disclosure_fact,
+    compile_disclosure_evidence,
+    CashMeasure,
+    cash_measure_constraints,
+    cash_bridge_constraint,
+)
+from .shares import (
+    AllocationShareMargin,
+    ShareThreshold,
+    percentage_constraints,
+    share_threshold_target,
+)
+from .windows import DisclosureWindow, TimeWindowAllocation, time_window_allocation
+from .scenarios import (
+    EvidenceRole,
+    ConstraintPolicy,
+    DisclosureStressCase,
+    DisclosureScenarioAnalysis,
+    constraint_evidence_role,
+    disclosure_support_basis,
+    compile_disclosure_scenarios,
+    run_disclosure_scenarios,
+    break_even_analysis,
+)
+from .briefs import (
+    DisclosureScope,
+    AnalystBaseline,
+    AnalystFinding,
+    AnalystDecisionBrief,
+    compare_disclosure_scopes,
+)
 
 from .disclosure import (
     DisclosureConflictReport,
@@ -119,6 +156,37 @@ except PackageNotFoundError:
     __version__ = "0.0.0"
 
 __all__ = [
+    "MeasurementDefinition",
+    "MeasurementObservation",
+    "DisclosureRequirement",
+    "NormalizedDisclosureFact",
+    "CompiledDisclosureEvidence",
+    "normalize_disclosure_fact",
+    "compile_disclosure_evidence",
+    "CashMeasure",
+    "cash_measure_constraints",
+    "cash_bridge_constraint",
+    "AllocationShareMargin",
+    "ShareThreshold",
+    "percentage_constraints",
+    "share_threshold_target",
+    "DisclosureWindow",
+    "TimeWindowAllocation",
+    "time_window_allocation",
+    "EvidenceRole",
+    "ConstraintPolicy",
+    "DisclosureStressCase",
+    "DisclosureScenarioAnalysis",
+    "constraint_evidence_role",
+    "disclosure_support_basis",
+    "compile_disclosure_scenarios",
+    "run_disclosure_scenarios",
+    "break_even_analysis",
+    "DisclosureScope",
+    "AnalystBaseline",
+    "AnalystFinding",
+    "AnalystDecisionBrief",
+    "compare_disclosure_scopes",
     "PortfolioPosition",
     "PortfolioUniverse",
     "PortfolioCoverageEntry",

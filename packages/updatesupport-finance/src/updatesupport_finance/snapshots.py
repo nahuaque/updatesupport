@@ -15,6 +15,7 @@ import updatesupport as us
 
 from .disclosure import DisclosureAuditPack, disclosure_audit_pack
 from .evidence import DisclosureFact, _timestamp, validate_disclosure_evidence
+from .measurements import validate_normalization_records
 
 
 def _canonical(payload: Any) -> str:
@@ -79,6 +80,14 @@ class DisclosureSnapshot:
         payload["as_of"] = _timestamp(payload["as_of"])
         problem = us.NamedLinearFeasibilityProblem(**payload["problem"])
         facts = tuple(DisclosureFact(**row) for row in payload["facts"])
+        context = payload.get("context", {})
+        if not isinstance(context, dict):
+            raise ValueError("snapshot context must be a mapping")
+        validate_normalization_records(context.get("normalizations", ()), facts)
+        if "scope" in context:
+            from .briefs import DisclosureScope
+
+            DisclosureScope(**context["scope"])
         diagnostics = validate_disclosure_evidence(
             facts, problem=problem, as_of=payload["as_of"]
         )
@@ -152,6 +161,7 @@ def capture_disclosure_snapshot(
     tier: str,
     claim: us.NamedLinearClaim | None = None,
     assumptions: Sequence[str] = (),
+    context: Mapping[str, Any] | None = None,
 ) -> DisclosureSnapshot:
     """Validate, solve, and capture an offline audit in one portable bundle."""
     cutoff = _timestamp(as_of)
@@ -183,6 +193,7 @@ def capture_disclosure_snapshot(
                 "assumptions": list(assumptions),
                 "versions": _versions(),
                 "result": pack.as_dict(),
+                **({"context": dict(context)} if context is not None else {}),
             }
         )
     )
@@ -206,9 +217,26 @@ def compare_disclosure_snapshots(
 
     Differences are descriptive, not causal attribution. Stable fact IDs match
     records; a revision with a new ID appears as a removal and an addition.
-    The caller decides whether different targets or periods are comparable.
+    Optional saved scopes guard period/cohort comparisons; missing scopes remain
+    unassessed. This does not assign causes to observed differences.
     """
     left, right = before.as_dict(), after.as_dict()
+    from .briefs import compare_disclosure_scopes
+
+    comparability = compare_disclosure_scopes(
+        left.get("context", {}).get("scope"), right.get("context", {}).get("scope")
+    )
+    ltarget = next(t for t in left["problem"]["targets"] if t["name"] == left["target"])
+    rtarget = next(
+        t for t in right["problem"]["targets"] if t["name"] == right["target"]
+    )
+    if any(ltarget[k] != rtarget[k] for k in ("expression", "unit", "scale")):
+        comparability = {
+            "status": "not_comparable",
+            "comparable": False,
+            "reasons": [*comparability["reasons"], "different target definitions"],
+            "causal": False,
+        }
 
     def named(rows: Sequence[Mapping[str, Any]], key: str) -> dict[str, Any]:
         return {row[key]: row for row in rows}
@@ -220,6 +248,10 @@ def compare_disclosure_snapshots(
     return {
         "before_fingerprint": before.fingerprint,
         "after_fingerprint": after.fingerprint,
+        "comparability": comparability,
+        "context_changes": _mapping_changes(
+            left.get("context", {}), right.get("context", {})
+        ),
         "as_of": {"before": left["as_of"], "after": right["as_of"]},
         "fact_changes": _mapping_changes(
             named(left["facts"], "fact_id"), named(right["facts"], "fact_id")

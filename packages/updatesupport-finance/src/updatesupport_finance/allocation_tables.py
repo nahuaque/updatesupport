@@ -14,6 +14,12 @@ from .evidence import (
     validate_disclosure_evidence,
 )
 from .relationships import reconciliation_constraint
+from .shares import (
+    AllocationShareMargin,
+    ShareThreshold,
+    percentage_constraints,
+    share_threshold_target,
+)
 
 
 @dataclass(frozen=True)
@@ -119,6 +125,7 @@ class AllocationTable:
     unit: str
     as_of: str
     title: str
+    amount_margins: tuple[AllocationMargin, ...] = ()
 
     def target(self, name, *, rows=None, columns=None):
         _, row_leaves, row_hierarchy = _axis(self.row_members)
@@ -135,16 +142,67 @@ class AllocationTable:
             unit=self.unit,
         )
 
+    def share_target(
+        self, name, *, denominator, threshold, rows=None, columns=None, label=None
+    ):
+        by_name = {m.name: (i, m) for i, m in enumerate(self.amount_margins)}
+        if denominator not in by_name:
+            raise ValueError("share denominator must name an amount margin")
+        index, margin = by_name[denominator]
+        _, row_leaves, row_hierarchy = _axis(self.row_members)
+        _, col_leaves, col_hierarchy = _axis(self.column_members)
+        if not set(_select(rows, row_leaves, row_hierarchy)) <= set(
+            _select(margin.rows, row_leaves, row_hierarchy)
+        ) or not set(_select(columns, col_leaves, col_hierarchy)) <= set(
+            _select(margin.columns, col_leaves, col_hierarchy)
+        ):
+            raise ValueError(
+                "share numerator must be contained in its denominator selection"
+            )
+        if margin.fact.decimals is None:
+            raise ValueError(
+                "denominator needs known precision to establish positivity"
+            )
+        numerator = self.target(name, rows=rows, columns=columns).expression
+        return share_threshold_target(
+            name,
+            numerator=numerator,
+            denominator=f"margin_{index}",
+            threshold=threshold,
+            denominator_lower_bound=margin.fact.base_value
+            - 0.5 * 10 ** (-margin.fact.decimals),
+            denominator_fact=margin.fact,
+            unit=self.unit,
+            label=label,
+        )
+
     def problem(self, targets, *, scenarios=None):
+        targets = tuple(targets)
+        positivity = tuple(
+            t.positivity for t in targets if isinstance(t, ShareThreshold)
+        )
+        constraints = self.constraints + positivity
+        targets = tuple(
+            t.target if isinstance(t, ShareThreshold) else t for t in targets
+        )
         if scenarios is None:
             scenarios = (
+                us.NamedLinearScenario("reported", tuple(c.name for c in constraints)),
+            )
+        else:
+            scenarios = tuple(
                 us.NamedLinearScenario(
-                    "reported", tuple(c.name for c in self.constraints)
-                ),
+                    s.name,
+                    tuple(
+                        dict.fromkeys((*s.constraints, *(c.name for c in positivity)))
+                    ),
+                    description=s.description,
+                )
+                for s in scenarios
             )
         return us.NamedLinearFeasibilityProblem(
             self.variables,
-            self.constraints,
+            constraints,
             targets,
             scenarios,
             title=self.title,
@@ -173,7 +231,7 @@ def allocation_table(
     *,
     rows: Sequence[AllocationMember],
     columns: Sequence[AllocationMember],
-    margins: Sequence[AllocationMargin],
+    margins: Sequence[AllocationMargin | AllocationShareMargin],
     measure: str,
     unit: str,
     as_of: str,
@@ -204,11 +262,23 @@ def allocation_table(
     facts = tuple(m.fact for m in margins)
     if len({f.fact_id for f in facts}) != len(facts):
         raise ValueError("each margin must reference a distinct fact ID")
+    amount_margins = tuple(m for m in margins if isinstance(m, AllocationMargin))
+    share_margins = tuple(m for m in margins if isinstance(m, AllocationShareMargin))
+    if not amount_margins or len(amount_margins) + len(share_margins) != len(margins):
+        raise ValueError("tables require amount margins and declared margin types")
     contexts = {
-        (f.entity, f.period_start, f.period_end, f.unit, f.currency) for f in facts
+        (
+            m.fact.entity,
+            m.fact.period_start,
+            m.fact.period_end,
+            m.fact.unit,
+            m.fact.currency,
+        )
+        for m in amount_margins
     }
     if len(contexts) > 1 or any(
-        m.fact.unit != unit or (m.measure or m.fact.concept) != measure for m in margins
+        m.fact.unit != unit or (m.measure or m.fact.concept) != measure
+        for m in amount_margins
     ):
         raise ValueError(
             "margin facts must share entity, period, measure, unit, and currency"
@@ -237,7 +307,7 @@ def allocation_table(
         for (r, c), v in cells.items()
     ]
     constraints = []
-    for index, margin in enumerate(margins):
+    for index, margin in enumerate(amount_margins):
         name = f"margin_{index}"
         variables.append(
             us.NamedLinearVariable(name, lower=0, unit=unit, label=margin.name)
@@ -256,6 +326,7 @@ def allocation_table(
                 components=[cells[r, c] for r in selected_rows for c in selected_cols],
                 provenance=margin.fact.source_url,
                 metadata={
+                    "evidence_role": "accounting_relationship",
                     "fact_ids": [margin.fact.fact_id],
                     "varying_fields": [],
                     "rows": list(selected_rows),
@@ -265,6 +336,42 @@ def allocation_table(
                     "declared_measure": measure,
                     "source_concept": margin.fact.concept,
                 },
+            )
+        )
+    by_name = {m.name: (i, m) for i, m in enumerate(amount_margins)}
+    for margin in share_margins:
+        if margin.denominator not in by_name:
+            raise ValueError("share denominator must name an amount margin")
+        index, denominator = by_name[margin.denominator]
+        if (margin.fact.entity, margin.fact.period_start, margin.fact.period_end) != (
+            denominator.fact.entity,
+            denominator.fact.period_start,
+            denominator.fact.period_end,
+        ):
+            raise ValueError("share and denominator must share entity and period")
+        selected_rows = _select(margin.rows, row_leaves, row_hierarchy)
+        selected_cols = _select(margin.columns, col_leaves, col_hierarchy)
+        if not set(selected_rows) <= set(
+            _select(denominator.rows, row_leaves, row_hierarchy)
+        ) or not set(selected_cols) <= set(
+            _select(denominator.columns, col_leaves, col_hierarchy)
+        ):
+            raise ValueError(
+                "share numerator must be contained in its denominator selection"
+            )
+        constraints.extend(
+            percentage_constraints(
+                margin.name,
+                numerator={
+                    cells[r, c]: 1 for r in selected_rows for c in selected_cols
+                },
+                denominator=f"margin_{index}",
+                fact=margin.fact,
+                bounds=margin.bounds,
+                exact=margin.exact,
+                policy=margin.policy,
+                role=margin.role,
+                denominator_nonnegative=True,
             )
         )
     zeros = tuple(tuple(x) for x in structural_zeros)
@@ -280,7 +387,11 @@ def allocation_table(
                 lower=0,
                 upper=0,
                 kind="structural_exclusion",
-                metadata={"declared_assumption": True, "cell": list(cell)},
+                metadata={
+                    "declared_assumption": True,
+                    "cell": list(cell),
+                    "evidence_role": "analyst_policy",
+                },
             )
         )
     declared = (
@@ -299,4 +410,5 @@ def allocation_table(
         unit,
         as_of,
         title,
+        amount_margins,
     )

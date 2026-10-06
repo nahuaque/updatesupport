@@ -215,13 +215,13 @@ class DisclosureAuditPack:
             [
                 "## Review Question",
                 "",
-                f"- Target: `{_escape_markdown(self.target)}`",
+                f"- Target: {_escape_markdown(_target_label(self.report, self.target) or self.target)} (`{_escape_markdown(self.target)}`)",
                 f"- Tier: `{_escape_markdown(self.tier)}`",
             ]
         )
         if self.claim_audit is not None:
             lines.append(
-                f"- Claim: `{_escape_markdown(self.claim_audit.claim.statement)}`"
+                f"- Claim: {_escape_markdown(self.claim_audit.claim.label or self.claim_audit.claim.statement)}"
             )
             lines.append(f"- Verdict: **{_escape_markdown(self.claim_audit.verdict)}**")
         lines.extend(["", "## Headline Interval", ""])

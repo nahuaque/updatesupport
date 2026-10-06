@@ -5,6 +5,145 @@ constraints, and show feasible allocations supporting or opposing a claim.
 The APIs accept vendor-neutral records; retrieval and filing-version selection
 remain the responsibility of an adapter or analyst.
 
+## Analyst workflow
+
+The development APIs extend the low-level solver with five optional layers.
+They use the same linear feasibility engine, precision checks, claim audits,
+conflict reports and offline snapshots. Existing hand-built problems still work.
+
+### Measurement contracts and numerical units
+
+`MeasurementDefinition(name, kind, unit, currency, scope, sign)` declares the
+meaning of an observation. Kinds are `stock`, `flow`, `schedule` and `lifetime`.
+Wrap facts in `MeasurementObservation`, including an explicit completeness flag,
+component fact IDs and source-to-cash multiplier when needed. Supply
+`DisclosureRequirement` contracts with requested periods, maximum age and
+expected components to `compile_disclosure_evidence`.
+
+The requirement ledger records satisfied, missing, unavailable, incompatible,
+ambiguous, stale and incomplete inputs. Missing values never become zero. A
+derived total with an incomplete or unavailable dependency is quarantined.
+`.require_valid()` rejects an incomplete contract; `.fact_for(name)` returns a
+satisfied modeled fact. Coverage is only as strong as the supplied requirements.
+No helper discovers undocumented provider omissions from a field name.
+
+`unit_scales={"USD": ("USD million", 1e6)}` normalizes numerical units while
+retaining each original `DisclosureFact` in `normalizations`. Powers of ten keep
+the original decimals exactly expressible; currency is unchanged. An explicit
+`cash_multiplier=-1` records a verified sign conversion. Neither conversion
+loosens the solver's feasibility tolerance. Save `.snapshot_context()` in the
+snapshot `context` to validate that the original and modeled facts still agree.
+
+`CashMeasure(name, components, scope)` declares a signed cash measure over named
+primitives or other cash measures. `cash_measure_constraints` expands the shared
+primitives, rejecting cycles and unknown inputs. Alternative measures therefore
+reuse the same advance or financing movement. This prevents separate copies of
+the same modeled input from drifting; it cannot infer whether a declared cash
+definition is economically appropriate. `cash_bridge_constraint` requires cash
+scopes at both endpoints; differing scopes need an explicit signed adjustment
+(closing scope minus opening scope). Declare the adjustment's domain yourself.
+
+### Percentage margins and threshold claims
+
+Use `AllocationShareMargin` beside amount margins:
+
+```python
+share_margin = usf.AllocationShareMargin(
+    "customer_share", percentage_fact, denominator="company_revenue",
+    columns=["selected_direct_buyer"], bounds=(.155, .165),
+    policy="inclusive half-percentage-point allowance for displayed 16%",
+)
+```
+
+The denominator names an amount margin, not an interchangeable revenue label.
+The compiler checks entity, period and numerator containment. Share facts use
+`ratio` or `percent` units without currency. Explicit bounds are ratios and
+require a named policy; otherwise source decimals or explicit `exact=True` are
+required. Qualitative words such as *approximately* do not select numeric bounds.
+
+`table.share_target(..., denominator="compute_revenue", threshold=1/3)` produces
+the excess `numerator - denominator/3`, together with a source-supported,
+strictly positive denominator floor. `table.problem` retains the floor in every
+tier, including custom tiers. Audit a `lower_at_least=0` claim on the excess.
+This tests a share threshold; it does not optimize a general ratio.
+
+The standalone `percentage_constraints` supports explicitly declared stock to
+future-recognition relationships. Its `denominator_nonnegative=True` argument
+is a caller assertion; the caller must establish that domain in the model.
+`varying_fields` records intentional linked evidence context differences.
+
+### Dated windows and selected timing
+
+`time_window_allocation` partitions a `DisclosureWindow` into contiguous,
+disjoint inclusive-date buckets. It retains the source cohort, its as-of date,
+measurement contract and schedule evidence role. Each bucket is nonnegative;
+without a timing policy it may contain any share of the total. Subtotal helpers
+sum unique buckets for cumulative windows.
+
+Call `.even_schedule_constraints(basis="months", policy=...)` to explicitly
+choose even monthly conversion. Whole calendar months are required: a twelve
+month September–August schedule split at May yields nine and three months, with
+75% allocated before the fiscal year end **only in the selected policy tier**.
+Daily schedules use inclusive day counts. Lifetime commitments and instant book
+liabilities are rejected as flows; first supply a separately declared schedule.
+Year-end balances do not certify intrayear liquidity.
+
+### Policies, stresses and break-even targets
+
+`ConstraintPolicy(name, EvidenceRole, constraints)` attaches a structured role
+and group name to constraints. Roles distinguish reported facts, declared
+accounting relationships, management expectations and analyst policies.
+`disclosure_support_basis(problem, tier)` reports whether support uses only
+reported evidence and accounting declarations or is conditional on other roles.
+Unclassified constraints make the result conditional.
+
+```python
+case = usf.DisclosureStressCase(
+    "prepayment_delay", "cash_plan",
+    {"prepayment_assumption": revised_prepayment_constraint},
+    "Delay a declared amount while retaining the other cash-plan constraints",
+)
+analysis = usf.run_disclosure_scenarios(problem, [case])
+```
+
+Cases replace or remove named active constraints and re-solve every shared
+identity. Inconsistent combinations return infeasible intervals and conflict
+reports. Changes to reported history require `historical_counterfactual=True`;
+changes to accounting relationships require `model_counterfactual=True`.
+Counterfactual observations are labeled analyst policies and retain original
+fact IDs as lineage, rather than pretending to be reported observations.
+
+`break_even_analysis` bounds an existing target under explicit conditions. For
+required issuance, release the fixed issuance policy and require ending cash to
+equal opening cash. A cash-floor inequality instead often gives a finite minimum
+and an unbounded maximum. It only releases policies/expectations. The helper
+does not invent a cash limit or assign probabilities to stresses.
+
+Reuse `attribute_disclosure_constraints(..., groups={policy.name:
+[c.name for c in policy.constraints]})` for leave-one-policy-out bound changes.
+This measures dependence on supplied constraints, not causal effects or expected
+information value. Minimal combined policy changes require a separately chosen
+perturbation metric and are outside this API.
+
+### Decision briefs and comparison guards
+
+`AnalystFinding` combines a question, `DisclosureAuditPack`, `DisclosureScope`,
+optional `AnalystBaseline`, decision impacts, missing evidence and unanswered
+scope. Baselines must use the target's display unit. `AnalystDecisionBrief`
+renders compact Markdown, JSON and tables with readable target/claim labels,
+bounded results and tier support. It contains no issuer-specific interpretation.
+Keep different cash, revenue, customer, geography and cohort meanings explicit.
+
+Save `scope.as_dict()` under snapshot `context["scope"]`.
+`compare_disclosure_snapshots` checks target expression, unit and scale alongside
+`compare_disclosure_scopes`. Different window kinds or declared cohorts are
+flagged; anonymous customer identities cannot be linked across periods by label.
+Missing scope metadata remains *unassessed*, including older snapshots, which
+continue to replay. A comparable result is descriptive, not a causal trend.
+
+The complete provider-neutral example is
+[`analyst_decision_workflow.py`](../packages/updatesupport-finance/examples/analyst_decision_workflow.py).
+
 ## Record the financial context
 
 ```python
