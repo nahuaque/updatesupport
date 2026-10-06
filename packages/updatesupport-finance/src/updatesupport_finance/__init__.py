@@ -23,6 +23,23 @@ from .compilation import (
     compile_portfolio_evidence,
 )
 from .headline import PortfolioHeadlineReport, portfolio_headline_report
+from .joint_portfolio import (
+    JointPortfolioEvidence,
+    JointPortfolioReport,
+    compile_portfolio_metrics,
+    joint_portfolio_report,
+)
+from .research import (
+    EvidenceAcquisition,
+    PortfolioRepairFrontier,
+    plan_portfolio_repairs,
+)
+from .joint_snapshots import (
+    JointPortfolioSnapshot,
+    FrozenJointPortfolioContract,
+    capture_joint_portfolio_snapshot,
+    compare_joint_portfolio_snapshots,
+)
 from .allocation_tables import (
     AllocationMember,
     AllocationMargin,
@@ -156,6 +173,17 @@ except PackageNotFoundError:
     __version__ = "0.0.0"
 
 __all__ = [
+    "JointPortfolioEvidence",
+    "JointPortfolioReport",
+    "compile_portfolio_metrics",
+    "joint_portfolio_report",
+    "EvidenceAcquisition",
+    "PortfolioRepairFrontier",
+    "plan_portfolio_repairs",
+    "JointPortfolioSnapshot",
+    "FrozenJointPortfolioContract",
+    "capture_joint_portfolio_snapshot",
+    "compare_joint_portfolio_snapshots",
     "MeasurementDefinition",
     "MeasurementObservation",
     "DisclosureRequirement",

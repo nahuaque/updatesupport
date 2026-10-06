@@ -6,6 +6,7 @@ import updatesupport as us
 from .compilation import compile_portfolio_evidence
 from .allocation_tables import allocation_table
 from .headline import portfolio_headline_report
+from .joint_portfolio import compile_portfolio_metrics, joint_portfolio_report
 from .mandates import q_portfolio_mandate
 
 from .disclosure import (
@@ -55,6 +56,7 @@ plugin = us.UpdateSupportPlugin(
         "regional_concentration_shift": q_regional_concentration_shift,
     },
     report_profiles={
+        "joint_portfolio": joint_portfolio_report,
         "portfolio_headline": portfolio_headline_report,
         "disclosure_audit_pack": disclosure_audit_pack,
         "disclosure_constraint_attribution": attribute_disclosure_constraints,
@@ -65,6 +67,7 @@ plugin = us.UpdateSupportPlugin(
         "segmentation_certificate": certify_portfolio_segmentation,
     },
     compilers={
+        "portfolio_metrics": compile_portfolio_metrics,
         "portfolio_evidence": compile_portfolio_evidence,
         "allocation_table": allocation_table,
         "disclosure_triangulation": disclosure_triangulation_spec,

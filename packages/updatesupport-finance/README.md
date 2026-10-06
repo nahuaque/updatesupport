@@ -38,6 +38,22 @@ See the [synthetic analyst example](examples/analyst_decision_workflow.py) and
 accounting interpretation and the selection of policies remain explicit inputs.
 No provider credentials or proprietary captures are needed to use these APIs.
 
+## Multi-metric portfolio reports
+
+`compile_portfolio_metrics` validates named measurements on one supplied
+universe. `joint_portfolio_report` exposes a shared complexity frontier with
+common-book and eligible-scope uncertainty, retaining known facts outside the
+intersection. Criteria are optional. Core `ConditionalRefinement` objects and
+`suggest_conditional_refinements` support portable local bucket drills.
+
+`plan_portfolio_repairs` compares finite report/evidence combinations under
+fixed nonjoint weights, preserving source availability and cost uncertainty.
+`JointPortfolioSnapshot` replays offline; `FrozenJointPortfolioContract` monitors
+a chosen schema/Q/measurement contract without inventing historical calibration.
+These development APIs are unreleased. See the
+[workflow guide](../../docs/joint-portfolio-report.md) and
+[offline example](examples/joint_portfolio_workflow.py).
+
 ## Segmentation and model review
 
 The core question is:

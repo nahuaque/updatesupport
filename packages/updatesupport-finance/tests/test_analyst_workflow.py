@@ -453,6 +453,7 @@ def test_stress_resolves_dependencies_and_reports_conflicts_and_break_even():
         analysis.report.interval(target="cash", scenario="delayed").status, "infeasible"
     )
     check.assertIn("delayed", analysis.conflicts)
+
     check.assertEqual(analysis.support["reported"]["basis"], "reported_evidence")
     check.assertEqual(analysis.support["plan"]["basis"], "conditional")
     for key in ("opening", "bridge"):
@@ -497,6 +498,46 @@ def test_stress_resolves_dependencies_and_reports_conflicts_and_break_even():
     )
     check.assertEqual(
         breakeven.report.interval(target="issuance", scenario="break_even").upper, 15
+    )
+
+
+def test_brief_distinguishes_infeasible_tiers_from_unbounded_tiers():
+    spec = cash_model()
+    bad = f.DisclosureStressCase(
+        "delayed",
+        "plan",
+        {"prepay": f.exact_disclosure_constraint("delay", "prepay", 0)},
+        "Delayed prepayment",
+    )
+    analysis = f.run_disclosure_scenarios(spec, [bad])
+    pack = f.disclosure_audit_pack(analysis.report, target="cash", tier="delayed")
+    scope = f.DisclosureScope(
+        "issuer",
+        "cash",
+        "USD",
+        "2027-05-31",
+        "fiscal_year",
+        "aggregate",
+        period_start="2026-06-01",
+    )
+    brief = f.AnalystDecisionBrief(
+        "Funding", [f.AnalystFinding("Can the plan be funded?", pack, scope)]
+    )
+    check.assertEqual(
+        brief.as_dict()["findings"][0]["interval"]["status"], "infeasible"
+    )
+    markdown = brief.to_markdown()
+    check.assertIn("| delayed | infeasible | — | — |", markdown)
+    check.assertIn("**Ending cash: — to — USD** (infeasible)", markdown)
+    # Genuine unbounded endpoints retain their meaning in another scenario.
+    unbounded = f.disclosure_audit_pack(
+        f.triangulate_disclosure(spec), target="cash", tier="reported"
+    )
+    check.assertIn(
+        "unbounded",
+        f.AnalystDecisionBrief(
+            "Funding", [f.AnalystFinding("Range?", unbounded, scope)]
+        ).to_markdown(),
     )
 
 

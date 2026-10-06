@@ -185,6 +185,10 @@ def _number(value):
     return "unbounded" if value is None else f"{value:,.6g}"
 
 
+def _bound(value, status):
+    return "—" if status in {"infeasible", "numerical_error"} else _number(value)
+
+
 @dataclass(frozen=True)
 class AnalystDecisionBrief:
     title: str
@@ -239,7 +243,7 @@ class AnalystDecisionBrief:
                     "",
                     f"Cohort: {_plain(scope['cohort'])} ({scope['cohort_kind']}); window: {_plain(scope['window_kind'])}.",
                     "",
-                    f"**{_plain(row['target_label'])}: {_number(row['interval']['lower'])} to {_number(row['interval']['upper'])} {_plain(row['unit'])}** ({row['interval']['status']}).",
+                    f"**{_plain(row['target_label'])}: {_bound(row['interval']['lower'], row['interval']['status'])} to {_bound(row['interval']['upper'], row['interval']['status'])} {_plain(row['unit'])}** ({row['interval']['status']}).",
                     "",
                     f"Support: **{row['support']['basis']}**, tier `{_plain(row['tier'])}`; roles: {', '.join(row['support']['roles'])}.",
                     "",
@@ -262,12 +266,12 @@ class AnalystDecisionBrief:
                 )
             lines.extend(
                 [
-                    "| Evidence / policy tier | Lower | Upper | Support |",
-                    "| --- | ---: | ---: | --- |",
+                    "| Evidence / policy tier | Status | Lower | Upper | Support |",
+                    "| --- | --- | ---: | ---: | --- |",
                 ]
             )
             lines.extend(
-                f"| {_plain(t['tier'])} | {_number(t['lower'])} | {_number(t['upper'])} | {t['support']['basis']} |"
+                f"| {_plain(t['tier'])} | {t['status']} | {_bound(t['lower'], t['status'])} | {_bound(t['upper'], t['status'])} | {t['support']['basis']} |"
                 for t in row["tiers"]
             )
             for heading, values in (

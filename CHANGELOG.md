@@ -6,6 +6,15 @@ All notable changes to `updatesupport` are documented here.
 
 ### Added
 
+- Joint finance portfolio evidence and raw shared-report frontiers, retaining
+  per-metric coverage, known nonjoint contributions, missing-evidence floors,
+  explicit evaluation scopes, and optional disclosure costs.
+- Portable conditional bucket refinements and bounded, target-aware single-drill
+  suggestions evaluated across every declared metric and Q.
+- Conditional report/evidence acquisition frontiers preserving unavailable
+  sources, unknown costs, ties, and fixed nonjoint weight assumptions.
+- Offline joint portfolio snapshots and uncalibrated frozen reporting contracts,
+  with issuer/share-class, unresolved-security, measurement, and support checks.
 - Finance measurement contracts and completeness/freshness ledgers, with
   source-preserving numerical normalization and shared-primitive cash bridges.
 - Rounded percentage allocation margins and share-threshold targets with
@@ -32,6 +41,10 @@ All notable changes to `updatesupport` are documented here.
 
 ### Fixed
 
+- Shared design deduplicates equivalent primary/scenario Q presets through
+  serialization without collapsing distinct stress or solver settings.
+- Finance decision briefs show infeasible interval status and absent endpoints
+  separately from genuinely unbounded intervals.
 - Decision-only design reports now show their decision-certifying refinement;
   ambiguity frontier candidates are labeled explicitly and shown only when an
   ambiguity criterion was declared.

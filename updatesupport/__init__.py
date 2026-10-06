@@ -285,6 +285,12 @@ from .rollup import (
     design_categorical_rollup,
 )
 from .spec import AuditRun, AuditSpec, QSpec, run_audit
+from .contracts import FrozenReportContract
+from .refinements import (
+    ConditionalRefinement,
+    ConditionalRefinementSuggestions,
+    suggest_conditional_refinements,
+)
 from .targets import (
     LinearTarget,
     MomentTransformTarget,
@@ -404,6 +410,10 @@ _SPEC_AND_EXTENSION_API = [
 ]
 
 __all__ = [
+    "FrozenReportContract",
+    "ConditionalRefinement",
+    "ConditionalRefinementSuggestions",
+    "suggest_conditional_refinements",
     "__version__",
     *_CLAIM_API,
     *_DATA_AND_EXPORT_API,

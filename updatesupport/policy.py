@@ -1032,40 +1032,13 @@ def _support_drift(
     policy_claim: FrozenClaimPolicy,
     current: GroupedProblem,
 ) -> FrozenSupportDrift:
-    reference_states = set(policy_claim.reference_hidden_cells)
-    current_states = set(_as_cell(state) for state in current.problem.states)
-    reference_public = set(policy_claim.reference_public_cells)
-    current_public = set(
-        _as_cell(public_value) for public_value in current.problem.public_values
-    )
-    new_public = tuple(sorted(current_public - reference_public, key=str))
-    missing_public = tuple(sorted(reference_public - current_public, key=str))
-    new_hidden = tuple(sorted(current_states - reference_states, key=str))
-    missing_hidden = tuple(sorted(reference_states - current_states, key=str))
-
-    actual_tv = None
-    reference_public_law = policy_claim.reference_public_law
-    if not missing_public:
-        restandardized: dict[tuple[Hashable, ...], float] = defaultdict(float)
-        current_public_law = {
-            _as_cell(key): float(value) for key, value in current.public_law.items()
-        }
-        for raw_state, mass in current.cell_weights.items():
-            state = _as_cell(raw_state)
-            public_value = _as_cell(current.problem.public_map[raw_state])
-            reference_mass = reference_public_law.get(public_value, 0.0)
-            if reference_mass <= current.problem.tol:
-                continue
-            current_mass = current_public_law[public_value]
-            restandardized[state] += reference_mass * float(mass) / current_mass
-        state_union = reference_states | set(restandardized)
-        reference_weights = policy_claim.reference_cell_weights
-        actual_tv = 0.5 * sum(
-            abs(reference_weights.get(state, 0.0) - restandardized.get(state, 0.0))
-            for state in state_union
-        )
-
-    support_compatible = not (new_public or missing_public or new_hidden)
+    comparison = _support_comparison(policy_claim.reference_support, current)
+    new_public = comparison["new_public_cells"]
+    missing_public = comparison["missing_reference_public_cells"]
+    new_hidden = comparison["new_hidden_cells"]
+    missing_hidden = comparison["missing_reference_hidden_cells"]
+    actual_tv = comparison["actual_tv_radius"]
+    support_compatible = comparison["support_compatible"]
     within_radius = (
         None
         if not support_compatible or actual_tv is None
@@ -1088,9 +1061,53 @@ def _support_drift(
         reason = "the batch remains within the frozen support and TV contract"
     return FrozenSupportDrift(
         calibrated_radius=policy_claim.calibrated_radius,
+        within_calibrated_radius=within_radius,
+        reason=reason,
+        **comparison,
+    )
+
+
+def _support_comparison(reference_support, current: GroupedProblem) -> dict[str, Any]:
+    """Support diagnostics independent of historical radius calibration."""
+    reference_states = {cell.state for cell in reference_support}
+    current_states = set(_as_cell(state) for state in current.problem.states)
+    reference_public = {cell.public_value for cell in reference_support}
+    current_public = set(
+        _as_cell(public_value) for public_value in current.problem.public_values
+    )
+    new_public = tuple(sorted(current_public - reference_public, key=str))
+    missing_public = tuple(sorted(reference_public - current_public, key=str))
+    new_hidden = tuple(sorted(current_states - reference_states, key=str))
+    missing_hidden = tuple(sorted(reference_states - current_states, key=str))
+
+    actual_tv = None
+    reference_public_law: dict[Any, float] = defaultdict(float)
+    for cell in reference_support:
+        reference_public_law[cell.public_value] += cell.mass
+    if not missing_public:
+        restandardized: dict[tuple[Hashable, ...], float] = defaultdict(float)
+        current_public_law = {
+            _as_cell(key): float(value) for key, value in current.public_law.items()
+        }
+        for raw_state, mass in current.cell_weights.items():
+            state = _as_cell(raw_state)
+            public_value = _as_cell(current.problem.public_map[raw_state])
+            reference_mass = reference_public_law.get(public_value, 0.0)
+            if reference_mass <= current.problem.tol:
+                continue
+            current_mass = current_public_law[public_value]
+            restandardized[state] += reference_mass * float(mass) / current_mass
+        state_union = reference_states | set(restandardized)
+        reference_weights = {cell.state: cell.mass for cell in reference_support}
+        actual_tv = 0.5 * sum(
+            abs(reference_weights.get(state, 0.0) - restandardized.get(state, 0.0))
+            for state in state_union
+        )
+
+    support_compatible = not (new_public or missing_public or new_hidden)
+    return dict(
         actual_tv_radius=actual_tv,
         support_compatible=support_compatible,
-        within_calibrated_radius=within_radius,
         reference_public_cell_count=len(reference_public),
         current_public_cell_count=len(current_public),
         reference_hidden_cell_count=len(reference_states),
@@ -1099,7 +1116,6 @@ def _support_drift(
         missing_reference_public_cells=missing_public,
         new_hidden_cells=new_hidden,
         missing_reference_hidden_cells=missing_hidden,
-        reason=reason,
     )
 
 

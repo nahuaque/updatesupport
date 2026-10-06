@@ -18,6 +18,7 @@ from .frontier import (
     PublicRepresentationFrontier,
     public_representation_frontier,
 )
+from .spec import QSpec
 
 
 @dataclass(frozen=True)
@@ -714,11 +715,20 @@ def _claim_frontier(
     candidate_refinements: tuple[str, ...],
     max_added_columns: int,
 ) -> PublicRepresentationFrontier:
-    q_presets = (
+    proposed_presets = (
         (claim.primary_q, *claim.q_presets)
         if claim.q is not None
         else tuple(claim.q_presets)
     )
+    # Serialization makes an implicit primary Q explicit. Preserve the grid,
+    # including distinct radii and solver settings, without adding that Q twice.
+    q_presets = []
+    seen = set()
+    for preset in proposed_presets:
+        key = _portable_key(QSpec.from_value(preset).as_dict())
+        if key not in seen:
+            seen.add(key)
+            q_presets.append(preset)
     frontier = public_representation_frontier(
         records,
         base_public=claim.public,
@@ -739,6 +749,23 @@ def _claim_frontier(
     if frontier.search_trace is None or not frontier.search_trace.exact:
         raise RuntimeError("shared representation search requires exact frontiers")
     return frontier
+
+
+def _portable_key(value: Any) -> Any:
+    """Equality token for portable Q values, including tuple-keyed matrices.
+
+    Runtime-only objects are compared by identity rather than guessed equal.
+    """
+    if isinstance(value, Mapping):
+        return (
+            "mapping",
+            frozenset((_portable_key(k), _portable_key(v)) for k, v in value.items()),
+        )
+    if isinstance(value, (list, tuple)):
+        return ("sequence", tuple(_portable_key(x) for x in value))
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return (type(value).__name__, value)
+    return ("runtime", id(value))
 
 
 def _shared_candidate(
