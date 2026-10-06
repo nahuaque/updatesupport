@@ -9,6 +9,32 @@ from .allocations import (
     DisclosureAllocationReport,
     disclosure_allocations,
 )
+from .coverage import (
+    PortfolioPosition,
+    PortfolioUniverse,
+    PortfolioCoverageEntry,
+    PortfolioCoverageReport,
+)
+from .compilation import (
+    FundamentalObservation,
+    TaxonomyAssignment,
+    PortfolioMetricPolicy,
+    CompiledPortfolio,
+    compile_portfolio_evidence,
+)
+from .headline import PortfolioHeadlineReport, portfolio_headline_report
+from .allocation_tables import (
+    AllocationMember,
+    AllocationMargin,
+    AllocationTable,
+    allocation_table,
+)
+from .portfolio_snapshots import (
+    PortfolioSnapshot,
+    capture_portfolio_snapshot,
+    compare_portfolio_snapshots,
+)
+from .mandates import PortfolioMandate, q_portfolio_mandate
 from .evidence import (
     DisclosureEvidenceDiagnostic,
     DisclosureFact,
@@ -93,6 +119,26 @@ except PackageNotFoundError:
     __version__ = "0.0.0"
 
 __all__ = [
+    "PortfolioPosition",
+    "PortfolioUniverse",
+    "PortfolioCoverageEntry",
+    "PortfolioCoverageReport",
+    "FundamentalObservation",
+    "TaxonomyAssignment",
+    "PortfolioMetricPolicy",
+    "CompiledPortfolio",
+    "compile_portfolio_evidence",
+    "PortfolioHeadlineReport",
+    "portfolio_headline_report",
+    "AllocationMember",
+    "AllocationMargin",
+    "AllocationTable",
+    "allocation_table",
+    "PortfolioSnapshot",
+    "capture_portfolio_snapshot",
+    "compare_portfolio_snapshots",
+    "PortfolioMandate",
+    "q_portfolio_mandate",
     "DisclosureConflictReport",
     "find_disclosure_conflict",
     "DisclosureAllocation",

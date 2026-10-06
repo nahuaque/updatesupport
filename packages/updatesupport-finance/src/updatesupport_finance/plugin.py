@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import updatesupport as us
+from .compilation import compile_portfolio_evidence
+from .allocation_tables import allocation_table
+from .headline import portfolio_headline_report
+from .mandates import q_portfolio_mandate
 
 from .disclosure import (
     audit_disclosure_claim,
@@ -44,12 +48,14 @@ plugin = us.UpdateSupportPlugin(
         "loss_given_default": loss_given_default,
     },
     q_presets={
+        "portfolio_mandate": q_portfolio_mandate,
         "portfolio_mix_shift": q_portfolio_mix_shift,
         "exposure_weighted_tv": q_exposure_weighted_tv,
         "factor_exposure_shift": q_factor_exposure_shift,
         "regional_concentration_shift": q_regional_concentration_shift,
     },
     report_profiles={
+        "portfolio_headline": portfolio_headline_report,
         "disclosure_audit_pack": disclosure_audit_pack,
         "disclosure_constraint_attribution": attribute_disclosure_constraints,
         "disclosure_claim": audit_disclosure_claim,
@@ -59,6 +65,8 @@ plugin = us.UpdateSupportPlugin(
         "segmentation_certificate": certify_portfolio_segmentation,
     },
     compilers={
+        "portfolio_evidence": compile_portfolio_evidence,
+        "allocation_table": allocation_table,
         "disclosure_triangulation": disclosure_triangulation_spec,
         "portfolio": from_portfolio,
     },

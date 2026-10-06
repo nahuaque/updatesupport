@@ -4,6 +4,30 @@ All notable changes to `updatesupport` are documented here.
 
 ## Unreleased
 
+### Added
+
+- Finance portfolio universe/coverage ledgers and fixed-weight missing-data
+  bounds, with provider-neutral holdings/fundamentals compilation, fiscal
+  normalization diagnostics, explicit metric policies, and taxonomy provenance.
+- Finance headline reports separating observed truth, summary support, and
+  upstream coverage; scope-aware refinement results and breaking transfers in
+  percentage points and currency amounts.
+- Declarative disclosure allocation tables with leaf/subtotal hierarchies,
+  reported rounding precision, measure equivalence declarations, preserved
+  qualifiers, and structural exclusions.
+- Portable portfolio snapshots containing evidence, configuration, coverage,
+  results, raw capture references, and runtime provenance, with offline replay.
+- Core `q_moment_bounds` and finance issuer-cap/reallocation mandates, plus
+  `respect_q=True` minimum-breaking witnesses sharing the forward convex Q.
+
+### Fixed
+
+- Decision-only design reports now show their decision-certifying refinement;
+  ambiguity frontier candidates are labeled explicitly and shown only when an
+  ambiguity criterion was declared.
+- CVXPY local intervals preserve ordered, attainable endpoints when nominally
+  equal solver values differ by roundoff within the problem tolerance.
+
 ## 0.1.6 - 2026-09-15
 
 ### Added

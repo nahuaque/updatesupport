@@ -52,6 +52,177 @@ pip install "updatesupport[cvxpy]" updatesupport-finance
 uv add "updatesupport[cvxpy]" updatesupport-finance
 ```
 
+## Portfolio Evidence and Headline Audits
+
+This section describes the unreleased development APIs. Use core and finance
+from the same checkout until the next coordinated package release.
+
+The provider-neutral workflow is:
+
+1. Declare a `PortfolioUniverse`: original positions, currency, holdings cutoff,
+   and eligible security types. Position values must be nonnegative; gross/net
+   short-portfolio conventions and currency conversion need an explicit adapter.
+2. Supply `FundamentalObservation` objects wrapping `DisclosureFact`, plus
+   `TaxonomyAssignment` labels and a `PortfolioMetricPolicy`.
+3. Call `compile_portfolio_evidence`. It selects the latest compatible fiscal
+   period and latest version available by the cutoff, quarantines ambiguous
+   versions, and records every position as covered, missing, unmapped, or excluded.
+4. Call `portfolio_headline_report` with a declared decision and scope. Inspect
+   observed truth, summary support, coverage, refinements, and breaking transfers.
+5. Save a `PortfolioSnapshot` for offline recompilation/replay and comparison.
+
+See the complete [synthetic example](examples/portfolio_headline.py). It uses a
+portfolio with 80 units of covered equity, 20 of missing equity, and 10 of cash:
+
+```python
+compiled = usf.compile_portfolio_evidence(
+    universe, observations=observations, taxonomy=taxonomy,
+    policy=usf.PortfolioMetricPolicy(
+        concept="OperatingCashFlow", unit="currency", period_kind="FY",
+        transform="below", threshold=0,
+    ),
+)
+hidden = ["sector", "industry", "issuer_id", "target_status"]
+report = usf.portfolio_headline_report(
+    compiled, headline="Less than 30% negative annual operating cash flow",
+    decision=us.threshold_decision("<", .30),
+    public=["sector"], hidden=hidden, scope="eligible",
+    candidate_refinements=["industry", "target_status"],
+    direct_target_refinements=["target_status"],
+)
+print(report.to_markdown())
+```
+
+The example's covered-book share is 25%; the **eligible observed share is bounded
+by 20%–40%**. Cash is explicitly excluded from that denominator. Missing equity
+is retained as unknown rather than dropped or assigned zero. `scope="covered"`
+asks only about the observed book; `scope="eligible"` includes missing eligible
+positions. Core provided-row retention and upstream universe coverage remain
+separate fields.
+
+`actual_headline` and `summary_support` each return `supported`, `contradicted`,
+or `inconclusive`. They describe whether the declared pass condition holds,
+rather than core's `pass` status, which means a decision is invariant even when
+the invariant decision is failure. Eligible summary bounds hold unknown weights
+fixed and let their missing metrics vary over the policy's `target_bounds`.
+Binary `below` metrics use [0, 1]; continuous `value` metrics require an explicit
+currency and optional domain bounds. Without domain bounds, unknown eligible
+values make the headline inconclusive. An empty covered book is supported as
+an evidence/coverage artifact without a core solve.
+
+The `below` transform tests the **reported base-unit value**, not an inferred
+unrounded economic amount. Fact units, dimensions, period kind, and optional
+currency must match the policy. `max_age_days` can reject stale periods.
+Fact IDs and source metadata, derivation inputs, original fiscal ends, and
+normalized fiscal labels remain in evidence. An adapter must explicitly provide
+issuer mappings and period/source semantics; the compiler does not guess them.
+
+Taxonomy labels carry a scheme, optional version, availability, and effective
+timestamp. Undated current labels produce `taxonomy_as_of_unknown` diagnostics.
+Set `strict_taxonomy_as_of=True` to require all three historical fields for
+required labels. Future classifications are unavailable. Availability fields do
+not independently establish the integrity of a provider's historical archive.
+
+Refinements are marked `independent` or `direct_target`. `target_status` is a
+direct disclosure of the tested classification. Other direct-target labels
+must be declared explicitly. Each refinement is evaluated in the headline's
+scope: disclosing covered status cannot remove missing whole-book uncertainty.
+
+Breaking witnesses refer to the **covered book**, preserve its public-bucket
+totals, and show issuer/state transfers in covered percentage points, eligible
+percentage points, and currency amounts. They do not impute missing values or
+certify an eligible-scope breaking distance. The same forward Q is respected by
+default (`respect_q=True`); set it false only for an explicitly unrestricted
+inverse comparison.
+
+### Mandate Constraints
+
+```python
+q = usf.q_portfolio_mandate(
+    compiled, hidden=hidden,
+    mandate=usf.PortfolioMandate(
+        issuer_caps={"issuer-B": .28},
+        locked_issuers=["issuer-A"],
+        preserve_columns=["industry"],
+    ),
+    base_q=us.q_tv_budget(.05),
+)
+```
+
+Caps are shares of the **normalized covered book**. Locked issuers fix their
+total weights; preserved columns fix every category total and permit transfers
+within those groups. Restrictions must be represented in `hidden`, and the
+observed book must satisfy its caps. Unknown issuers are errors. These policies
+compile to the core `q_moment_bounds` preset and can intersect other convex Q
+presets. Forward bounds and inverse witnesses use the same constraints; no
+second mandate solver is introduced. Non-saturated constrained witnesses need
+CVXPY. Trade execution and liquidity constraints are outside this model.
+
+### Offline Portfolio Snapshots
+
+```python
+snapshot = usf.capture_portfolio_snapshot(
+    report, capture_references={"holdings-response": raw_sha256},
+)
+saved = snapshot.to_json(indent=2)
+restored = usf.PortfolioSnapshot.from_json(saved)
+replayed = restored.replay()
+changes = usf.compare_portfolio_snapshots(snapshot, restored)
+runtime_changes = restored.runtime_differences()
+```
+
+Bundles embed normalized input evidence, the scope policy and ledger, compiled
+rows, claim/Q configuration (including tuple-keyed moments), result digest,
+optional raw capture hashes, and runtime/source versions. Loading checks the
+result digest, input/result consistency, and deterministic recompilation.
+Replay makes no provider calls. Built-in portable Q values are required;
+callable environments are not serialized. SHA256 checks detect corruption and
+identify supplied captures; they do not authenticate a vendor archive. Compare
+periods only after reviewing scope, policy, evidence, and taxonomy changes.
+
+## Declarative Allocation Tables
+
+`allocation_table` compiles declared leaf/subtotal axes and disclosed margins
+into the existing named-linear feasibility engine:
+
+```python
+table = usf.allocation_table(
+    rows=[usf.AllocationMember("Phone"), usf.AllocationMember("Other")],
+    columns=[usf.AllocationMember("US"), usf.AllocationMember("Outside US")],
+    margins=[
+        usf.AllocationMargin("company", total_fact),
+        usf.AllocationMargin("phone", phone_fact, rows=["Phone"]),
+        usf.AllocationMargin("us", us_fact, columns=["US"]),
+    ],
+    measure="Revenue", unit="USD", as_of="2026-10-06T00:00:00Z",
+    exhaustive=True,
+)
+target = table.target("phone_outside_us", rows=["Phone"], columns=["Outside US"])
+problem = table.problem([target])
+result = usf.triangulate_disclosure(problem)
+snapshot = usf.capture_disclosure_snapshot(
+    problem, facts=table.facts, as_of=table.as_of,
+    target=target.name, tier="reported", assumptions=table.assumptions,
+)
+```
+
+Leaves form caller-declared exhaustive, nonnegative partitions. Add explicit
+`Other` leaves when needed. A subtotal declares its children and creates no
+extra cells; overlapping selections and cyclic hierarchies raise errors.
+`structural_zeros=[("Phone", "US")]` is an explicit exclusion assumption.
+Literal qualifiers are preserved in the compiled problem; jurisdiction meaning
+is never inferred from a label. Margins must share entity, period, unit,
+currency, and measure. A margin whose source concept differs from the declared
+measure requires `measure="Revenue"` on that `AllocationMargin` to assert
+equivalence while retaining the original fact concept.
+
+Fact precision drives rounding intervals. Missing precision requires an
+explicit `exact=True`; it is never silently treated as exact. Existing
+triangulation, conflict detection, evidence validation, attribution, attainable
+allocations, and disclosure snapshots consume the compiled problem directly.
+For signed financial reconciliations use `reconciliation_constraint` with
+explicit signed residual variables instead of a nonnegative allocation table.
+
 ## Why This Is Useful
 
 Financial analysts already monitor model performance, population drift,

@@ -447,14 +447,38 @@ class CvxpyBackendTests(unittest.TestCase):
         self.assertAlmostEqual(interval.lower, 0.35857864, places=5)
         self.assertAlmostEqual(interval.upper, 0.64142136, places=5)
 
-    def test_non_cvxpy_q_preset_does_not_expose_admissible_set_spec(self):
-        with self.assertRaisesRegex(ValueError, "does not expose"):
+    def test_nonconvex_q_preset_does_not_expose_admissible_set_spec(self):
+        with self.assertRaisesRegex(ValueError, "mixed-integer"):
             us.cvxpy_admissible_set_spec(
-                "saturated",
+                us.q_fiber_support_floor(min_active=1, min_share=0.1),
                 public_law={"A": 1.0},
                 public_map={"x": "A"},
                 cell_weights={"x": 1.0},
             )
+
+    def test_saturated_and_observed_expose_shared_convex_sets(self):
+        _require_cvxpy()
+        grouped = us.from_dataframe(
+            [
+                {"public": "A", "hidden": "low", "target": 0.0, "weight": 75},
+                {"public": "A", "hidden": "high", "target": 1.0, "weight": 25},
+            ],
+            public=["public"],
+            hidden=["public", "hidden"],
+            target="target",
+            weight="weight",
+            min_cell_weight=0,
+        )
+        for q, expected in (("saturated", (0.0, 1.0)), ("observed", (0.25, 0.25))):
+            spec = us.cvxpy_admissible_set_spec(
+                q,
+                public_law=grouped.public_law,
+                public_map=grouped.problem.public_map,
+                cell_weights=grouped.cell_weights,
+            )
+            interval = spec.support_interval(grouped.problem)
+            self.assertAlmostEqual(interval.lower, expected[0], places=7)
+            self.assertAlmostEqual(interval.upper, expected[1], places=7)
 
     def test_batched_cvxpy_solves_multiple_public_laws(self):
         _require_cvxpy()

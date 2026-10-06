@@ -11,7 +11,12 @@ from scipy.optimize import linprog
 from .artifacts import ReportArtifactMixin
 from .data import GroupedProblem, from_dataframe
 from .environments import CvxpyError, LPError
-from .presets import _mahalanobis_transform
+from .presets import (
+    _mahalanobis_transform,
+    cvxpy_admissible_set_spec,
+    normalize_q_preset,
+    q_name,
+)
 
 if TYPE_CHECKING:
     from .claim import ClaimAudit, ClaimSpec, DecisionRule
@@ -92,6 +97,8 @@ class MinimumClaimBreakingWitnessReport(ReportArtifactMixin):
     cells: tuple[ClaimBreakingCellShift, ...] = ()
     transfers: tuple[ClaimBreakingTransfer, ...] = ()
     limitations: tuple[str, ...] = ()
+    respect_q: bool = False
+    q_name: str | None = None
 
     def __post_init__(self) -> None:
         if self.status not in {"found", "infeasible", "already_broken"}:
@@ -134,6 +141,8 @@ class MinimumClaimBreakingWitnessReport(ReportArtifactMixin):
             "solver": self.solver,
             "solver_status": self.solver_status,
             "exact": self.exact,
+            "respect_q": self.respect_q,
+            "q_name": self.q_name,
             "cells": [row.as_dict() for row in self.cells],
             "transfers": [row.as_dict() for row in self.transfers],
             "limitations": self.limitations,
@@ -275,12 +284,14 @@ def minimum_claim_breaking_witness(
     solver: str | None = None,
     solver_options: Mapping[str, Any] | None = None,
     title: str | None = None,
+    respect_q: bool = False,
 ) -> MinimumClaimBreakingWitnessReport:
     """Find the closest fixed-public recomposition that fails a claim rule.
 
-    The first-cut inverse problem uses the retained hidden-cell support and the
-    observed public law. It does not impose the claim's forward Q preset beyond
-    those public-law constraints.
+    By default this uses retained support and fixed public totals. Set respect_q
+    to impose the same convex Q as the primary forward audit. Unsupported Q is
+    rejected, and the observed law must itself satisfy Q. Non-saturated Q needs
+    the optional CVXPY dependency.
     """
 
     from .claim import ClaimSpec
@@ -297,6 +308,7 @@ def minimum_claim_breaking_witness(
         solver=solver,
         solver_options=solver_options,
         title=title,
+        respect_q=respect_q,
     )
 
 
@@ -311,6 +323,7 @@ def _minimum_claim_breaking_witness_from_audit(
     solver: str | None = None,
     solver_options: Mapping[str, Any] | None = None,
     title: str | None = None,
+    respect_q: bool = False,
 ) -> MinimumClaimBreakingWitnessReport:
     """Reuse an audit's compiled primary problem for an inverse witness solve."""
 
@@ -323,6 +336,7 @@ def _minimum_claim_breaking_witness_from_audit(
         solver=solver,
         solver_options=solver_options,
         title=title,
+        respect_q=respect_q,
     )
 
 
@@ -338,6 +352,7 @@ def _minimum_claim_breaking_witness_grouped(
     solver: str | None,
     solver_options: Mapping[str, Any] | None,
     title: str | None,
+    respect_q: bool = False,
 ) -> MinimumClaimBreakingWitnessReport:
     decision = claim.decision
     if decision is None:
@@ -364,6 +379,23 @@ def _minimum_claim_breaking_witness_grouped(
     observed_decision = decision.evaluate(observed_value)
     boundary, direction = _breaking_boundary(decision, margin)
     report_title = title or f"{claim.estimate_name} Minimum Breaking Witness"
+    admissible = None
+    if respect_q:
+        preset = normalize_q_preset(claim.primary_q)
+        if preset is None:
+            raise TypeError("respect_q requires a named convex Q preset")
+        if preset.name != "saturated":
+            spec = cvxpy_admissible_set_spec(
+                preset,
+                public_law=grouped.public_law,
+                public_map=grouped.problem.public_map,
+                cell_weights=grouped.cell_weights,
+            )
+            admissible = spec.convex_admissible_set(grouped.problem)
+            solver = solver or spec.solver
+            if solver_options is None:
+                solver_options = spec.solver_options
+            _validate_observed_q(admissible, q0, solver, solver_options)
 
     if observed_decision == decision.fail_label:
         return _build_report(
@@ -379,9 +411,10 @@ def _minimum_claim_breaking_witness_grouped(
             solver="none",
             solver_status="observed claim already fails",
             title=report_title,
+            respect_q=respect_q,
         )
 
-    if metric == "tv":
+    if metric == "tv" and admissible is None:
         witness, distance_value, solver_name, solver_status = _solve_tv(
             grouped,
             q0=q0,
@@ -400,6 +433,7 @@ def _minimum_claim_breaking_witness_grouped(
             covariance=covariance,
             solver=solver,
             solver_options=solver_options,
+            admissible=admissible,
         )
 
     status = "found" if witness is not None else "infeasible"
@@ -416,6 +450,7 @@ def _minimum_claim_breaking_witness_grouped(
         solver=solver_name,
         solver_status=solver_status,
         title=report_title,
+        respect_q=respect_q,
     )
 
 
@@ -507,6 +542,25 @@ def _solve_tv(
     )
 
 
+def _validate_observed_q(admissible, q0, solver, solver_options):
+    import cvxpy as cp
+    import numpy as np
+
+    problem = cp.Problem(
+        cp.Minimize(0), [*admissible.constraints, admissible.variable == np.asarray(q0)]
+    )
+    try:
+        problem.solve(solver=solver, **dict(solver_options or {}))
+    except Exception as exc:
+        raise CvxpyError(str(exc)) from exc
+    if problem.status not in {"optimal", "optimal_inaccurate"}:
+        raise ValueError(
+            "observed distribution is outside Q; minimum breaking distance has no admissible baseline"
+        )
+    if any(float(cp.max(c.violation()).value) > 1e-7 for c in problem.constraints):
+        raise CvxpyError("observed Q membership solve exceeds feasibility tolerance")
+
+
 def _solve_conic(
     grouped: GroupedProblem,
     *,
@@ -520,21 +574,26 @@ def _solve_conic(
     | None,
     solver: str | None,
     solver_options: Mapping[str, Any] | None,
+    admissible=None,
 ) -> tuple[tuple[float, ...] | None, float | None, str, str]:
     try:
         import cvxpy as cp
         import numpy as np
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise CvxpyError(
-            "L2 and Mahalanobis witnesses require CVXPY. Install it with "
+            "Constrained, L2 and Mahalanobis witnesses require CVXPY. Install it with "
             "`pip install updatesupport[cvxpy]` or `uv add updatesupport[cvxpy]`."
         ) from exc
 
     states = grouped.problem.states
-    q = cp.Variable(len(states), nonneg=True)
+    q = (
+        cp.Variable(len(states), nonneg=True)
+        if admissible is None
+        else admissible.variable
+    )
     q0_array = np.asarray(q0, dtype=float)
     h_array = np.asarray(h, dtype=float)
-    constraints = []
+    constraints = [] if admissible is None else list(admissible.constraints)
     for public_value in grouped.problem.public_values:
         indices = [
             index
@@ -549,7 +608,9 @@ def _solve_conic(
         constraints.append(target_expression >= boundary)
 
     delta = q - q0_array
-    if metric == "l2":
+    if metric == "tv":
+        distance_expression = 0.5 * cp.norm(delta, 1)
+    elif metric == "l2":
         distance_expression = cp.norm(delta, 2)
     else:
         transform = _mahalanobis_transform(covariance, states)
@@ -581,6 +642,11 @@ def _solve_conic(
     if q.value is None or problem.value is None:
         raise CvxpyError("CVXPY minimum witness did not return an optimizer")
     witness = _clean_witness(q.value, tol=grouped.problem.tol)
+    q.value = np.asarray(witness)
+    if any(float(cp.max(c.violation()).value) > 1e-7 for c in constraints):
+        raise CvxpyError(
+            "minimum witness violates Q or the boundary beyond feasibility tolerance"
+        )
     return witness, float(problem.value), solver_name, problem.status
 
 
@@ -598,6 +664,7 @@ def _build_report(
     solver: str,
     solver_status: str,
     title: str,
+    respect_q: bool = False,
 ) -> MinimumClaimBreakingWitnessReport:
     decision = claim.decision
     if decision is None:  # pragma: no cover - validated at the public boundary
@@ -664,7 +731,9 @@ def _build_report(
         public_law_error=public_law_error,
         solver=solver,
         solver_status=solver_status,
-        exact=True,
+        exact=solver_status not in {"optimal_inaccurate", "infeasible_inaccurate"},
+        respect_q=respect_q,
+        q_name=q_name(claim.primary_q) if respect_q else None,
         cells=cells,
         transfers=transfers,
         limitations=(
@@ -674,8 +743,11 @@ def _build_report(
             "reporting representation; it does not mean statistically unobserved.",
             "The minimum is relative to this refinement, empirical target values, "
             "distance geometry, and threshold margin.",
-            "No forward Q preset is imposed beyond fixed public marginals in this "
-            "first-cut inverse solve.",
+            (
+                "The primary forward Q is imposed in this inverse solve."
+                if respect_q
+                else "No forward Q preset is imposed beyond fixed public marginals in this inverse solve."
+            ),
             "This is deterministic composition sensitivity, not statistical "
             "uncertainty or a confidence interval.",
         ),

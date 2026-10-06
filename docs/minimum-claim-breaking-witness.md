@@ -41,7 +41,7 @@ witness = us.minimum_claim_breaking_witness(rows, claim, distance="tv")
 
 ## Distance Geometries
 
-The first implementation supports:
+Supported geometries:
 
 - `tv`: exact linear programming through SciPy/HiGHS. The optimum is the total
   probability mass that must be reassigned. This is usually the clearest
@@ -51,7 +51,8 @@ The first implementation supports:
   covariance matrix. Correlated or unusually scaled cell shifts can therefore
   receive an explicit geometry.
 
-Install the optional backend for the latter two:
+Install the optional backend for the latter two, or for TV with a non-saturated
+forward Q constraint:
 
 ```bash
 pip install "updatesupport[cvxpy]"
@@ -118,15 +119,31 @@ The result is conditional on the chosen finer refinement and the retained
 empirical support. `hidden` means observed by the analyst but not publicly
 reported; it does not mean statistically unobserved.
 
-The first implementation imposes fixed public marginals but does not intersect
-the inverse problem with the claim's forward `Q` preset. That choice keeps the
-question precise: how far away is the nearest breaking composition in the
-selected geometry? Additional admissibility constraints can be layered into a
-later generalization.
+By default the inverse problem imposes fixed public marginals. Use
+`respect_q=True` to impose the primary forward `Q` too:
+
+```python
+claim = us.claim(
+    "share below 30%", public=["sector"], hidden=["sector", "issuer"],
+    target="flag", weight="value", min_cell_weight=0,
+    q=us.q_tv_budget(.01), decision=us.threshold_decision("<", .30),
+)
+witness = claim.breaking_witness(rows, respect_q=True)
+```
+
+All geometries reuse `cvxpy_admissible_set_spec`, including intersections of
+convex presets. Unsupported custom or mixed-integer Q raises an error. The
+observed law must belong to Q, including when the observed headline already
+fails. A constrained witness may be infeasible even when the unrestricted
+witness exists. The report records `respect_q`, `q_name`, and solver status.
+
+`q_moment_bounds(moments, lower=..., upper=...)` provides shared linear bounds
+on hidden-cell moments. Indicator moments encode group caps; equal lower and
+upper bounds preserve group weights. Finance's `q_portfolio_mandate` constructs
+these moments for issuer caps and reallocation restrictions.
 
 The result is deterministic composition sensitivity, not a confidence interval
 and not the probability that the claim is false. An infeasible result means the
 claim cannot be broken on the retained support under fixed public marginals; it
 does not establish robustness to omitted variables, new hidden cells, target
 estimation error, or every conceivable population shift.
-

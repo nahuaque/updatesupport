@@ -1472,6 +1472,13 @@ class CvxpyEnvironments:
         upper_result = self._solve_single_result(
             problem, h, maximize=True, public_law=p
         )
+        if lower_result.value > upper_result.value:
+            if lower_result.value - upper_result.value > problem.tol:
+                raise CvxpyError(
+                    "CVXPY lower endpoint exceeds upper endpoint beyond tolerance"
+                )
+            # Keep attainable endpoint values and their distributions paired.
+            lower_result, upper_result = upper_result, lower_result
         return TransportResult(
             lower=lower_result.value,
             upper=upper_result.value,

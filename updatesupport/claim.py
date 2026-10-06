@@ -762,16 +762,33 @@ class PublicReportDesign(ReportArtifactMixin):
                     + " |"
                 )
 
-        if self.frontier is not None and self.frontier.minimal_stable is not None:
+        if (
+            self.audit.claim.ambiguity_limit is not None
+            and self.frontier is not None
+            and self.frontier.minimal_stable is not None
+        ):
             minimal = self.frontier.minimal_stable
             lines.extend(
                 [
                     "",
-                    "## Minimal Stable Frontier Candidate",
+                    "## Minimal Ambiguity Frontier Candidate",
                     "",
                     f"- Added columns: `{_column_label(minimal.added_columns)}`",
                     f"- Public cells: {minimal.public_cells}",
                     f"- Max ambiguity: {minimal.max_ambiguity:.4f}",
+                ]
+            )
+
+        if self.audit.decision_repair_candidate is not None:
+            repair = self.audit.decision_repair_candidate
+            lines.extend(
+                [
+                    "",
+                    "## Decision-Certifying Refinement",
+                    "",
+                    f"- Added columns: `{_column_label(repair.added_columns)}`",
+                    f"- Public cells: {repair.public_cells}",
+                    "This refinement certifies decision invariance under the declared rule.",
                 ]
             )
 

@@ -425,6 +425,85 @@ def q_covariate_balance(
     )
 
 
+def q_moment_bounds(
+    moments: Mapping[Hashable, Mapping[Hashable, float] | Sequence[float]],
+    *,
+    lower: Mapping[Hashable, float] | None = None,
+    upper: Mapping[Hashable, float] | None = None,
+    backend: str = "cvxpy",
+    solver: str | None = None,
+    solver_options: Mapping[str, Any] | None = None,
+) -> QPreset:
+    """Impose named linear moment bounds alongside the fixed public law.
+
+    Indicator moments express concentration caps; equal lower/upper bounds
+    freeze a group's total mass. Values refer to the retained normalized law.
+    """
+    preset = QPreset(
+        "moment_bounds",
+        cost=moments,
+        backend=backend,
+        solver=solver,
+        solver_options=solver_options,
+        settings={"lower": dict(lower or {}), "upper": dict(upper or {})},
+    )
+    _moment_bounds_settings(preset)
+    return preset
+
+
+def _moment_bounds_settings(preset):
+    if not isinstance(preset.cost, Mapping) or not preset.cost:
+        raise ValueError("moment_bounds requires a nonempty named moment mapping")
+    settings = preset.settings or {}
+    if set(settings) - {"lower", "upper"}:
+        raise ValueError("unsupported moment_bounds settings")
+    lower, upper = dict(settings.get("lower", {})), dict(settings.get("upper", {}))
+    if set(lower) | set(upper) != set(preset.cost):
+        raise ValueError(
+            "each moment needs a lower or upper bound; unknown bounds are invalid"
+        )
+    for bounds in (lower, upper):
+        for key, value in bounds.items():
+            value = float(value)
+            if not isfinite(value):
+                raise ValueError("moment bounds must be finite")
+            bounds[key] = value
+    if any(lower[k] > upper[k] for k in set(lower) & set(upper)):
+        raise ValueError("moment lower bounds cannot exceed upper bounds")
+    return lower, upper
+
+
+def _moment_bounds_builder(preset):
+    lower, upper = _moment_bounds_settings(preset)
+
+    def build(cp, q, states, state_index):
+        names, rows = _coerce_covariate_moment_rows(preset.cost, states)
+        records = []
+        for name, row in zip(names, rows, strict=True):
+            expression = cp.sum(cp.multiply(row, q))
+            if name in lower:
+                records.append(
+                    cvxpy_constraint(
+                        expression >= lower[name],
+                        name=f"{name}:lower",
+                        kind="moment_bounds",
+                        sense=">=",
+                    )
+                )
+            if name in upper:
+                records.append(
+                    cvxpy_constraint(
+                        expression <= upper[name],
+                        name=f"{name}:upper",
+                        kind="moment_bounds",
+                        sense="<=",
+                    )
+                )
+        return records
+
+    return build
+
+
 def q_mahalanobis_budget(
     radius: float,
     *,
@@ -684,6 +763,17 @@ def resolve_q_environment(
         )
         return _q_environment_from_cvxpy_spec(spec, backend=backend)
 
+    if preset.name == "moment_bounds":
+        spec = _cvxpy_admissible_set_spec_from_preset(
+            preset,
+            public_law=public_law,
+            public_map=public_map,
+            cell_weights=cell_weights,
+        )
+        return _q_environment_from_cvxpy_spec(
+            spec, backend=_backend_name(preset, default="cvxpy")
+        )
+
     if preset.name == "covariate_balance":
         _covariate_balance_radius(preset)
         if preset.cost is None:
@@ -747,6 +837,24 @@ def _cvxpy_admissible_set_spec_from_preset(
         public_map=public_map,
         cell_weights=cell_weights,
     )
+    if preset.name in {"saturated", "observed"}:
+        return CvxpyAdmissibleSetSpec(
+            preset=preset,
+            fixed_public_law=public_law,
+            constraint_builders=()
+            if preset.name == "saturated"
+            else (_observed_constraint_builder(cell_weights),),
+            solver=preset.solver,
+            solver_options=preset.solver_options,
+        )
+    if preset.name == "moment_bounds":
+        return CvxpyAdmissibleSetSpec(
+            preset=preset,
+            fixed_public_law=public_law,
+            constraint_builders=(_moment_bounds_builder(preset),),
+            solver=preset.solver,
+            solver_options=preset.solver_options,
+        )
     if preset.name == "intersection":
         components = _intersection_components(preset)
         component_specs = []
@@ -1074,6 +1182,9 @@ def normalize_q_preset(q: Any, *, q_radius: float | None = None) -> QPreset | No
     if preset.name == "bounded_shift":
         radius = _bounded_radius(preset)
         preset = replace(preset, radius=radius)
+    elif preset.name == "moment_bounds":
+        lower, upper = _moment_bounds_settings(preset)
+        preset = replace(preset, settings={"lower": lower, "upper": upper})
     elif preset.name == "fiber_support_floor":
         _fiber_support_floor_settings(preset)
     elif preset.name == "intersection":
@@ -1146,6 +1257,8 @@ def q_description(q: Any, *, q_radius: float | None = None) -> str:
     preset = normalize_q_preset(q, q_radius=q_radius)
     if preset is None:
         return "custom admissible environment"
+    if preset.name == "moment_bounds":
+        return "fixed observed public law with named linear moment bounds"
     if preset.name == "saturated":
         return (
             "arbitrary reweighting among retained hidden cells inside each observed "
@@ -1270,6 +1383,8 @@ def _canonical_preset(preset: QPreset) -> QPreset:
         "covariate_balance_budget": "covariate_balance",
         "moment-balance": "covariate_balance",
         "moment_balance": "covariate_balance",
+        "moment_bounds": "moment_bounds",
+        "moment-bounds": "moment_bounds",
         "mahalanobis": "mahalanobis_budget",
         "mahalanobis-budget": "mahalanobis_budget",
         "mahalanobis_budget": "mahalanobis_budget",

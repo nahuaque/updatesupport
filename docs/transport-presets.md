@@ -20,6 +20,7 @@ different presets.
 | `q=us.q_kl_budget(radius)` | Information-divergence budget | KL divergence from the observed hidden distribution is bounded | Needs CVXPY and the radius is less intuitive than direct mass movement |
 | `q=us.q_l2_budget(radius)` | Smooth Euclidean shift budget | L2 distance from the observed hidden distribution is bounded | Needs CVXPY and is scale-sensitive across cells |
 | `q=us.q_covariate_balance(radius, moments)` | Causal/model-review balance stress test | Standardized hidden covariate-moment drift is bounded | Needs CVXPY and a defensible moment map |
+| `q=us.q_moment_bounds(moments, lower=..., upper=...)` | Group caps and fixed totals | Named linear moments satisfy declared bounds | Needs CVXPY and correctly defined hidden-cell moments |
 | `q=us.q_mahalanobis_budget(radius, covariance=...)` | Covariance-aware ellipsoidal shifts | Covariance-standardized distance from the observed hidden distribution is bounded | Needs a defensible positive definite covariance matrix and CVXPY |
 | `q=us.q_wasserstein(cost, radius)` | Similarity-aware shifts | Hidden mass can move cheaply between similar cells and expensively between dissimilar cells | Requires a defensible cost matrix and CVXPY |
 | `q=us.q_fiber_support_floor(min_active, min_share=...)` | MIP support-diversity floor | Each public bucket must keep several active hidden cells above a minimum share | Needs SCIP or another MIP-capable CVXPY solver |
@@ -70,6 +71,21 @@ which hidden cells are stable enough to include in the state space. `Q` decides
 how the retained cells may be reweighted.
 
 ## Intersecting Presets
+
+`q_moment_bounds` can encode a concentration cap or a preserved group total:
+
+```python
+q = us.q_moment_bounds(
+    {"group_B": {("A", "low"): 0., ("A", "high"): 1.}},
+    upper={"group_B": .40},
+)
+```
+
+Each moment needs a lower or upper bound, and its values must cover every
+retained hidden state. Bounds are finite and ordered. Equal lower and upper
+bounds fix the moment. With indicator values, bounds use shares of the retained
+normalized population. Q may exclude the observed law or be infeasible; inverse
+witnesses with `respect_q=True` require an admissible observed baseline.
 
 Use `q_intersection(...)` when a stress test needs several admissibility
 requirements at once:
