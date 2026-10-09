@@ -213,3 +213,22 @@ class PortfolioCoverageReport(ReportArtifactMixin):
             f"- Unknown eligible value: {self.unknown_value:,.2f}\n"
             f"- Eligible observed bounds: {self.observed_bounds}\n\n{payload['assumption']}"
         )
+
+    def to_tables(self):
+        """Export the full ledger alongside its original universe totals."""
+        payload = self.as_dict()
+        return {
+            "portfolio_coverage_summary": (
+                {
+                    **{
+                        k: v
+                        for k, v in payload.items()
+                        if k not in {"universe", "entries"}
+                    },
+                    **{
+                        k: v for k, v in payload["universe"].items() if k != "positions"
+                    },
+                },
+            ),
+            "portfolio_coverage_entries": tuple(e.as_dict() for e in self.entries),
+        }

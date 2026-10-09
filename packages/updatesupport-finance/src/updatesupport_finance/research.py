@@ -1,14 +1,13 @@
 """Finite report/evidence planning under fixed nonjoint position weights."""
 
 from dataclasses import dataclass, field
-from itertools import combinations
 from math import fsum, isfinite
 from types import MappingProxyType
 from typing import Mapping
 
 from updatesupport.artifacts import ReportArtifactMixin
 
-from .joint_portfolio import _pareto
+from ._planning import iter_subsets, pareto_frontier
 
 
 @dataclass(frozen=True)
@@ -146,54 +145,52 @@ def plan_portfolio_repairs(report, actions, *, ambiguity_limits, max_evaluations
         c["disclosure_cost"] is not None for c in report.candidates
     )
     plans = []
-    for k in range(len(allowed) + 1):
-        for subset in combinations(allowed, k):
-            narrowed = {}
-            for a in subset:
-                for name, w in a.residual_widths.items():
-                    for pid in a.position_ids:
-                        narrowed[name, pid] = min(w, narrowed.get((name, pid), w))
-            for candidate in report.candidates:
-                widths = {}
-                for name, compiled in report.evidence.metrics.items():
-                    bounds = compiled.policy.target_bounds
-                    default = None if bounds is None else bounds[1] - bounds[0]
-                    missing = [
-                        (e.value, narrowed.get((name, e.position_id), default))
-                        for e in compiled.coverage.entries
-                        if e.status in {"missing", "unmapped"} and e.value
-                    ]
-                    total = compiled.coverage.eligible_value
-                    widths[name] = (
-                        None
-                        if not total or any(w is None for _, w in missing)
-                        else (
-                            report.evidence.common_value
-                            * candidate["metrics"][name]["common_width"]
-                            + fsum(v * w for v, w in missing)
-                        )
-                        / total
+    for subset in iter_subsets(allowed):
+        k = len(subset)
+        narrowed = {}
+        for a in subset:
+            for name, w in a.residual_widths.items():
+                for pid in a.position_ids:
+                    narrowed[name, pid] = min(w, narrowed.get((name, pid), w))
+        for candidate in report.candidates:
+            widths = {}
+            for name, compiled in report.evidence.metrics.items():
+                bounds = compiled.policy.target_bounds
+                default = None if bounds is None else bounds[1] - bounds[0]
+                missing = [
+                    (e.value, narrowed.get((name, e.position_id), default))
+                    for e in compiled.coverage.entries
+                    if e.status in {"missing", "unmapped"} and e.value
+                ]
+                total = compiled.coverage.eligible_value
+                widths[name] = (
+                    None
+                    if not total or any(w is None for _, w in missing)
+                    else (
+                        report.evidence.common_value
+                        * candidate["metrics"][name]["common_width"]
+                        + fsum(v * w for v, w in missing)
                     )
-                plans.append(
-                    {
-                        "public_columns": candidate["public_columns"],
-                        "public_cells": candidate["public_cells"],
-                        "actions": tuple(a.name for a in subset),
-                        "package_count": k,
-                        "unknown_availability": tuple(
-                            a.name for a in subset if a.availability == "unknown"
-                        ),
-                        "evidence_cost": sum(a.cost for a in subset)
-                        if priced
-                        else None,
-                        "disclosure_cost": candidate["disclosure_cost"],
-                        "eligible_widths": widths,
-                        "meets_limits": all(
-                            widths[n] is not None and widths[n] <= w + 1e-10
-                            for n, w in limits.items()
-                        ),
-                    }
+                    / total
                 )
+            plans.append(
+                {
+                    "public_columns": candidate["public_columns"],
+                    "public_cells": candidate["public_cells"],
+                    "actions": tuple(a.name for a in subset),
+                    "package_count": k,
+                    "unknown_availability": tuple(
+                        a.name for a in subset if a.availability == "unknown"
+                    ),
+                    "evidence_cost": sum(a.cost for a in subset) if priced else None,
+                    "disclosure_cost": candidate["disclosure_cost"],
+                    "eligible_widths": widths,
+                    "meets_limits": all(
+                        widths[n] is not None and widths[n] <= w + 1e-10
+                        for n, w in limits.items()
+                    ),
+                }
+            )
 
     def dimensions(p):
         return (
@@ -214,7 +211,7 @@ def plan_portfolio_repairs(report, actions, *, ambiguity_limits, max_evaluations
     return PortfolioRepairFrontier(
         actions,
         tuple(plans),
-        _pareto(plans, dimensions),
-        _pareto(feasible, effort),
+        pareto_frontier(plans, dimensions),
+        pareto_frontier(feasible, effort),
         limits,
     )

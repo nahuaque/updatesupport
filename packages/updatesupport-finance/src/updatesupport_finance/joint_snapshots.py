@@ -3,26 +3,33 @@
 from dataclasses import dataclass
 import hashlib
 import json
-import re
 
 import updatesupport as us
 
 from .joint_portfolio import JointPortfolioEvidence, joint_portfolio_report
-from .portfolio_snapshots import _compile, _decode, _encode
-from .snapshots import _canonical, _versions
+from .compilation import _restore_compiled_portfolio
+from ._snapshot_common import (
+    canonical_json,
+    decode_portable,
+    encode_portable,
+    mapping_changes,
+    payload_digest,
+    runtime_versions,
+    validate_capture_references,
+)
 
 
 def _evidence(payload):
     result = JointPortfolioEvidence(
-        {n: _compile({"portfolio": p}) for n, p in payload["metrics"].items()}
+        {n: _restore_compiled_portfolio(p) for n, p in payload["metrics"].items()}
     )
-    if _canonical(result.as_dict()) != _canonical(payload):
+    if canonical_json(result.as_dict()) != canonical_json(payload):
         raise ValueError("stored joint evidence differs from recompilation")
     return result
 
 
 def _config(payload):
-    config = _decode(payload)
+    config = decode_portable(payload)
     config["conditional_refinements"] = config.pop("refinements")
     return config
 
@@ -55,18 +62,11 @@ class JointPortfolioSnapshot:
             or p["format"] != "updatesupport_finance.joint_portfolio"
         ):
             raise ValueError("invalid joint snapshot schema")
-        if not isinstance(p["capture_references"], dict) or any(
-            not isinstance(k, str)
-            or not isinstance(v, str)
-            or not re.fullmatch(r"[0-9a-f]{64}", v)
-            for k, v in p["capture_references"].items()
-        ):
-            raise ValueError("capture references must be SHA256 digests")
+        validate_capture_references(
+            p["capture_references"], message="capture references must be SHA256 digests"
+        )
         _evidence(p["evidence"])
-        if (
-            hashlib.sha256(_canonical(p["result"]).encode()).hexdigest()
-            != p["result_sha256"]
-        ):
+        if payload_digest(p["result"]) != p["result_sha256"]:
             raise ValueError("stored joint result digest mismatch")
         # Recompute the complete finite result to validate configuration and
         # evidence/result agreement. Comparison across different runtimes is
@@ -74,15 +74,15 @@ class JointPortfolioSnapshot:
         replay = joint_portfolio_report(
             _evidence(p["evidence"]), **_config(p["configuration"])
         )
-        if _canonical(json.loads(replay.to_json())["configuration"]) != _canonical(
-            p["result"]["configuration"]
-        ) or _canonical(replay.as_dict()["scopes"]) != _canonical(
-            p["result"]["scopes"]
-        ):
+        if canonical_json(
+            json.loads(replay.to_json())["configuration"]
+        ) != canonical_json(p["result"]["configuration"]) or canonical_json(
+            replay.as_dict()["scopes"]
+        ) != canonical_json(p["result"]["scopes"]):
             raise ValueError(
                 "stored joint result scope/configuration differs from inputs"
             )
-        object.__setattr__(self, "payload_json", _canonical(p))
+        object.__setattr__(self, "payload_json", canonical_json(p))
 
     @classmethod
     def from_json(cls, text):
@@ -109,34 +109,30 @@ class JointPortfolioSnapshot:
         )
 
     def replay_matches(self):
-        return _canonical(json.loads(self.replay().to_json())) == _canonical(
+        return canonical_json(json.loads(self.replay().to_json())) == canonical_json(
             self.as_dict()["result"]
         )
 
     def runtime_differences(self):
-        stored, current = self.as_dict()["versions"], _versions()
-        return {
-            k: {"stored": stored.get(k), "current": current.get(k)}
-            for k in set(stored) | set(current)
-            if stored.get(k) != current.get(k)
-        }
+        stored, current = self.as_dict()["versions"], runtime_versions()
+        return mapping_changes(
+            stored, current, before_label="stored", after_label="current"
+        )
 
 
 def capture_joint_portfolio_snapshot(report, *, capture_references=None):
     result = json.loads(report.to_json())
     return JointPortfolioSnapshot(
-        _canonical(
+        canonical_json(
             {
                 "format": "updatesupport_finance.joint_portfolio",
                 "schema": 1,
                 "evidence": report.evidence.as_dict(),
-                "configuration": _encode(dict(report.configuration)),
+                "configuration": encode_portable(dict(report.configuration)),
                 "result": result,
-                "result_sha256": hashlib.sha256(
-                    _canonical(result).encode()
-                ).hexdigest(),
+                "result_sha256": payload_digest(result),
                 "capture_references": dict(capture_references or {}),
-                "versions": _versions(),
+                "versions": runtime_versions(),
             }
         )
     )
@@ -145,7 +141,7 @@ def capture_joint_portfolio_snapshot(report, *, capture_references=None):
 def compare_joint_portfolio_snapshots(left, right):
     a, b = left.as_dict(), right.as_dict()
     return {
-        f"{key}_changed": _canonical(a[key]) != _canonical(b[key])
+        f"{key}_changed": canonical_json(a[key]) != canonical_json(b[key])
         for key in ("evidence", "configuration", "result", "versions")
     }
 
@@ -165,7 +161,8 @@ class FrozenJointPortfolioContract:
     def __post_init__(self):
         expected = self._contracts(self.snapshot.replay(), self.candidate_index)
         if set(expected) != set(self.contracts) or any(
-            _canonical(expected[n].as_dict()) != _canonical(self.contracts[n].as_dict())
+            canonical_json(expected[n].as_dict())
+            != canonical_json(self.contracts[n].as_dict())
             for n in expected
         ):
             raise ValueError("frozen contracts differ from the reference report")
@@ -374,7 +371,7 @@ class FrozenJointPortfolioContract:
         ):
             raise ValueError("invalid frozen joint contract schema")
         return cls(
-            JointPortfolioSnapshot(_canonical(p["snapshot"])),
+            JointPortfolioSnapshot(canonical_json(p["snapshot"])),
             p["candidate_index"],
             {
                 n: us.FrozenReportContract.from_dict(c)

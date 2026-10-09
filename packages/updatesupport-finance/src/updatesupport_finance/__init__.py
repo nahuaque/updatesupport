@@ -106,6 +106,23 @@ from .briefs import (
     AnalystDecisionBrief,
     compare_disclosure_scopes,
 )
+from .customer_advances import (
+    AdvanceMovement,
+    CustomerAdvanceBridge,
+    minimum_advance_explanation,
+)
+from .explanations import (
+    DisclosureAlternative,
+    DisclosureEvidenceRequest,
+    DisclosureExplanationCase,
+    DisclosureExplanationComparison,
+    DisclosureEvidenceBundle,
+    DisclosureEvidenceOutcome,
+    DisclosureEvidencePlan,
+    compare_disclosure_explanations,
+    evaluate_disclosure_evidence,
+    plan_disclosure_evidence,
+)
 
 from .disclosure import (
     DisclosureConflictReport,
@@ -173,6 +190,19 @@ except PackageNotFoundError:
     __version__ = "0.0.0"
 
 __all__ = [
+    "DisclosureAlternative",
+    "DisclosureEvidenceRequest",
+    "DisclosureExplanationCase",
+    "DisclosureExplanationComparison",
+    "DisclosureEvidenceBundle",
+    "DisclosureEvidenceOutcome",
+    "DisclosureEvidencePlan",
+    "compare_disclosure_explanations",
+    "evaluate_disclosure_evidence",
+    "plan_disclosure_evidence",
+    "AdvanceMovement",
+    "CustomerAdvanceBridge",
+    "minimum_advance_explanation",
     "JointPortfolioEvidence",
     "JointPortfolioReport",
     "compile_portfolio_metrics",

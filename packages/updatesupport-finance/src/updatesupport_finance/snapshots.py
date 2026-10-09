@@ -5,43 +5,15 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
-from importlib.metadata import PackageNotFoundError, version
 import json
-import platform
-from pathlib import Path
 from typing import Any
 
 import updatesupport as us
 
+from ._snapshot_common import canonical_json, mapping_changes, runtime_versions
 from .disclosure import DisclosureAuditPack, disclosure_audit_pack
 from .evidence import DisclosureFact, _timestamp, validate_disclosure_evidence
 from .measurements import validate_normalization_records
-
-
-def _canonical(payload: Any) -> str:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
-
-
-def _versions() -> dict[str, str]:
-    result = {"python": platform.python_version()}
-    for package in ("updatesupport", "updatesupport-finance", "numpy", "scipy"):
-        try:
-            result[package] = version(package)
-        except PackageNotFoundError:
-            result[package] = "uninstalled"
-    # Version strings alone cannot distinguish unreleased editable checkouts.
-    for package, root in (
-        ("updatesupport", Path(us.__file__).parent),
-        ("updatesupport-finance", Path(__file__).parent),
-    ):
-        digest = sha256()
-        for source in sorted(root.rglob("*.py")):
-            contents = source.read_bytes()
-            digest.update(source.relative_to(root).as_posix().encode() + b"\0")
-            digest.update(len(contents).to_bytes(8, "big"))
-            digest.update(contents)
-        result[f"{package}_source_sha256"] = digest.hexdigest()
-    return result
 
 
 @dataclass(frozen=True)
@@ -119,7 +91,7 @@ class DisclosureSnapshot:
             != payload["claim"]
         ):
             raise ValueError("stored result does not match snapshot inputs")
-        object.__setattr__(self, "payload_json", _canonical(payload))
+        object.__setattr__(self, "payload_json", canonical_json(payload))
 
     def as_dict(self) -> dict[str, Any]:
         return json.loads(self.payload_json)
@@ -137,7 +109,7 @@ class DisclosureSnapshot:
         return sha256(self.payload_json.encode()).hexdigest()
 
     def runtime_differences(self) -> dict[str, dict[str, str | None]]:
-        return _mapping_changes(self.as_dict()["versions"], _versions())
+        return mapping_changes(self.as_dict()["versions"], runtime_versions())
 
     def replay(self) -> DisclosureAuditPack:
         payload = self.as_dict()
@@ -181,7 +153,7 @@ def capture_disclosure_snapshot(
         assumptions=assumptions,
     )
     return DisclosureSnapshot(
-        _canonical(
+        canonical_json(
             {
                 "schema_version": 1,
                 "as_of": cutoff,
@@ -191,22 +163,12 @@ def capture_disclosure_snapshot(
                 "tier": tier,
                 "claim": None if claim is None else claim.as_dict(),
                 "assumptions": list(assumptions),
-                "versions": _versions(),
+                "versions": runtime_versions(),
                 "result": pack.as_dict(),
                 **({"context": dict(context)} if context is not None else {}),
             }
         )
     )
-
-
-def _mapping_changes(
-    before: Mapping[str, Any], after: Mapping[str, Any]
-) -> dict[str, Any]:
-    return {
-        key: {"before": before.get(key), "after": after.get(key)}
-        for key in sorted(before.keys() | after.keys())
-        if key not in before or key not in after or before[key] != after[key]
-    }
 
 
 def compare_disclosure_snapshots(
@@ -249,18 +211,18 @@ def compare_disclosure_snapshots(
         "before_fingerprint": before.fingerprint,
         "after_fingerprint": after.fingerprint,
         "comparability": comparability,
-        "context_changes": _mapping_changes(
+        "context_changes": mapping_changes(
             left.get("context", {}), right.get("context", {})
         ),
         "as_of": {"before": left["as_of"], "after": right["as_of"]},
-        "fact_changes": _mapping_changes(
+        "fact_changes": mapping_changes(
             named(left["facts"], "fact_id"), named(right["facts"], "fact_id")
         ),
-        "constraint_changes": _mapping_changes(
+        "constraint_changes": mapping_changes(
             named(left["problem"]["constraints"], "name"),
             named(right["problem"]["constraints"], "name"),
         ),
-        "model_changes": _mapping_changes(
+        "model_changes": mapping_changes(
             {k: v for k, v in left["problem"].items() if k != "constraints"},
             {k: v for k, v in right["problem"].items() if k != "constraints"},
         ),
@@ -270,7 +232,7 @@ def compare_disclosure_snapshots(
             "before": [left["target"], left["tier"]],
             "after": [right["target"], right["tier"]],
         },
-        "runtime_changes": _mapping_changes(left["versions"], right["versions"]),
+        "runtime_changes": mapping_changes(left["versions"], right["versions"]),
         "interval": {
             "before": left["result"]["interval"],
             "after": right["result"]["interval"],

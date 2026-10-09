@@ -8,7 +8,12 @@ from math import isfinite
 from types import MappingProxyType
 from typing import Mapping, Sequence
 
-from .coverage import PortfolioCoverageEntry, PortfolioCoverageReport, PortfolioUniverse
+from .coverage import (
+    PortfolioCoverageEntry,
+    PortfolioCoverageReport,
+    PortfolioPosition,
+    PortfolioUniverse,
+)
 from .evidence import DisclosureFact, _timestamp, validate_disclosure_evidence
 
 
@@ -180,6 +185,31 @@ class CompiledPortfolio:
             "coverage": self.coverage.as_dict(),
             "diagnostics": [dict(x) for x in self.diagnostics],
         }
+
+
+def _restore_compiled_portfolio(data: Mapping) -> CompiledPortfolio:
+    """Recompile portable inputs through the same point-in-time selection path.
+
+    Snapshot owners compare the result with their stored evidence; neither
+    stored rows nor a stored coverage ledger bypass compilation.
+    """
+    raw_universe = dict(data["universe"])
+    raw_universe["positions"] = [
+        PortfolioPosition(**p) for p in raw_universe["positions"]
+    ]
+    return compile_portfolio_evidence(
+        PortfolioUniverse(**raw_universe),
+        observations=[
+            FundamentalObservation(
+                DisclosureFact(**x["fact"]),
+                x["period_kind"],
+                x["normalized_period_end"],
+            )
+            for x in data["observations"]
+        ],
+        taxonomy=[TaxonomyAssignment(**t) for t in data["taxonomy"]],
+        policy=PortfolioMetricPolicy(**data["policy"]),
+    )
 
 
 def compile_portfolio_evidence(

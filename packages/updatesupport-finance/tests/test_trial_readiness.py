@@ -332,6 +332,49 @@ def test_portfolio_snapshot_recompiles_replays_and_detects_corruption():
         uf.capture_portfolio_snapshot(report, capture_references={"raw": "invalid"})
 
 
+@pytest.mark.parametrize("scope", ["covered", "eligible"])
+@pytest.mark.parametrize("strict", [False, True])
+def test_headline_table_exports_preserve_scope_and_uncovered_positions(scope, strict):
+    book = compile_book(strict=strict)
+    report = headline(book, scope=scope)
+    tables = report.to_tables()
+    # Exercise both the finance methods and the generic exporter: inherited
+    # defaults used to recurse for headline and coverage reports.
+    exported = us.report_tables(report)
+    check.assertEqual(exported.keys(), tables.keys())
+    summary = exported["portfolio_headline_summary"][0]
+    check.assertEqual(summary["scope"], scope)
+    check.assertEqual(summary["actual_headline"], report.actual_headline)
+    check.assertEqual(summary["summary_support"], report.summary_support)
+    expected = report.observed_bounds or (None, None)
+    check.assertEqual((summary["observed_lower"], summary["observed_upper"]), expected)
+    expected = report.summary_bounds or (None, None)
+    check.assertEqual((summary["summary_lower"], summary["summary_upper"]), expected)
+    entries = exported["portfolio_coverage_entries"]
+    check.assertEqual(
+        {e["position_id"] for e in entries},
+        {p.position_id for p in book.universe.positions},
+    )
+    check.assertEqual(sum(e["value"] for e in entries), book.coverage.supplied_value)
+    check.assertEqual(
+        us.report_tables(book.coverage),
+        {k: exported[k] for k in book.coverage.to_tables()},
+    )
+    if strict:
+        check.assertEqual(report.actual_headline, "inconclusive")
+        check.assertEqual(tables["portfolio_headline_refinements"], ())
+        check.assertEqual(tables["portfolio_headline_transfers"], ())
+
+
+def test_portfolio_snapshot_rejects_duplicate_portable_q_keys():
+    payload = uf.capture_portfolio_snapshot(headline(compile_book())).as_dict()
+    payload["configuration"]["q"] = {
+        "mapping": [["kind", "preset"], ["kind", "preset"]]
+    }
+    with pytest.raises(ValueError, match="duplicate keys"):
+        uf.PortfolioSnapshot.from_json(json.dumps(payload))
+
+
 def margin_fact(name, value, axis):
     return uf.DisclosureFact(
         name,

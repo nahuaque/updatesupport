@@ -142,3 +142,37 @@ Use these directly only when you intentionally want a lower-level artifact:
 These are implementation depth behind the claim workflow. They remain useful for
 method development, diagnostics, and specialized notebooks, but they should not
 be the first thing a new analyst has to learn.
+
+## Finance API
+
+Import financial workflows from `updatesupport_finance`. The development additions
+are unreleased and available from the repository checkout. They use the core
+solver and accept reviewed evidence and policies without requiring a provider.
+
+| Layer | Main API | Responsibility |
+| --- | --- | --- |
+| Source evidence | `DisclosureFact`, `disclosure_fact_constraint`, `link_disclosure_evidence` | Preserve source context, lineage and reported precision. |
+| Measurement contracts | `MeasurementDefinition`, `DisclosureRequirement`, `normalize_disclosure_fact`, `compile_disclosure_evidence` | Normalize numerical units and quarantine incomplete or incompatible inputs. |
+| Accounting models | `allocation_table`, `percentage_constraints`, `CashMeasure`, `time_window_allocation`, `CustomerAdvanceBridge` | Compile declared relationships, scopes and movement mappings. |
+| Conditional analysis | `ConstraintPolicy`, `DisclosureStressCase`, `break_even_analysis`, `minimum_advance_explanation` | Re-solve assumptions and necessary financial amounts under explicit conditions. |
+| Competing explanations | `DisclosureAlternative`, `compare_disclosure_explanations` | Compare accounts across accounting mappings, preserving bounds, witnesses and conflicts. |
+| Next evidence | `DisclosureEvidenceRequest`, `evaluate_disclosure_evidence`, `plan_disclosure_evidence` | Test hypothetical answers or search a finite catalog for separating bundles. |
+| Portfolio evidence | `PortfolioUniverse`, `PortfolioMetricPolicy`, `compile_portfolio_evidence`, `compile_portfolio_metrics` | Account for each original position and retain per-measure coverage. |
+| Portfolio reporting | `portfolio_headline_report`, `joint_portfolio_report`, `plan_portfolio_repairs` | Separate headline truth, summary support, reporting choices and missing evidence. |
+| Review and replay | `AnalystDecisionBrief`, `capture_disclosure_snapshot`, `capture_portfolio_snapshot`, `capture_joint_portfolio_snapshot`, `FrozenJointPortfolioContract` | Export review artifacts and replay saved inputs offline. |
+
+These layers share numerical and artifact infrastructure, while their evidence
+meanings stay explicit. An accounting mapping is a reviewed relationship;
+an explanation is a catalog restriction; an evidence outcome is hypothetical.
+Portfolio acquisition plans describe conditional width reductions. None of
+these establishes the company's actual cause or supplies a missing observation.
+
+`updatesupport_finance.explanations` retains the same public comparison and
+planning imports as the package root. Private modules beginning with `_` are
+implementation details. Snapshot formats keep their existing schemas and replay
+validation; stored source fingerprints can report a changed implementation.
+
+Use the [disclosure evidence guide](disclosure-evidence.md),
+[customer-advance guide](customer-advance-reconciliation.md),
+[explanation workflow](disclosure-explanations.md) and
+[joint portfolio guide](joint-portfolio-report.md) for complete examples.

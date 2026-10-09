@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import updatesupport as us
+from updatesupport.artifacts import ReportArtifactMixin
 
 from .presets import finance_sensitivity_grid
 
@@ -88,7 +89,7 @@ class ReviewThresholds:
 
 
 @dataclass(frozen=True)
-class ModelRiskReport:
+class ModelRiskReport(ReportArtifactMixin):
     """Finance-specific wrapper around a core public-descent report."""
 
     core: us.PublicDescentReport
@@ -144,9 +145,6 @@ class ModelRiskReport:
             "reviewer_notes": self.reviewer_notes,
             "core": self.core.as_dict(),
         }
-
-    def to_json(self, **kwargs: Any) -> str:
-        return us.report_to_json(self, **kwargs)
 
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         tables = {
@@ -209,9 +207,6 @@ class ModelRiskReport:
             {f"core_{name}": rows for name, rows in self.core.to_tables().items()}
         )
         return tables
-
-    def to_dataframes(self) -> dict[str, Any]:
-        return us.tables_to_dataframes(self.to_tables())
 
     def to_markdown(self) -> str:
         lines = [f"# {self.core.title}", ""]
@@ -513,7 +508,7 @@ class ModelRiskReport:
 
 
 @dataclass(frozen=True)
-class FinanceStabilityCertificate:
+class FinanceStabilityCertificate(ReportArtifactMixin):
     """Finance-specific wrapper around a core representation certificate."""
 
     core: us.RepresentationStabilityCertificate
@@ -616,9 +611,6 @@ class FinanceStabilityCertificate:
             "backtest, or governance approval.",
         ]
 
-    def to_json(self, **kwargs: Any) -> str:
-        return us.report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         tables = {
             "finance_certificate": (
@@ -639,9 +631,6 @@ class FinanceStabilityCertificate:
             {f"core_{name}": rows for name, rows in self.core.to_tables().items()}
         )
         return tables
-
-    def to_dataframes(self) -> dict[str, Any]:
-        return us.tables_to_dataframes(self.to_tables())
 
 
 def from_portfolio(

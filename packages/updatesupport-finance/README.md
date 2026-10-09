@@ -8,6 +8,11 @@ It bounds hidden allocations, tests claims against supplied evidence, and shows
 how conclusions depend on measurement definitions and assumptions. It also
 audits whether a public risk segmentation supports a reported portfolio metric.
 
+The development workflows below are unreleased; use the finance package from this
+checkout. Source retrieval, accounting interpretation and policy selection
+remain explicit inputs. No provider credentials or proprietary captures are
+needed to use these APIs.
+
 ## Disclosure analysis for analysts
 
 The development workflow supports questions such as how much segment revenue
@@ -32,11 +37,39 @@ consistently, and what funding is required under an explicitly chosen plan.
    arithmetic baselines, decision impacts and concrete missing evidence.
    Comparison guards flag different windows and anonymous customer cohorts.
 
-These additions are unreleased; use the finance package from this checkout.
 See the [synthetic analyst example](examples/analyst_decision_workflow.py) and
-[workflow documentation](../../docs/disclosure-evidence.md). Source retrieval,
-accounting interpretation and the selection of policies remain explicit inputs.
-No provider credentials or proprietary captures are needed to use these APIs.
+[workflow documentation](../../docs/disclosure-evidence.md).
+
+### Customer advances and alternative funding explanations
+
+`AdvanceMovement` and `CustomerAdvanceBridge` compile reviewed customer-advance
+roll-forwards, separating net cash, recognition, unpaid bills and signed noncash
+movements. Incomplete mappings retain an unclassified residual. An optional
+liability / indirect cash-flow gap remains a separate diagnostic.
+
+`minimum_advance_explanation` calculates the least net noncash addition required
+under an explicit hypothetical cash ceiling. It preserves unbounded and
+infeasible results and labels the condition as an analyst policy. Accounting
+regime, recognition basis, completeness and measurement scope remain explicit.
+See the [workflow guide](../../docs/customer-advance-reconciliation.md) and
+[offline example](examples/customer_advance_reconciliation.py).
+
+### Compare explanations and choose the next evidence
+
+`compare_disclosure_explanations` crosses named economic explanations with
+explicit accounting mappings. Its matrix retains financial bounds, checked
+witnesses, conflicts and conclusions that depend on the mapping.
+`plan_disclosure_evidence` finds inclusion-minimal bundles of hypothetical
+measurement or scope-review outcomes that exclude selected explanations across
+the retained mappings. Contradictory outcomes and empty or uncovered mappings
+cannot certify separation. JSON exports preserve the basis and outcome witnesses.
+`evaluate_disclosure_evidence` shows what selected hypothetical answers leave
+standing, without an elimination goal, including optional financial requirements.
+This supports competing-accounts briefs with explicit answer implications.
+See the [workflow guide](../../docs/disclosure-explanations.md) and
+[synthetic offline example](examples/disclosure_explanations.py).
+Compatibility does not identify an actual cause or assign probabilities to the
+supplied explanation catalog.
 
 ## Multi-metric portfolio reports
 
@@ -50,9 +83,25 @@ intersection. Criteria are optional. Core `ConditionalRefinement` objects and
 fixed nonjoint weights, preserving source availability and cost uncertainty.
 `JointPortfolioSnapshot` replays offline; `FrozenJointPortfolioContract` monitors
 a chosen schema/Q/measurement contract without inventing historical calibration.
-These development APIs are unreleased. See the
-[workflow guide](../../docs/joint-portfolio-report.md) and
+See the [workflow guide](../../docs/joint-portfolio-report.md) and
 [offline example](examples/joint_portfolio_workflow.py).
+
+## API organization
+
+Import the supported API from `updatesupport_finance`. The
+[finance API map](../../docs/api-surface.md#finance-api) groups the development APIs
+by evidence, accounting models, explanation analysis, portfolio reporting and
+offline replay. Imports from `updatesupport_finance.explanations` remain supported.
+
+Report types with tables share the core JSON/DataFrame exporter and define their
+own tables. `PortfolioHeadlineReport.to_tables()` includes headline truth and
+summary support alongside the full coverage ledger, refinements and transfers;
+`PortfolioCoverageReport.to_tables()` retains the supplied and eligible totals.
+
+Internally, explanation comparison and evidence planning have separate engines.
+Snapshot formats share serialization and provenance helpers, and finite planning
+workflows share subset enumeration and frontier selection. Files beginning with
+`_` are implementation details; snapshot schemas remain owned by each workflow.
 
 ## Segmentation and model review
 

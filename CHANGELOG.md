@@ -4,8 +4,27 @@ All notable changes to `updatesupport` are documented here.
 
 ## Unreleased
 
+### Changed
+
+- Consolidated finance snapshot serialization, runtime provenance, portable Q
+  encoding and portfolio evidence restoration; existing formats still replay.
+- Separated finance explanation comparison from hypothetical evidence planning
+  behind the existing public imports; reused shared report exports and finite
+  subset/frontier helpers without changing financial results or search order.
+
 ### Added
 
+- Finance explanation comparisons across explicit accounting mappings, with
+  checked witnesses, conflicts and mapping-dependent conclusions; bounded
+  hypothetical evidence catalogs produce inclusion-minimal separating bundles
+  while preserving source facts and rejecting vacuous separation.
+- Direct finance evidence-outcome evaluation without an elimination goal,
+  retaining mapping/dependency guards, surviving explanations and optional
+  financial requirements for competing-accounts analyst briefs.
+- Reviewed customer-advance bridges with typed movement mappings, signed
+  noncash unknowns, incomplete-mapping residuals and separate indirect cash-flow
+  diagnostics; conditional minimum alternative-explanation analyses reuse the
+  existing solver and preserve scope, accounting basis, witnesses and conflicts.
 - Joint finance portfolio evidence and raw shared-report frontiers, retaining
   per-metric coverage, known nonjoint contributions, missing-evidence floors,
   explicit evaluation scopes, and optional disclosure costs.
@@ -41,6 +60,9 @@ All notable changes to `updatesupport` are documented here.
 
 ### Fixed
 
+- Finance headline and coverage table exports no longer recurse through the
+  generic exporter. Tables retain evaluation scope, missing positions, original
+  universe totals, refinements and breaking transfers.
 - Shared design deduplicates equivalent primary/scenario Q presets through
   serialization without collapsing distinct stress or solver settings.
 - Finance decision briefs show infeasible interval status and absent endpoints

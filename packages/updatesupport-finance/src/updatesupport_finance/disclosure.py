@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import updatesupport as us
+from updatesupport.artifacts import ReportArtifactMixin
 
 from .allocations import DisclosureAllocationReport, disclosure_allocations
 from .evidence import DisclosureFact, validate_disclosure_evidence
@@ -41,7 +42,7 @@ DEFAULT_DISCLOSURE_AUDIT_LIMITATIONS = (
 
 
 @dataclass(frozen=True)
-class DisclosureAuditPack:
+class DisclosureAuditPack(ReportArtifactMixin):
     """Analyst-facing disclosure audit artifact.
 
     The pack wraps a solved disclosure-triangulation report around one headline
@@ -135,9 +136,6 @@ class DisclosureAuditPack:
             else self.allocations.as_dict(),
         }
 
-    def to_json(self, **kwargs: Any) -> str:
-        return us.report_to_json(self, **kwargs)
-
     def to_tables(self) -> dict[str, tuple[dict[str, Any], ...]]:
         interval = self.interval
         tables: dict[str, tuple[dict[str, Any], ...]] = {
@@ -201,9 +199,6 @@ class DisclosureAuditPack:
         if self.allocations is not None:
             tables.update(self.allocations.to_tables())
         return tables
-
-    def to_dataframes(self) -> dict[str, Any]:
-        return us.tables_to_dataframes(self.to_tables())
 
     def to_markdown(self) -> str:
         interval = self.interval

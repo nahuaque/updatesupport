@@ -179,6 +179,33 @@ class PortfolioHeadlineReport(ReportArtifactMixin):
         )
         return "\n".join(lines)
 
+    def to_tables(self):
+        """Retain scope, headline truth, summary support, and missing evidence."""
+        payload = self.as_dict()
+        observed = self.observed_bounds
+        summary = self.summary_bounds
+        return {
+            **self.portfolio.coverage.to_tables(),
+            "portfolio_headline_summary": (
+                {
+                    "headline": payload["headline"],
+                    "scope": payload["scope"],
+                    "actual_headline": payload["actual_headline"],
+                    "summary_support": payload["summary_support"],
+                    "observed_lower": None if observed is None else observed[0],
+                    "observed_upper": None if observed is None else observed[1],
+                    "summary_lower": None if summary is None else summary[0],
+                    "summary_upper": None if summary is None else summary[1],
+                },
+            ),
+            "portfolio_headline_refinements": tuple(payload["refinements"]),
+            "portfolio_headline_transfers": tuple(payload["transfers"]),
+            "portfolio_headline_diagnostics": tuple(payload["diagnostics"]),
+            "portfolio_headline_limitations": tuple(
+                {"limitation": value} for value in payload["limitations"]
+            ),
+        }
+
 
 def _claim(config, *, public=None, refinements=None):
     return us.claim(

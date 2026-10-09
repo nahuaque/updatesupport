@@ -1,6 +1,6 @@
 """Illustrative offline evidence, triangulation, and revision-replay workflow.
 
-These are invented disclosures, not StockFit data or an actual issuer.
+All disclosures and issuer details in this example are fictional.
 Run with ``uv run --package updatesupport-finance python
 packages/updatesupport-finance/examples/disclosure_evidence_workflow.py``.
 Pass ``--output DIRECTORY`` to save both snapshots and the comparison.

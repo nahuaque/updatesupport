@@ -353,3 +353,11 @@ def test_snapshot_preserves_tuple_keyed_q_costs_and_conditional_predicate_replay
         local["public_columns"], ("sector", "industry", suggestion.candidates[0].name)
     )
     check.assertTrue(f.capture_joint_portfolio_snapshot(conditional).replay_matches())
+
+
+def test_joint_snapshot_rejects_duplicate_portable_configuration_keys():
+    payload = f.capture_joint_portfolio_snapshot(report()).as_dict()
+    pairs = payload["configuration"]["mapping"]
+    pairs.append(pairs[0])
+    with pytest.raises(ValueError, match="duplicate keys"):
+        f.JointPortfolioSnapshot.from_json(json.dumps(payload))

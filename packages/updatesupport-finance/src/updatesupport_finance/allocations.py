@@ -8,6 +8,7 @@ from types import MappingProxyType
 from typing import Any
 
 import updatesupport as us
+from updatesupport.artifacts import ReportArtifactMixin
 
 
 @dataclass(frozen=True)
@@ -31,16 +32,10 @@ class DisclosureAllocation:
 
 
 @dataclass(frozen=True)
-class DisclosureAllocationReport:
+class DisclosureAllocationReport(ReportArtifactMixin):
     allocations: tuple[DisclosureAllocation, ...]
     attempts: tuple[dict[str, Any], ...]
     threshold_margin: float
-
-    def to_json(self, **kwargs: Any) -> str:
-        return us.report_to_json(self, **kwargs)
-
-    def to_dataframes(self) -> dict[str, Any]:
-        return us.tables_to_dataframes(self.to_tables())
 
     def as_dict(self) -> dict[str, Any]:
         return {

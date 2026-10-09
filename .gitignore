@@ -3,6 +3,15 @@
 venv/
 env/
 
+# dotenv
+.env
+.env.*
+!.env.example
+
+# Local agent configuration and private research
+.codex/
+experiments/**/private/
+
 # Python bytecode and test caches
 __pycache__/
 *.py[cod]

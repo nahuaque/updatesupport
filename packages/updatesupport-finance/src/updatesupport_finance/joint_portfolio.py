@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import combinations
 from math import comb, fsum, isfinite
 from types import MappingProxyType
 from typing import Mapping
@@ -11,6 +10,7 @@ from typing import Mapping
 import updatesupport as us
 from updatesupport.artifacts import ReportArtifactMixin
 
+from ._planning import iter_subsets, pareto_frontier
 from .compilation import CompiledPortfolio, compile_portfolio_evidence
 
 _EVIDENCE_COLUMNS = {"metric", "fact_id", "target_status"}
@@ -195,20 +195,6 @@ def compile_portfolio_metrics(universe, *, observations, taxonomy=(), policies):
             )
             for name, policy in policies.items()
         }
-    )
-
-
-def _pareto(rows, dimensions):
-    # Strict domination retains equivalent choices and ties.
-    return tuple(
-        r
-        for r in rows
-        if not any(
-            all(a <= b + 1e-12 for a, b in zip(dimensions(s), dimensions(r)))
-            and any(a < b - 1e-12 for a, b in zip(dimensions(s), dimensions(r)))
-            for s in rows
-            if s is not r
-        )
     )
 
 
@@ -460,7 +446,7 @@ def joint_portfolio_report(
         return JointPortfolioReport(
             evidence, config, (), (), None, "inconclusive_no_common_book"
         )
-    choices = [s for k in range(maximum + 1) for s in combinations(columns, k)] + [
+    choices = list(iter_subsets(columns, max_size=maximum)) + [
         (*tuple(k for k in x.predicate if k not in public), x.name) for x in refinements
     ]
     candidates = []
@@ -536,7 +522,7 @@ def joint_portfolio_report(
             *(m["common_width"] for m in c["metrics"].values()),
         )
 
-    frontier = _pareto(candidates, dimensions)
+    frontier = pareto_frontier(candidates, dimensions)
     feasible = [c for c in candidates if c["contract_met"] is True]
     selected = (
         min(

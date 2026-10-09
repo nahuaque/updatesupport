@@ -4,78 +4,28 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from dataclasses import dataclass
 from typing import Mapping
 
 import updatesupport as us
 from updatesupport.exports import _json_ready
 
-from .compilation import (
-    FundamentalObservation,
-    PortfolioMetricPolicy,
-    TaxonomyAssignment,
-    compile_portfolio_evidence,
+from ._snapshot_common import (
+    canonical_json,
+    decode_portable,
+    encode_portable,
+    mapping_changes,
+    payload_digest,
+    runtime_versions,
+    validate_capture_references,
 )
-from .coverage import PortfolioPosition, PortfolioUniverse
-from .evidence import DisclosureFact
+from .compilation import _restore_compiled_portfolio
 from .headline import portfolio_headline_report
-from .snapshots import _canonical, _versions
-
-
-def _encode(value):
-    """Preserve tuple-keyed Q matrices without converting states to strings."""
-    if isinstance(value, Mapping):
-        return {"mapping": [[_encode(k), _encode(v)] for k, v in value.items()]}
-    if isinstance(value, tuple):
-        return {"tuple": [_encode(x) for x in value]}
-    if isinstance(value, list):
-        return [_encode(x) for x in value]
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    raise TypeError("portfolio snapshots require portable built-in Q values")
-
-
-def _decode(value):
-    if isinstance(value, dict):
-        if set(value) == {"mapping"}:
-            pairs = [(_decode(k), _decode(v)) for k, v in value["mapping"]]
-            result = dict(pairs)
-            if len(result) != len(pairs):
-                raise ValueError("duplicate keys in portable Q mapping")
-            return result
-        if set(value) == {"tuple"}:
-            return tuple(_decode(x) for x in value["tuple"])
-        raise ValueError("invalid portable Q encoding")
-    if isinstance(value, list):
-        return [_decode(x) for x in value]
-    return value
-
-
-def _compile(payload):
-    data = payload["portfolio"]
-    raw_universe = dict(data["universe"])
-    raw_universe["positions"] = [
-        PortfolioPosition(**p) for p in raw_universe["positions"]
-    ]
-    return compile_portfolio_evidence(
-        PortfolioUniverse(**raw_universe),
-        observations=[
-            FundamentalObservation(
-                DisclosureFact(**x["fact"]),
-                x["period_kind"],
-                x["normalized_period_end"],
-            )
-            for x in data["observations"]
-        ],
-        taxonomy=[TaxonomyAssignment(**t) for t in data["taxonomy"]],
-        policy=PortfolioMetricPolicy(**data["policy"]),
-    )
 
 
 def _configuration(payload):
     config = dict(payload["configuration"])
-    config["q"] = us.QSpec.from_value(_decode(config["q"])).to_preset()
+    config["q"] = us.QSpec.from_value(decode_portable(config["q"])).to_preset()
     return config
 
 
@@ -103,15 +53,12 @@ class PortfolioSnapshot:
         }
         if set(payload) != required or payload["schema"] != 1:
             raise ValueError("invalid portfolio snapshot schema")
-        if not isinstance(payload["capture_references"], dict) or any(
-            not isinstance(k, str)
-            or not isinstance(v, str)
-            or not re.fullmatch(r"[0-9a-f]{64}", v)
-            for k, v in payload["capture_references"].items()
-        ):
-            raise ValueError("capture references must map names to SHA256 hex digests")
-        compiled = _compile(payload)
-        if _canonical(compiled.as_dict()) != _canonical(payload["portfolio"]):
+        validate_capture_references(
+            payload["capture_references"],
+            message="capture references must map names to SHA256 hex digests",
+        )
+        compiled = _restore_compiled_portfolio(payload["portfolio"])
+        if canonical_json(compiled.as_dict()) != canonical_json(payload["portfolio"]):
             raise ValueError(
                 "stored portfolio selection/coverage differs from recompilation"
             )
@@ -120,24 +67,22 @@ class PortfolioSnapshot:
         from .headline import _claim, _validate_configuration
 
         _validate_configuration(config)
-        if (
-            payload["result_sha256"]
-            != hashlib.sha256(_canonical(payload["result"]).encode()).hexdigest()
-        ):
+        if payload["result_sha256"] != payload_digest(payload["result"]):
             raise ValueError("stored result digest mismatch")
         result = payload["result"]
         if (
             result["headline"] != config["headline"]
             or result["scope"] != config["scope"]
-            or _canonical(result["coverage"]) != _canonical(compiled.coverage.as_dict())
+            or canonical_json(result["coverage"])
+            != canonical_json(compiled.coverage.as_dict())
         ):
             raise ValueError("stored result scope/evidence differs from inputs")
         if result["audit"] is not None:
-            if _canonical(result["audit"]["claim"]) != _canonical(
+            if canonical_json(result["audit"]["claim"]) != canonical_json(
                 _json_ready(_claim(config).as_dict())
             ):
                 raise ValueError("stored claim differs from replay configuration")
-        object.__setattr__(self, "payload_json", _canonical(payload))
+        object.__setattr__(self, "payload_json", canonical_json(payload))
 
     @classmethod
     def from_json(cls, text):
@@ -155,15 +100,15 @@ class PortfolioSnapshot:
 
     def replay(self):
         payload = self.as_dict()
-        return portfolio_headline_report(_compile(payload), **_configuration(payload))
+        return portfolio_headline_report(
+            _restore_compiled_portfolio(payload["portfolio"]), **_configuration(payload)
+        )
 
     def runtime_differences(self):
-        stored, current = self.as_dict()["versions"], _versions()
-        return {
-            k: {"stored": stored.get(k), "current": current.get(k)}
-            for k in set(stored) | set(current)
-            if stored.get(k) != current.get(k)
-        }
+        stored, current = self.as_dict()["versions"], runtime_versions()
+        return mapping_changes(
+            stored, current, before_label="stored", after_label="current"
+        )
 
 
 def capture_portfolio_snapshot(
@@ -171,7 +116,7 @@ def capture_portfolio_snapshot(
 ):
     """Capture a headline report, its complete normalized evidence and Q spec."""
     config = dict(report.configuration)
-    config["q"] = _encode(us.QSpec.from_value(config["q"]).as_dict())
+    config["q"] = encode_portable(us.QSpec.from_value(config["q"]).as_dict())
     # The shared JSON exporter converts tuple state keys in core report objects.
     # Store the result as a structured artifact using the same export path.
     result = json.loads(report.to_json())
@@ -180,11 +125,11 @@ def capture_portfolio_snapshot(
         "portfolio": report.portfolio.as_dict(),
         "configuration": config,
         "capture_references": dict(capture_references or {}),
-        "versions": _versions(),
+        "versions": runtime_versions(),
         "result": result,
-        "result_sha256": hashlib.sha256(_canonical(result).encode()).hexdigest(),
+        "result_sha256": payload_digest(result),
     }
-    return PortfolioSnapshot(_canonical(payload))
+    return PortfolioSnapshot(canonical_json(payload))
 
 
 def compare_portfolio_snapshots(before: PortfolioSnapshot, after: PortfolioSnapshot):
