@@ -1,9 +1,9 @@
 # Multi-metric portfolio reporting and repairs
 
-The development APIs combine multiple financial measurements, their coverage,
+The APIs combine multiple financial measurements, their coverage,
 and one reporting schema. They diagnose the ambiguity a summary leaves, suggest
-local drills, and compare conditional evidence plans. Use the finance package
-from this checkout; these additions have not been released.
+local drills, and compare conditional evidence plans. These APIs are available
+in `updatesupport-finance>=0.1.6` with `updatesupport>=0.1.7`.
 
 ## Compile a common book without losing known evidence
 

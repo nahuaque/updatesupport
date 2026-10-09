@@ -4,6 +4,8 @@ All notable changes to `updatesupport` are documented here.
 
 ## Unreleased
 
+## 0.1.7 - 2026-10-09
+
 ### Changed
 
 - Consolidated finance snapshot serialization, runtime provenance, portable Q
@@ -72,6 +74,16 @@ All notable changes to `updatesupport` are documented here.
   ambiguity criterion was declared.
 - CVXPY local intervals preserve ordered, attainable endpoints when nominally
   equal solver values differ by roundoff within the problem tolerance.
+
+### Packaging and QA
+
+- Released `updatesupport` `0.1.7` and `updatesupport-finance` `0.1.6`.
+- Raised the core `finance` extra to `updatesupport-finance>=0.1.6` and the
+  finance plugin core dependency floor to `updatesupport>=0.1.7`.
+- Synchronized plugin metadata, notebook installation requirements and workflow
+  documentation with the released versions. Public examples remain fictional
+  or use cited SEC filing controls; private research and provider captures are
+  excluded from Git and package artifacts.
 
 ## 0.1.6 - 2026-09-15
 

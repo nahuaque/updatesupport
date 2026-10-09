@@ -145,8 +145,8 @@ be the first thing a new analyst has to learn.
 
 ## Finance API
 
-Import financial workflows from `updatesupport_finance`. The development additions
-are unreleased and available from the repository checkout. They use the core
+Import financial workflows from `updatesupport_finance`. These APIs are available
+in `updatesupport-finance>=0.1.6` with `updatesupport>=0.1.7`. They use the core
 solver and accept reviewed evidence and policies without requiring a provider.
 
 | Layer | Main API | Responsibility |

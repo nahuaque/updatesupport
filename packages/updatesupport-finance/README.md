@@ -8,14 +8,14 @@ It bounds hidden allocations, tests claims against supplied evidence, and shows
 how conclusions depend on measurement definitions and assumptions. It also
 audits whether a public risk segmentation supports a reported portfolio metric.
 
-The development workflows below are unreleased; use the finance package from this
-checkout. Source retrieval, accounting interpretation and policy selection
+The workflows below are available in `updatesupport-finance>=0.1.6` with
+`updatesupport>=0.1.7`. Source retrieval, accounting interpretation and policy selection
 remain explicit inputs. No provider credentials or proprietary captures are
 needed to use these APIs.
 
 ## Disclosure analysis for analysts
 
-The development workflow supports questions such as how much segment revenue
+The disclosure workflow supports questions such as how much segment revenue
 must come from a disclosed customer group, whether cash measures treat advances
 consistently, and what funding is required under an explicitly chosen plan.
 
@@ -89,7 +89,7 @@ See the [workflow guide](../../docs/joint-portfolio-report.md) and
 ## API organization
 
 Import the supported API from `updatesupport_finance`. The
-[finance API map](../../docs/api-surface.md#finance-api) groups the development APIs
+[finance API map](../../docs/api-surface.md#finance-api) groups the APIs
 by evidence, accounting models, explanation analysis, portfolio reporting and
 offline replay. Imports from `updatesupport_finance.explanations` remain supported.
 
@@ -153,8 +153,8 @@ uv add "updatesupport[cvxpy]" updatesupport-finance
 
 ## Portfolio Evidence and Headline Audits
 
-This section describes the unreleased development APIs. Use core and finance
-from the same checkout until the next coordinated package release.
+These APIs are available in `updatesupport-finance>=0.1.6` with
+`updatesupport>=0.1.7`.
 
 The provider-neutral workflow is:
 

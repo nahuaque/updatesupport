@@ -39,7 +39,7 @@ from .presets import (
 
 plugin = us.UpdateSupportPlugin(
     name="finance",
-    version="0.1.5",
+    version="0.1.6",
     description="Financial model-risk metrics, Q presets, and report profiles.",
     metrics={
         "default_rate": default_rate,
@@ -83,6 +83,6 @@ plugin = us.UpdateSupportPlugin(
             "model-validation",
             "portfolio-stability",
         ),
-        min_updatesupport_version="0.1.6",
+        min_updatesupport_version="0.1.7",
     ),
 )

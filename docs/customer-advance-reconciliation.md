@@ -1,6 +1,6 @@
 # Customer-advance reconciliation
 
-The development API combines reviewed liability, revenue, receivables and cash
+The API combines reviewed liability, revenue, receivables and cash
 flow disclosures to answer two questions:
 
 - What net advance cash is compatible with these disclosures?
@@ -9,7 +9,7 @@ flow disclosures to answer two questions:
 `CustomerAdvanceBridge` compiles a provider-neutral mapping into the existing
 named-linear solver. Source retrieval, unit normalization, accounting review and
 the choice of a hypothetical cash ceiling remain explicit inputs. These APIs are
-unreleased; use the finance package from this checkout.
+available in `updatesupport-finance>=0.1.6` with `updatesupport>=0.1.7`.
 
 ## Declare the accounting mapping
 

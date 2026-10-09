@@ -1,11 +1,13 @@
 # Compare financial explanations and plan evidence
 
-The unreleased finance API compares economic explanations across explicit
+The finance API compares economic explanations across explicit
 accounting mappings. It answers two questions:
 
 1. Which explanations fit the supplied disclosures under each mapping?
 2. Which hypothetical evidence outcomes would exclude a selected explanation
    across the retained mappings?
+
+Available in `updatesupport-finance>=0.1.6` with `updatesupport>=0.1.7`.
 
 This helps an analyst decide what to investigate next. A disappearing customer
 liability might represent a transfer, refund or credit. The same balance-sheet

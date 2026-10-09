@@ -7,7 +7,7 @@ remain the responsibility of an adapter or analyst.
 
 ## Analyst workflow
 
-The development APIs extend the low-level solver with five optional layers.
+The APIs extend the low-level solver with five optional layers.
 They use the same linear feasibility engine, precision checks, claim audits,
 conflict reports and offline snapshots. Existing hand-built problems still work.
 
